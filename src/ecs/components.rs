@@ -23,3 +23,6 @@ pub struct Health {
 pub struct Team {
     pub id: String,
 }
+
+pub struct Position { pub x: f32, pub y: f32 }
+pub struct Velocity { pub vx: f32, pub vy: f32 }
