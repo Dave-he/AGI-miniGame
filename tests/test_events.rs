@@ -1,4 +1,4 @@
-use AGI_miniGame::events::{EventBus, GameEvent};
+use agi_minigame_wasm::events::{EventBus, GameEvent};
 
 #[test]
 fn test_event_bus_dispatch() {

@@ -1,4 +1,4 @@
-use AGI_miniGame::ecs::components::{Transform2D, GridPosition, Health, Team};
+use agi_minigame_wasm::ecs::components::{Transform2D, GridPosition, Health, Team};
 
 #[test]
 fn test_component_creation() {
