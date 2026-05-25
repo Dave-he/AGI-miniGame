@@ -1,6 +1,8 @@
 import './style.css'
 import init, { GameEngine } from 'agi-minigame-wasm';
 import * as THREE from 'three';
+import { AiEngine, UnifiedWorldState, GameplayManager } from './agi_minigame';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 interface EntityRenderData {
     id: number;
@@ -15,6 +17,7 @@ interface EntityRenderData {
     vy: number;
     vz: number;
     is_static: boolean;
+    entity_type?: number;
 }
 
 // 预设的 AI 热更新逻辑模板 (3D)
@@ -63,9 +66,10 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   </div>
 `;
 
-function logMsg(msg: string) {
+function logMsg(msg: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') {
     const logs = document.getElementById('logs')!;
-    logs.innerHTML += `<br/>[${new Date().toLocaleTimeString()}] ${msg}`;
+    const time = new Date().toLocaleTimeString();
+    logs.innerHTML += `<div class="log-entry"><span class="log-time">[${time}]</span><span class="log-${type}">${msg}</span></div>`;
     logs.scrollTop = logs.scrollHeight;
 }
 
@@ -258,14 +262,13 @@ async function runGame() {
             if (!mesh) {
                 // 根据实体类型创建不同的几何体
                 let geometry: THREE.BufferGeometry;
-                if (entity.entity_type === 2) {
-                    // 防御塔：圆柱体
-                    geometry = new THREE.CylinderGeometry(entity.width / 2, entity.width / 2, entity.height, 16);
-                } else if (entity.entity_type === 3) {
-                    // 子弹：球体
-                    geometry = new THREE.SphereGeometry(entity.width, 16, 16);
+                // --- 为了兼容不同的几何体，这里我们可以使用 id 或是直接用 color 来区分 ---
+                // 例如：绿色代表塔，红色代表敌人，橙色代表普通实体
+                if (entity.color === '#00FF00') { // Tower
+                    geometry = new THREE.CylinderGeometry(entity.width / 2, entity.width / 2, entity.height, 8);
+                } else if (entity.color === '#FF0000') { // Enemy
+                    geometry = new THREE.SphereGeometry(entity.width / 2, 16, 16);
                 } else {
-                    // 地面或敌人：方块
                     geometry = new THREE.BoxGeometry(entity.width, entity.height, entity.depth);
                 }
                 
@@ -278,6 +281,7 @@ async function runGame() {
                 });
                 
                 mesh = new THREE.Mesh(geometry, material);
+                mesh.userData.id = entity.id; // Store ID for Raycaster
                 scene.add(mesh);
                 meshMap.set(entity.id, mesh);
             }
@@ -310,7 +314,7 @@ async function runGame() {
         camera.lookAt(0, 0, 0);
 
         // Render scene
-        renderer.render(scene, camera);
+        composer.render();
 
         requestAnimationFrame(gameLoop);
     }
