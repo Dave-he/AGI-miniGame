@@ -1,11 +1,18 @@
 import { Wallet, Inventory } from './Economy';
-import type { GameplayType } from './GameplayType';
 
 export class PlayerProfile {
     accountId: string;
     level: number = 1;
     experience: number = 0;
     private achievements: string[] = [];
+
+    // 统一角色的基础属性 (所有玩法通用)
+    attributes = {
+        hp: 100,
+        attack: 10,
+        defense: 5,
+        speed: 10
+    };
 
     constructor(accountId: string) {
         this.accountId = accountId;
@@ -17,6 +24,10 @@ export class PlayerProfile {
         while (this.experience >= expPerLevel) {
             this.experience -= expPerLevel;
             this.level += 1;
+            // 升级时属性自动反哺
+            this.attributes.hp += 10;
+            this.attributes.attack += 2;
+            this.attributes.defense += 1;
         }
         return this.level;
     }
@@ -35,7 +46,10 @@ export class PlayerProfile {
 export class PlayerProgression {
     dimensionsVisited: string[] = [];
     dimensionsCompleted: string[] = [];
-    atomPlayCount: Record<string, number> = {};
+    modulePlayCount: Record<string, number> = {}; // 各个玩法的游玩次数
+
+    // 统一成长天赋树
+    talents: string[] = [];
 
     recordDimensionVisit(dimensionId: string): void {
         if (!this.dimensionsVisited.includes(dimensionId)) {
@@ -49,8 +63,8 @@ export class PlayerProgression {
         }
     }
 
-    recordAtomPlay(atomId: string): void {
-        this.atomPlayCount[atomId] = (this.atomPlayCount[atomId] ?? 0) + 1;
+    recordModulePlay(moduleId: string): void {
+        this.modulePlayCount[moduleId] = (this.modulePlayCount[moduleId] ?? 0) + 1;
     }
 }
 
@@ -59,7 +73,7 @@ export interface PlayerStats {
     totalPlayTime: number;
     dimensionsVisited: number;
     dimensionsCompleted: number;
-    atomPlayCounts: Record<string, number>;
+    modulePlayCounts: Record<string, number>;
 }
 
 export interface WorldEvent {
@@ -73,6 +87,9 @@ export interface WorldEvent {
 
 export class SharedWorld {
     worldEvents: WorldEvent[] = [];
+    
+    // 主城场景标识
+    public readonly MAIN_HUB = "InfiniteDimensionalCity";
 
     addEvent(event: WorldEvent): void {
         this.worldEvents.push(event);
@@ -85,7 +102,7 @@ export class SharedWorld {
 
 export interface GameplayRecord {
     dimensionId: string;
-    gameplayType: GameplayType;
+    modules: string[];
     score: number;
     timestamp: number;
     duration: number;
@@ -94,11 +111,14 @@ export interface GameplayRecord {
 export class UnifiedWorldState {
     player: PlayerProfile;
     progression: PlayerProgression;
-    wallet: Wallet;
+    wallet: Wallet; // 统一经济: 通用货币与专属代币互通
     inventory: Inventory;
     activeGameplay: GameplayRecord | null = null;
     gameplayHistory: GameplayRecord[] = [];
     sharedWorld: SharedWorld;
+    
+    // 玩家当前所在的位置，默认在主城
+    currentLocation: string;
 
     constructor(accountId: string) {
         this.player = new PlayerProfile(accountId);
@@ -106,6 +126,15 @@ export class UnifiedWorldState {
         this.wallet = new Wallet();
         this.inventory = new Inventory();
         this.sharedWorld = new SharedWorld();
+        this.currentLocation = this.sharedWorld.MAIN_HUB;
+    }
+
+    enterDimension(dimensionId: string) {
+        this.currentLocation = dimensionId;
+    }
+
+    returnToHub() {
+        this.currentLocation = this.sharedWorld.MAIN_HUB;
     }
 
     setActiveGameplay(record: GameplayRecord): void {
@@ -135,7 +164,7 @@ export class UnifiedWorldState {
             totalPlayTime,
             dimensionsVisited: this.progression.dimensionsVisited.length,
             dimensionsCompleted: this.progression.dimensionsCompleted.length,
-            atomPlayCounts: { ...this.progression.atomPlayCount },
+            modulePlayCounts: { ...this.progression.modulePlayCount },
         };
     }
 }

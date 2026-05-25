@@ -1,7 +1,8 @@
 import { WorldState } from './world/WorldState';
 import { AIEngine, GenerationConfig } from './ai/AIEngine';
-import { DimensionRunner, DimensionConfig, DimensionBlueprint } from './dimension/DimensionRunner';
+import { DimensionRunner, DimensionConfig } from './dimension/DimensionRunner';
 import { GameplayManager, Match3Module, TowerModule, CardModule, ParkourModule, PuzzleModule } from './gameplay/GameplayManager';
+import { DimensionBlueprint } from './ai/AIEngine';
 
 export class GameManager {
     private worldState: WorldState;
