@@ -1,8 +1,16 @@
 import { Atom, AtomRegistry, AtomRunner } from './Atom';
 import type { AtomContext } from './Atom';
-import type { DimensionBlueprint, Objective } from './AiEngine';
-import type { GameplayType } from './GameplayType';
+import type { DimensionBlueprint } from './AiEngine';
+import { GameplayType, gameplayTypeFromName } from './GameplayType';
 import type { UnifiedWorldState, GameplayRecord } from './WorldState';
+
+export interface Objective {
+    id: string;
+    description: string;
+    targetValue: number;
+    currentValue: number;
+    completed: boolean;
+}
 
 export const DimensionState = {
     Created: 'created',
@@ -49,8 +57,8 @@ export class DimensionConfig {
         this.id = blueprint.id;
         this.name = blueprint.name;
         this.description = blueprint.description;
-        this.gameplayType = blueprint.gameplayType;
-        this.atomId = blueprint.atomId;
+        this.gameplayType = gameplayTypeFromName(blueprint.modules[0] ?? '') ?? GameplayType.Custom;
+        this.atomId = (blueprint.config as any).atomId ?? blueprint.modules[0] ?? '';
         this.difficulty = blueprint.difficulty;
         this.config = blueprint.config;
     }
@@ -130,7 +138,7 @@ export class Dimension {
         const score = this.atomRunner?.getScore() ?? 0;
         const record: GameplayRecord = {
             dimensionId: this.config.id,
-            gameplayType: this.config.gameplayType,
+            modules: [this.config.atomId], // 兼容旧版的 Atom ID 作为单一模块
             score,
             timestamp: Date.now(),
             duration: this.elapsedTime,

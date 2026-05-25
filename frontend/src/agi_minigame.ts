@@ -9,9 +9,19 @@ export { GameplayType, gameplayTypeFromName, allGameplayTypes } from './core/Gam
 export { PlayerProfile, PlayerProgression, SharedWorld, UnifiedWorldState } from './core/WorldState';
 export type { PlayerStats, WorldEvent, GameplayRecord } from './core/WorldState';
 
-export { DimensionGenerator, BalanceTuner, AiEngine } from './core/AiEngine';
-export type { GenerationConfig, DimensionBlueprint, GeneratedRule, GeneratedReward, DimensionTheme, Objective } from './core/AiEngine';
+export { 
+    BalanceTunerAI, 
+    AiEngine 
+} from './core/AiEngine';
+export type { 
+    GenerationConfig, 
+    DimensionBlueprint, 
+    GeneratedContent 
+} from './core/AiEngine';
 
 export { DimensionState, DimensionObjective, DimensionConfig, Dimension, DimensionRunner } from './core/Dimension';
+
+export { GameplayManager } from './core/GameplayManager';
+export type { GameplayModule, ModuleConfig } from './core/GameplayManager';
 
 export { Match3Atom, TowerDefenseAtom, CardAtom, TurnCombatAtom, ParkourAtom, SynthesisAtom, registerAllAtoms } from './atoms/index';

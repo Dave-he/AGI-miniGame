@@ -49,14 +49,12 @@ export class SynthesisAtom extends Atom {
     private recipes: Recipe[] = [];
     private craftingSlots: CraftingSlot[] = [];
     private maxCraftingSlots: number = 3;
-    private discoveryQueue: string[] = [];
 
     onInit(_ctx: AtomContext): void {
         this.phase = AtomPhase.Initialized;
         this._score = 0;
         this.inventory = new Map();
         this.craftingSlots = [];
-        this.discoveryQueue = [];
         for (const item of BASE_ITEMS) {
             this.inventory.set(item.itemId, { ...item });
         }

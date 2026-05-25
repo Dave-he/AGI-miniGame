@@ -1,167 +1,184 @@
 import './style.css'
 import init, { GameEngine } from 'agi-minigame-wasm';
+import * as THREE from 'three';
 
 interface EntityRenderData {
     id: number;
     x: number;
     y: number;
+    z: number;
     width: number;
     height: number;
+    depth: number;
     color: string;
+    vx: number;
+    vy: number;
+    vz: number;
+    is_static: boolean;
 }
 
-// 预设的 AI 热更新逻辑模板
+// 预设的 AI 热更新逻辑模板 (3D)
 const defaultHotCode = `// AI 生成的实时逻辑
-// variables: entities (渲染数据), engine (Rust WASM 引擎), canvas (画布)
+// variables: entities (渲染数据), engine (Rust WASM 引擎)
 
-// 让所有方块反弹（而不仅是穿屏）
+// 让移动的方块稍微变色，模拟受热
 for (let entity of entities) {
-    if (entity.x > canvas.width - entity.width || entity.x < 0) {
-        // 这里仅演示 JS 层附加逻辑，实际最好在 Rust 层修改
-        entity.color = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+    if (!entity.is_static && Math.abs(entity.vy) > 150) {
+        // 垂直高速下落时变色
+        if (Math.random() > 0.95) {
+            entity.color = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+        }
     }
 }
 `;
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-  <div class="header-container">
-    <h1>AGI-miniGame</h1>
-    <p class="subtitle">AI-Driven Engine | Rust ECS + TS View | Real-time Logic Generation</p>
-  </div>
+  <h1>AGI-miniGame 3D</h1>
+  <p>混合架构 (Rust ECS + TS Three.js) | 动态热更新 | AI 实时生成</p>
   
   <div class="layout">
     <div class="game-panel">
-        <div class="game-header">
-            <div class="stat-badge">Entities: <span id="stat-entities" class="stat-value">0</span></div>
-            <div class="stat-badge">FPS: <span id="stat-fps" class="stat-value">0</span></div>
-            <div class="stat-badge">Player Score: <span id="stat-score" class="stat-value">0</span></div>
-        </div>
         <div id="game-bg" class="game-canvas-container">
-            <canvas id="gameCanvas" width="800" height="600"></canvas>
+            <!-- Canvas 将由 Three.js 动态生成 -->
+            <div id="three-container" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;"></div>
         </div>
     </div>
     
     <div class="control-panel">
-        <div class="panel-section">
-            <h3>🎨 AI 造物主 (场景)</h3>
-            <input type="text" id="aiImagePrompt" class="custom-input" placeholder="输入场景描述 (留空则随机生成)" />
-            <div class="btn-group">
-                <button id="aiGenerateBtn" class="ai-btn">✨ 实时生成游戏场景</button>
-            </div>
-        </div>
-
-        <div class="panel-section">
-            <h3>🎮 实体控制</h3>
-            <div class="btn-group">
-                <button id="addEntityBtn">➕ 注入实体 (Rust)</button>
-            </div>
-        </div>
+        <h3>AI 造物主控制台</h3>
+        <button id="aiGenerateBtn" class="ai-btn">✨ AI 实时生成 3D 场景氛围</button>
+        <button id="aiLogicBtn" class="ai-btn">🧠 AI 实时推演 3D 规则</button>
+        <button id="addEntityBtn">➕ 生成 3D 实体 (JS -> Rust)</button>
         
-        <div class="panel-section">
-            <h3>🧠 AI 逻辑定制生成 (JS)</h3>
-            <div class="btn-group">
-                <button id="aiLogicBtn" class="ai-btn" style="margin-bottom: 8px;">🤖 根据当前战况定制逻辑</button>
-            </div>
-            <textarea id="ai-code">${defaultHotCode}</textarea>
-            <div class="btn-group" style="margin-top: 8px;">
-                <button id="applyCodeBtn">🚀 热更新并应用逻辑</button>
-            </div>
-        </div>
+        <h4 style="margin-bottom: 5px;">实时热更新逻辑 (JS)</h4>
+        <textarea id="ai-code">${defaultHotCode}</textarea>
+        <button id="applyCodeBtn">🚀 应用热更新逻辑</button>
         
-        <div class="panel-section">
-            <h3>终端日志</h3>
-            <div id="logs" class="logs">
-                <div class="log-entry"><span class="log-time">[System]</span><span class="log-info">终端已启动，等待 AI 接入...</span></div>
-            </div>
-        </div>
+        <h4 style="margin-bottom: 5px;">系统日志</h4>
+        <div id="logs" class="logs">系统已启动，等待 AI 接入...</div>
     </div>
   </div>
 `;
 
-function logMsg(msg: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') {
+function logMsg(msg: string) {
     const logs = document.getElementById('logs')!;
-    const time = new Date().toLocaleTimeString();
-    logs.innerHTML += `<div class="log-entry"><span class="log-time">[${time}]</span><span class="log-${type}">${msg}</span></div>`;
+    logs.innerHTML += `<br/>[${new Date().toLocaleTimeString()}] ${msg}`;
     logs.scrollTop = logs.scrollHeight;
 }
 
 async function runGame() {
     // Initialize WASM module
     await init();
-    logMsg("Rust WASM 引擎已加载完毕！");
+    logMsg("Rust WASM 3D 引擎已加载完毕！");
 
-    const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-    const ctx = canvas.getContext('2d')!;
+    const container = document.getElementById('three-container')!;
     const gameBg = document.getElementById('game-bg')!;
 
-    // Create the Rust Game Engine instance
-    const engine = new GameEngine(canvas.width, canvas.height);
+    // --- Three.js Setup ---
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    
+    const scene = new THREE.Scene();
+    // 允许透明背景，露出背后的 AI 图片
+    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 2000);
+    camera.position.set(0, 150, 400); // 抬高并后退相机
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    container.appendChild(renderer.domElement);
+
+    // 灯光
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+    
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(100, 200, 50);
+    scene.add(dirLight);
+
+    // 存储 Three.js 的 Mesh 映射
+    const meshMap = new Map<number, THREE.Mesh>();
+
+    // --- Rust Engine Setup ---
+    const boundsSize = 400.0;
+    const engine = new GameEngine(boundsSize);
+
+    // 辅助网格 (表示边界)
+    const gridHelper = new THREE.GridHelper(boundsSize, 10, 0x888888, 0x444444);
+    gridHelper.position.y = -boundsSize / 2;
+    scene.add(gridHelper);
 
     // AI 生成背景
     const aiGenerateBtn = document.getElementById('aiGenerateBtn')!;
     aiGenerateBtn.addEventListener('click', () => {
-        const customPrompt = (document.getElementById('aiImagePrompt') as HTMLInputElement).value;
-        logMsg("AI 正在构思新的世界...", "info");
+        logMsg("AI 正在构思新的 3D 氛围...");
+        const themes = ["cyberpunk neon city", "mystical forest ruins", "deep space nebula", "ancient desert temple"];
+        const randomTheme = themes[Math.floor(Math.random() * themes.length)];
         
-        let promptText = "";
-        let themeName = "";
-        
-        if (customPrompt.trim().length > 0) {
-            themeName = customPrompt;
-            promptText = `${customPrompt}, high quality, game background, pixel art style, vibrant colors`;
-        } else {
-            const themes = ["cyberpunk city", "magical fantasy forest", "futuristic space station", "post-apocalyptic wasteland", "underwater neon base"];
-            const randomTheme = themes[Math.floor(Math.random() * themes.length)];
-            themeName = randomTheme;
-            promptText = `${randomTheme}, high quality, game background, pixel art style`;
-        }
-        
-        const prompt = encodeURIComponent(promptText);
-        const bgUrl = "https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=" + prompt + "&image_size=landscape_4_3";
+        const prompt = encodeURIComponent(`${randomTheme}, high quality, game background, concept art`);
+        const bgUrl = `https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=${prompt}&image_size=landscape_4_3`;
         
         gameBg.style.backgroundImage = `url('${bgUrl}')`;
-        logMsg(`AI 已生成场景: ${themeName}`, "success");
+        logMsg(`AI 已生成场景氛围: ${randomTheme}`);
     });
 
-    // AI 逻辑定制生成
+    // AI 逻辑定制生成 (模拟服务端 LLM 根据战况推演)
     const aiLogicBtn = document.getElementById('aiLogicBtn')!;
-    let playerScore = 0;
     
     aiLogicBtn.addEventListener('click', () => {
-        logMsg("AI 正在分析玩家行为...", "warn");
+        logMsg("🧠 AI 正在分析 3D 世界状态...");
+        
+        // 模拟 LLM 思考时间
         setTimeout(() => {
             const renderDataJson = engine.get_render_data();
             const currentEntities = JSON.parse(renderDataJson);
             const count = currentEntities.length;
             
-            let generatedLogic = `// AI 实时生成的逻辑 (基于玩家当前状态)\n// 当前实体数: ${count}, 玩家得分: ${playerScore}\n\n`;
+            let generatedLogic = `// 🤖 AI 实时生成的 3D 规则 (当前实体数: ${count})\n\n`;
             
-            if (count > 10) {
-                generatedLogic += `// 实体太多了！增加引力中心让它们聚集\n`;
-                generatedLogic += `for (let entity of entities) {\n    const centerX = canvas.width / 2;\n    const centerY = canvas.height / 2;\n    entity.x += (centerX - entity.x) * 0.01;\n    entity.y += (centerY - entity.y) * 0.01;\n    entity.color = '#ff3366'; // 变红预警\n}`;
-                logMsg(`AI 发现实体过多(${count})，已生成 [引力聚集] 逻辑`, "success");
-            } else if (playerScore > 50) {
-                generatedLogic += `// 玩家得分很高！增加随机跳跃增加难度\n`;
-                generatedLogic += `for (let entity of entities) {\n    if (Math.random() < 0.05) {\n        entity.y -= 20; // 随机上跳\n    }\n    entity.color = '#33ffcc';\n}`;
-                logMsg(`AI 发现玩家得分较高(${playerScore})，已生成 [随机跳跃] 逻辑`, "success");
+            if (count === 1) {
+                // 只有地面时
+                generatedLogic += `// 世界太空旷了，AI 决定下一点方块雨\n`;
+                generatedLogic += `if (Math.random() < 0.05) {\n    const rx = (Math.random() - 0.5) * 350;\n    const rz = (Math.random() - 0.5) * 350;\n    engine.add_entity(rx, 180, rz, '#00ffff', 0, -50, 0);\n}`;
+                logMsg(`AI 觉得太空旷，生成了 [方块雨] 规则`);
+            } else if (count > 15) {
+                // 实体太多时，改变重力方向为中心吸引
+                generatedLogic += `// 实体太多，AI 触发了空间塌缩！\n`;
+                generatedLogic += `for (let entity of entities) {\n    if (entity.is_static) continue;\n    // 向中心原点(0,0,0)施加引力\n    entity.vx += (0 - entity.x) * 0.05;\n    entity.vy += (50 - entity.y) * 0.05; // 悬浮在半空\n    entity.vz += (0 - entity.z) * 0.05;\n    entity.color = '#ff3366'; // 警告红\n}`;
+                logMsg(`AI 发现实体过多(${count})，生成了 [空间塌缩] 规则`);
             } else {
-                generatedLogic += `// 默认游玩状态，赋予呼吸特效\n`;
-                generatedLogic += `const time = performance.now() / 200;\nfor (let entity of entities) {\n    entity.width = 20 + Math.sin(time + entity.id) * 10;\n    entity.height = 20 + Math.cos(time + entity.id) * 10;\n    if (entity.x > canvas.width || entity.x < 0) {\n        entity.color = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');\n    }\n}`;
-                logMsg(`AI 已生成 [呼吸特效] 逻辑`, "success");
+                // 一般情况，赋予量子纠缠效果（随机瞬间移动）
+                generatedLogic += `// 赋予实体量子纠缠特性\n`;
+                generatedLogic += `for (let entity of entities) {\n    if (!entity.is_static && Math.random() < 0.01) {\n        entity.x += (Math.random() - 0.5) * 100;\n        entity.z += (Math.random() - 0.5) * 100;\n        entity.color = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');\n    }\n}`;
+                logMsg(`AI 结合现状，生成了 [量子跳跃] 规则`);
             }
             
-            (document.getElementById('ai-code') as HTMLTextAreaElement).value = generatedLogic;
-        }, 600); // 模拟思考延迟
+            // 将代码写入文本框
+            const codeInput = document.getElementById('ai-code') as HTMLTextAreaElement;
+            codeInput.value = generatedLogic;
+            
+            // 自动点击应用
+            document.getElementById('applyCodeBtn')!.click();
+            
+        }, 1200);
     });
 
     // 手动添加实体
     const addBtn = document.getElementById('addEntityBtn')!;
     addBtn.addEventListener('click', () => {
         const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
-        const randomY = Math.random() * (canvas.height - 50);
-        engine.add_entity(0, randomY, randomColor);
-        playerScore += 10; // 模拟得分
-        logMsg(`已向 Rust 引擎发送 Spawn 指令。得分 +10`, "info");
+        // 在高空随机位置生成
+        const rx = (Math.random() - 0.5) * (boundsSize - 50);
+        const ry = (boundsSize / 2) - 20; 
+        const rz = (Math.random() - 0.5) * (boundsSize - 50);
+        
+        const vx = (Math.random() - 0.5) * 300;
+        const vy = (Math.random() - 0.5) * 100;
+        const vz = (Math.random() - 0.5) * 300;
+        
+        engine.add_entity(rx, ry, rz, randomColor, vx, vy, vz);
+        logMsg(`已向 Rust 引擎发送 3D Spawn 指令`);
     });
 
     // 热更新逻辑
@@ -170,29 +187,19 @@ async function runGame() {
     applyCodeBtn.addEventListener('click', () => {
         const code = (document.getElementById('ai-code') as HTMLTextAreaElement).value;
         try {
-            const ruleFn = new Function('entities', 'engine', 'canvas', code);
-            dynamicRules = [ruleFn]; // 替换当前逻辑
-            logMsg("✅ 游戏逻辑已热更新并注入运行！", "success");
+            const ruleFn = new Function('entities', 'engine', code);
+            dynamicRules = [ruleFn];
+            logMsg("✅ 3D 游戏逻辑已热更新！");
         } catch (e: any) {
-            logMsg(`❌ 热更新编译失败: ${e.message}`, "error");
+            logMsg(`❌ 热更新失败: ${e.message}`);
         }
     });
 
     let lastTime = performance.now();
-    let frameCount = 0;
-    let lastFpsTime = lastTime;
-    let currentFps = 0;
 
     function gameLoop(time: number) {
         const dt = (time - lastTime) / 1000;
         lastTime = time;
-        frameCount++;
-        
-        if (time - lastFpsTime >= 1000) {
-            currentFps = frameCount;
-            frameCount = 0;
-            lastFpsTime = time;
-        }
 
         // 1. Update Game State in Rust
         engine.update(dt);
@@ -204,32 +211,78 @@ async function runGame() {
         // 3. 执行 JS 热更新逻辑
         for (const ruleFn of dynamicRules) {
             try {
-                ruleFn(entities, engine, canvas);
+                ruleFn(entities, engine);
             } catch(e) {
-                // 不在这里 console.error 以免刷屏
+                console.error(e);
             }
         }
 
-        // 4. Render in TS/Canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
+        // 4. Update Three.js Meshes
+        // 记录当前帧存在的实体 ID，用于清理已删除的实体
+        const currentIds = new Set<number>();
+
         for (const entity of entities) {
-            ctx.fillStyle = entity.color;
-            ctx.fillRect(entity.x, entity.y, entity.width, entity.height);
+            currentIds.add(entity.id);
             
-            // Draw ID
-            ctx.fillStyle = 'white';
-            ctx.font = 'bold 12px monospace';
-            ctx.fillText(`ID:${entity.id}`, entity.x, entity.y - 5);
+            let mesh = meshMap.get(entity.id);
+            if (!mesh) {
+                // 如果是新实体，创建对应的 Three.js Mesh
+                const geometry = new THREE.BoxGeometry(entity.width, entity.height, entity.depth);
+                
+                // 颜色转换
+                const matColor = new THREE.Color(entity.color);
+                const material = new THREE.MeshLambertMaterial({ 
+                    color: matColor,
+                    transparent: entity.is_static,
+                    opacity: entity.is_static ? 0.5 : 1.0 // 让地面半透明
+                });
+                
+                mesh = new THREE.Mesh(geometry, material);
+                scene.add(mesh);
+                meshMap.set(entity.id, mesh);
+            }
+
+            // 更新位置
+            mesh.position.set(entity.x, entity.y, entity.z);
+            
+            // 更新颜色 (如果热更新逻辑修改了颜色)
+            const currentMatColor = (mesh.material as THREE.MeshLambertMaterial).color;
+            if ('#'+currentMatColor.getHexString() !== entity.color.toLowerCase()) {
+                (mesh.material as THREE.MeshLambertMaterial).color.set(entity.color);
+            }
+        }
+
+        // 清理 Rust 中已被删除的实体
+        for (const [id, mesh] of meshMap.entries()) {
+            if (!currentIds.has(id)) {
+                scene.remove(mesh);
+                mesh.geometry.dispose();
+                (mesh.material as THREE.Material).dispose();
+                meshMap.delete(id);
+            }
         }
         
-        // 更新统计 UI
-        document.getElementById('stat-entities')!.innerText = entities.length.toString();
-        document.getElementById('stat-fps')!.innerText = currentFps.toString();
-        document.getElementById('stat-score')!.innerText = playerScore.toString();
+        // 缓慢旋转相机以展示 3D 效果
+        const camRadius = 400;
+        const camSpeed = time * 0.0002;
+        camera.position.x = Math.sin(camSpeed) * camRadius;
+        camera.position.z = Math.cos(camSpeed) * camRadius;
+        camera.lookAt(0, 0, 0);
+
+        // Render scene
+        renderer.render(scene, camera);
 
         requestAnimationFrame(gameLoop);
     }
+
+    // 处理窗口大小变化
+    window.addEventListener('resize', () => {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+    });
 
     requestAnimationFrame(gameLoop);
 }
