@@ -2,7 +2,7 @@ import './style.css'
 import init, { GameEngine } from 'agi-minigame-wasm';
 import * as THREE from 'three';
 import { AiEngine, UnifiedWorldState, GameplayManager } from './agi_minigame';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 interface EntityRenderData {
     id: number;
@@ -324,6 +324,7 @@ async function runGame() {
         const width = container.clientWidth;
         const height = container.clientHeight;
         renderer.setSize(width, height);
+        composer.setSize(width, height);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
     });
