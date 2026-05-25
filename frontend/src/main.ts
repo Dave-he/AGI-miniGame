@@ -315,13 +315,13 @@ async function runGame() {
         requestAnimationFrame(gameLoop);
     }
 
-    // 处理窗口大小变化
+    // 监听窗口大小变化
     window.addEventListener('resize', () => {
-        const w = container.clientWidth;
-        const h = container.clientHeight;
-        camera.aspect = w / h;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        renderer.setSize(width, height);
+        camera.aspect = width / height;
         camera.updateProjectionMatrix();
-        renderer.setSize(w, h);
     });
 
     requestAnimationFrame(gameLoop);
