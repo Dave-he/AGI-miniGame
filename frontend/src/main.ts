@@ -1,10 +1,6 @@
 import './style.css'
 import init, { GameEngine } from 'agi-minigame-wasm';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 interface EntityRenderData {
     id: number;
@@ -14,9 +10,6 @@ interface EntityRenderData {
     width: number;
     height: number;
     depth: number;
-    rot_x: number;
-    rot_y: number;
-    rot_z: number;
     color: string;
     vx: number;
     vy: number;
@@ -25,14 +18,15 @@ interface EntityRenderData {
 }
 
 // 预设的 AI 热更新逻辑模板 (3D)
-const defaultHotCode = `// AI 实时生成的 3D 逻辑
+const defaultHotCode = `// AI 生成的实时逻辑
 // variables: entities (渲染数据), engine (Rust WASM 引擎)
 
-// AI 自定义 3D 行为示例：自动给实体施加反重力
+// 让移动的方块稍微变色，模拟受热
 for (let entity of entities) {
-    if (!entity.is_static) {
-        if(Math.random() < 0.1) {
-            engine.apply_force(entity.id, (Math.random()-0.5)*10, 5, (Math.random()-0.5)*10);
+    if (!entity.is_static && Math.abs(entity.vy) > 150) {
+        // 垂直高速下落时变色
+        if (Math.random() > 0.95) {
+            entity.color = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
         }
     }
 }
@@ -53,8 +47,11 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <div class="control-panel">
         <h3>AI 造物主控制台</h3>
         <button id="aiGenerateBtn" class="ai-btn">✨ AI 实时生成 3D 场景氛围</button>
-        <button id="aiLogicBtn" class="ai-btn">🧠 AI 实时推演 3D 规则</button>
-        <button id="addEntityBtn">➕ 生成 3D 实体 (JS -> Rust)</button>
+        <button id="aiLogicBtn" class="ai-btn">🧠 AI 实时推演 3D 规则 (塔防篇)</button>
+        <div style="display: flex; gap: 10px;">
+            <button id="addTowerBtn" style="flex: 1; background-color: #2e7d32;">🗼 建塔</button>
+            <button id="addEntityBtn" style="flex: 1; background-color: #c62828;">👾 刷怪</button>
+        </div>
         
         <h4 style="margin-bottom: 5px;">实时热更新逻辑 (JS)</h4>
         <textarea id="ai-code">${defaultHotCode}</textarea>
@@ -80,39 +77,53 @@ async function runGame() {
     const container = document.getElementById('three-container')!;
     const gameBg = document.getElementById('game-bg')!;
 
-    // --- Three.js Setup ---
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-    
+    // ---------------------------------------------------------
+    // 初始化新的 AGI-miniGame 核心架构
+    // ---------------------------------------------------------
+    const worldState = new UnifiedWorldState('player_1');
+    const aiEngine = new AiEngine();
+    const gameplayManager = new GameplayManager();
+    logMsg("✅ 统一世界层 (Unified World) 已加载", "success");
+    logMsg("✅ 超级大脑 (AI Central) 已上线", "success");
+
+    // ---------------------------------------------------------
+    // 初始化 Three.js 3D 渲染环境
+    // ---------------------------------------------------------
     const scene = new THREE.Scene();
-    // 允许透明背景，露出背后的 AI 图片
-    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 2000);
-    camera.position.set(0, 150, 400); // 抬高并后退相机
+    
+    // Camera
+    const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+    camera.position.set(0, 150, 300);
     camera.lookAt(0, 0, 0);
 
+    // Renderer
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    renderer.setSize(width, height);
+    renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
+
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
 
     // 灯光
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
-    
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(100, 200, 50);
+    dirLight.position.set(50, 100, 50);
     scene.add(dirLight);
 
-    // 存储 Three.js 的 Mesh 映射
+    // Mesh cache
     const meshMap = new Map<number, THREE.Mesh>();
 
-    // --- Rust Engine Setup ---
     const boundsSize = 400.0;
     const engine = new GameEngine(boundsSize);
+    // 挂载到 global 供模块调用
+    (window as any).gameEngine = engine;
 
     // 辅助网格 (表示边界)
-    const gridHelper = new THREE.GridHelper(boundsSize, 10, 0x888888, 0x444444);
-    gridHelper.position.y = -boundsSize / 2;
+    const gridHelper = new THREE.GridHelper(boundsSize, 20, 0x444444, 0x222222);
+    gridHelper.position.y = -10; // 和地平线对齐
     scene.add(gridHelper);
 
     // AI 生成背景
@@ -170,21 +181,34 @@ async function runGame() {
         }, 1200);
     });
 
-    // 手动添加实体
-    const addBtn = document.getElementById('addEntityBtn')!;
-    addBtn.addEventListener('click', () => {
+    // 手动建塔
+    const addTowerBtn = document.getElementById('addTowerBtn')!;
+    addTowerBtn.addEventListener('click', () => {
+        const rx = (Math.random() - 0.5) * (boundsSize - 50);
+        const rz = (Math.random() - 0.5) * (boundsSize - 50);
+        const ry = -boundsSize / 2 + 35; // 放在地面上
+        
+        // 生成类型为 2 的防御塔
+        engine.add_entity(rx, ry, rz, '#00ff00', 0, 0, 0, 2);
+        logMsg(`已建立 3D 防御塔 (类型: 2)`);
+    });
+
+    // 手动刷怪
+    const addEntityBtn = document.getElementById('addEntityBtn')!;
+    addEntityBtn.addEventListener('click', () => {
         const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
-        // 在高空随机位置生成
+        // 在高空边缘生成
         const rx = (Math.random() - 0.5) * (boundsSize - 50);
         const ry = (boundsSize / 2) - 20; 
         const rz = (Math.random() - 0.5) * (boundsSize - 50);
         
-        const vx = (Math.random() - 0.5) * 300;
-        const vy = (Math.random() - 0.5) * 100;
-        const vz = (Math.random() - 0.5) * 300;
+        const vx = (Math.random() - 0.5) * 100;
+        const vy = -100;
+        const vz = (Math.random() - 0.5) * 100;
         
-        engine.add_entity(rx, ry, rz, randomColor, vx, vy, vz);
-        logMsg(`已向 Rust 引擎发送 3D Spawn 指令`);
+        // 生成类型为 1 的敌人
+        engine.add_entity(rx, ry, rz, randomColor, vx, vy, vz, 1);
+        logMsg(`已生成 3D 怪物 (类型: 1)`);
     });
 
     // 热更新逻辑
@@ -232,15 +256,25 @@ async function runGame() {
             
             let mesh = meshMap.get(entity.id);
             if (!mesh) {
-                // 如果是新实体，创建对应的 Three.js Mesh
-                const geometry = new THREE.BoxGeometry(entity.width, entity.height, entity.depth);
+                // 根据实体类型创建不同的几何体
+                let geometry: THREE.BufferGeometry;
+                if (entity.entity_type === 2) {
+                    // 防御塔：圆柱体
+                    geometry = new THREE.CylinderGeometry(entity.width / 2, entity.width / 2, entity.height, 16);
+                } else if (entity.entity_type === 3) {
+                    // 子弹：球体
+                    geometry = new THREE.SphereGeometry(entity.width, 16, 16);
+                } else {
+                    // 地面或敌人：方块
+                    geometry = new THREE.BoxGeometry(entity.width, entity.height, entity.depth);
+                }
                 
                 // 颜色转换
                 const matColor = new THREE.Color(entity.color);
                 const material = new THREE.MeshLambertMaterial({ 
                     color: matColor,
                     transparent: entity.is_static,
-                    opacity: entity.is_static ? 0.5 : 1.0 // 让地面半透明
+                    opacity: entity.is_static ? 0.8 : 1.0 // 让地面半透明
                 });
                 
                 mesh = new THREE.Mesh(geometry, material);
