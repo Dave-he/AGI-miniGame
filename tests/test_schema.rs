@@ -1,4 +1,4 @@
-use AGI_miniGame::schema::rules::{Rule, Trigger, Action};
+use agi_minigame_wasm::schema::rules::{Rule, Trigger, Action};
 
 #[test]
 fn test_rule_deserialization() {

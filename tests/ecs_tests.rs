@@ -1,5 +1,5 @@
-use agi_minigame::ecs::world::World;
-use agi_minigame::ecs::components::{Position, Velocity};
+use agi_minigame_wasm::ecs::world::World;
+use agi_minigame_wasm::ecs::components::{Position, Velocity};
 
 #[test]
 fn test_spawn_entity() {
