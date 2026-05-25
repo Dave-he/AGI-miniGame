@@ -26,3 +26,10 @@ pub struct Team {
 
 pub struct Position { pub x: f32, pub y: f32 }
 pub struct Velocity { pub vx: f32, pub vy: f32 }
+
+pub struct Collider { pub radius: f32 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum MemeType { Fire, Speed, Life }
+
+pub struct MemeDrop { pub meme_type: MemeType }

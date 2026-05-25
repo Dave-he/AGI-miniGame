@@ -1,6 +1,10 @@
 import './style.css'
 import init, { GameEngine } from 'agi-minigame-wasm';
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 interface EntityRenderData {
     id: number;
@@ -10,6 +14,9 @@ interface EntityRenderData {
     width: number;
     height: number;
     depth: number;
+    rot_x: number;
+    rot_y: number;
+    rot_z: number;
     color: string;
     vx: number;
     vy: number;
@@ -18,15 +25,14 @@ interface EntityRenderData {
 }
 
 // 预设的 AI 热更新逻辑模板 (3D)
-const defaultHotCode = `// AI 生成的实时逻辑
+const defaultHotCode = `// AI 实时生成的 3D 逻辑
 // variables: entities (渲染数据), engine (Rust WASM 引擎)
 
-// 让移动的方块稍微变色，模拟受热
+// AI 自定义 3D 行为示例：自动给实体施加反重力
 for (let entity of entities) {
-    if (!entity.is_static && Math.abs(entity.vy) > 150) {
-        // 垂直高速下落时变色
-        if (Math.random() > 0.95) {
-            entity.color = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+    if (!entity.is_static) {
+        if(Math.random() < 0.1) {
+            engine.apply_force(entity.id, (Math.random()-0.5)*10, 5, (Math.random()-0.5)*10);
         }
     }
 }
