@@ -1,0 +1,75 @@
+use std::sync::{Arc, Mutex};
+
+use AGI_miniGame::atom::{AtomContext, AtomRegistry};
+use AGI_miniGame::ai_engine::{AiEngine, GenerationConfig};
+use AGI_miniGame::dimension::{DimensionConfig, DimensionRunner};
+use AGI_miniGame::player::PlayerProfile;
+use AGI_miniGame::world_state::UnifiedWorldState;
+
+fn main() {
+    println!("=== AGI-miniGame ===");
+    println!("Unified World / Unified Account / Unified Economy");
+    println!();
+
+    let player = PlayerProfile::new("player_001");
+    let world_state = Arc::new(Mutex::new(UnifiedWorldState::new(player)));
+    let registry = Arc::new(Mutex::new(AtomRegistry::new()));
+
+    println!("Player created: player_001");
+    println!("World state initialized");
+    println!("Registry ready");
+    println!();
+
+    let mut ai_engine = AiEngine::new(42);
+    let config = GenerationConfig::for_player_level(1);
+
+    let reg = registry.lock().unwrap();
+    let blueprint = ai_engine.generate_dimension(&config, &reg);
+    drop(reg);
+
+    println!("AI Generated Dimension:");
+    println!("  Name: {}", blueprint.name);
+    println!("  ID: {}", blueprint.id);
+    println!("  Difficulty: {:.2}", blueprint.difficulty);
+    println!("  Atoms: {:?}", blueprint.atom_ids);
+    println!("  Theme: {}", blueprint.theme.name);
+    println!();
+
+    let dimension_config = DimensionConfig::from_blueprint(&blueprint);
+    let mut runner = DimensionRunner::new(
+        Arc::clone(&world_state),
+        Arc::clone(&registry),
+    );
+
+    if runner.start_dimension(dimension_config) {
+        println!("Dimension started successfully!");
+
+        for _ in 0..10 {
+            runner.update(0.016);
+        }
+
+        if let Some(progress) = runner.get_progress() {
+            println!("Progress:");
+            println!("  Score: {}", progress.score);
+            println!("  Time: {:.2}s", progress.elapsed_time);
+            println!("  Objectives: {}/{}", progress.completed_objectives, progress.total_objectives);
+        }
+
+        runner.pause();
+        println!("Dimension paused");
+
+        runner.resume();
+        println!("Dimension resumed");
+    } else {
+        println!("Failed to start dimension");
+    }
+
+    let ws = world_state.lock().unwrap();
+    let stats = ws.get_player_stats();
+    println!();
+    println!("Player Stats:");
+    println!("  Level: {}", stats.level);
+    println!("  Gold: {}", stats.gold);
+    println!("  Gem: {}", stats.gem);
+    println!("  Dimensions played: {}", stats.dimension_count);
+}
