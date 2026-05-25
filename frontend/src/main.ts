@@ -3,6 +3,9 @@ import init, { GameEngine } from 'agi-minigame-wasm';
 import * as THREE from 'three';
 import { AiEngine, UnifiedWorldState, GameplayManager } from './agi_minigame';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 interface EntityRenderData {
     id: number;
@@ -105,10 +108,54 @@ async function runGame() {
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
+    (window as any).__renderer = renderer;
+    // (window as any).__composer = composer; // EffectComposer not found in original code, skipping assignment
 
     // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+
+    // Post-processing: Bloom
+    const renderScene = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(container.clientWidth, container.clientHeight),
+        1.5, // strength
+        0.4, // radius
+        0.85 // threshold
+    );
+    const composer = new EffectComposer(renderer);
+    composer.addPass(renderScene);
+    composer.addPass(bloomPass);
+    (window as any).__composer = composer;
+
+    // Raycaster for mouse interaction
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    
+    container.addEventListener('pointerdown', (event) => {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        
+        raycaster.setFromCamera(pointer, camera);
+        const intersects = raycaster.intersectObjects(scene.children);
+        
+        if (intersects.length > 0) {
+            const object = intersects[0].object as THREE.Mesh;
+            const entityId = object.userData.id;
+            if (entityId) {
+                // To avoid TS error, cast to any or define in TS interface
+                (engine as any).explode_entity(entityId, 150.0);
+                logMsg(`👉 玩家施展了神力，点击了实体 ID: ${entityId}`, "info");
+                // Update score via DOM if playerScore is not directly accessible here
+                const scoreSpan = document.getElementById('stat-score');
+                if (scoreSpan) {
+                    let currentScore = parseInt(scoreSpan.innerText) || 0;
+                    scoreSpan.innerText = (currentScore + 5).toString();
+                }
+            }
+        }
+    });
 
     // 灯光
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -314,7 +361,8 @@ async function runGame() {
         camera.lookAt(0, 0, 0);
 
         // Render scene
-        composer.render();
+        controls.update();
+        renderer.render(scene, camera);
 
         requestAnimationFrame(gameLoop);
     }
@@ -324,7 +372,6 @@ async function runGame() {
         const width = container.clientWidth;
         const height = container.clientHeight;
         renderer.setSize(width, height);
-        composer.setSize(width, height);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
     });

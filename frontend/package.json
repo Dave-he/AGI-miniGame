@@ -9,9 +9,13 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/three": "^0.184.1",
     "esbuild": "^0.28.0",
+    "jest": "^30.4.2",
     "rollup": "^4.60.4",
+    "ts-jest": "^29.4.11",
+    "ts-node": "^10.9.2",
     "typescript": "~6.0.2",
     "vite": "^8.0.12",
     "vite-plugin-top-level-await": "^1.6.0",
