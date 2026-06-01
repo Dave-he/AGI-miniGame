@@ -5,4 +5,7 @@ export * from './economy/Inventory';
 export * from './ai/AIEngine';
 export * from './dimension/DimensionRunner';
 export * from './gameplay/GameplayManager';
-export { GameManager } from './main';
+export { App, bootstrap } from './main';
+export { SceneManager } from './scene/SceneManager';
+export { HUD } from './ui/HUD';
+export * from './dsl/MemeCompiler';

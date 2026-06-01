@@ -60,6 +60,11 @@ export interface SessionResult {
     completed: boolean;
 }
 
+// Re-export the 4 AI brains so consumers can pick whichever they need.
+export { GameplayCombinerAI, CombinationSuggestion, GameplayStage } from './GameplayCombinerAI';
+export { ContentGeneratorAI, ThemeContent, VisualStyle, MusicMood } from './ContentGeneratorAI';
+export { SmartWorldAI, WorldEventDraft, WorldEventKind } from './SmartWorldAI';
+
 export class DimensionGenerator {
     private rng: () => number;
     private adjectives: string[];
@@ -265,16 +270,33 @@ export class BalanceTuner {
     }
 }
 
+import { GameplayCombinerAI } from './GameplayCombinerAI';
+import { ContentGeneratorAI } from './ContentGeneratorAI';
+import { SmartWorldAI } from './SmartWorldAI';
+
 export class AIEngine {
+    /** A — 玩法组合 AI: pick the right combo of gameplay atoms for this player. */
+    public gameplayAI: GameplayCombinerAI;
+    /** B — 内容生成 AI: produce theme name, art prompt, BGM prompt, intro lore. */
+    public contentAI: ContentGeneratorAI;
+    /** C — 平衡 AI: tune difficulty from historical win/loss data. */
+    public tuner: BalanceTuner;
+    /** D — 智能 NPC / 世界 AI: roll transient world events and NPC dialogue. */
+    public worldAI: SmartWorldAI;
+
+    /** Internal generator of dimension blueprints (combines the 4 AIs' output). */
     private generator: DimensionGenerator;
-    private tuner: BalanceTuner;
 
     constructor(seed: number) {
-        this.generator = new DimensionGenerator(seed);
+        this.gameplayAI = new GameplayCombinerAI();
+        this.contentAI = new ContentGeneratorAI(seed);
         this.tuner = new BalanceTuner();
+        this.worldAI = new SmartWorldAI(seed);
+        this.generator = new DimensionGenerator(seed);
     }
 
     generateDimension(config: GenerationConfig): DimensionBlueprint {
+        // 1) Balance AI hands us a suggested difficulty band.
         const suggested = this.tuner.suggestDifficulty(config.playerLevel);
         const adjustedConfig: GenerationConfig = {
             ...config,
@@ -283,7 +305,23 @@ export class AIEngine {
                 Math.min(1.0, suggested + 0.1),
             ],
         };
-        return this.generator.generate(adjustedConfig);
+
+        // 2) DimensionGenerator emits the structural blueprint.
+        const blueprint = this.generator.generate(adjustedConfig);
+
+        // 3) Content AI enriches the theme with lore / art / music prompts.
+        const stage = this.gameplayAI.classifyStage(config.playerLevel);
+        const theme = this.contentAI.generate(stage, blueprint.atomIds, blueprint.difficulty);
+        blueprint.name = theme.themeName;
+        blueprint.description = theme.introLore;
+        blueprint.theme = {
+            name: theme.themeName,
+            visualStyle: theme.visualStyle,
+            musicMood: theme.musicMood,
+            colorPalette: theme.colorPalette,
+        };
+
+        return blueprint;
     }
 
     recordSession(result: SessionResult): void {

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AGI-miniGame · 无限次元城</title>
+    <style>
+      :root {
+        --bg-0: #050617;
+        --bg-1: #0b0b22;
+        --neon-blue: #45b7d1;
+        --neon-pink: #ff66cc;
+        --neon-violet: #a06cd5;
+        --neon-cyan: #4ecdc4;
+        --text-0: #e6e8ff;
+        --text-1: #9da3c4;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; padding: 0; height: 100%;
+        background: radial-gradient(circle at 20% 0%, #0e0a3a 0%, var(--bg-0) 60%);
+        color: var(--text-0);
+        font-family: 'SF Mono', Menlo, Consolas, monospace;
+        overflow: hidden;
+      }
+      #game-canvas { display: block; width: 100vw; height: 100vh; }
+      #hud-root { position: fixed; inset: 0; pointer-events: none; }
+      .hud-panel {
+        position: absolute;
+        background: rgba(11, 11, 34, 0.72);
+        border: 1px solid rgba(160, 108, 213, 0.45);
+        border-radius: 10px;
+        padding: 10px 14px;
+        backdrop-filter: blur(8px);
+        pointer-events: auto;
+        font-size: 12px;
+        line-height: 1.6;
+        box-shadow: 0 0 24px rgba(160, 108, 213, 0.25);
+      }
+      .hud-title {
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: var(--neon-cyan);
+        text-transform: uppercase;
+        margin-bottom: 6px;
+      }
+      .hud-stats  { top: 16px; left: 16px; min-width: 180px; }
+      .hud-dim    { top: 16px; right: 16px; min-width: 220px; }
+      .hud-log    { bottom: 16px; right: 16px; width: 360px; max-height: 30vh; }
+      .hud-row { display: flex; justify-content: space-between; }
+      .hud-row span { color: var(--text-1); }
+      .hud-row b { color: var(--neon-pink); }
+      .hud-dim-name { font-size: 16px; color: var(--neon-blue); margin: 4px 0 8px; font-weight: 600; }
+      .hud-log-body { max-height: 22vh; overflow: auto; }
+      .hud-log-line { color: var(--text-1); font-size: 11px; }
+      .hud-log-empty { color: var(--text-1); font-style: italic; font-size: 11px; }
+      .hud-controls {
+        position: absolute;
+        left: 16px;
+        bottom: 16px;
+        display: flex; gap: 8px;
+        pointer-events: auto;
+      }
+      .hud-btn {
+        background: linear-gradient(135deg, var(--neon-violet), var(--neon-pink));
+        color: white;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 6px;
+        font-size: 12px;
+        letter-spacing: 1px;
+        cursor: pointer;
+        box-shadow: 0 0 16px rgba(255, 102, 204, 0.45);
+      }
+      .hud-btn:hover { filter: brightness(1.15); }
+    </style>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+    <div id="hud-root"></div>
+    <div class="hud-controls">
+      <button id="btn-enter" class="hud-btn">进入次元</button>
+      <button id="btn-event" class="hud-btn">触发事件</button>
+      <button id="btn-dsl" class="hud-btn">编译 DSL</button>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

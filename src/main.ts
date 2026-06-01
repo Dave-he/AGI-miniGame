@@ -1,161 +1,122 @@
+/**
+ * AGI-miniGame entry point.
+ *
+ * Wires together:
+ *   - SceneManager (Three.js hub scene)
+ *   - HUD (cyberpunk overlay with AI panel + console log)
+ *   - GameManager (dimension / gameplay / world state)
+ *   - AIEngine (the 4 super-brains)
+ *
+ * This file is intentionally framework-agnostic: no React, no Vue, no
+ * specific build tool assumptions beyond plain DOM + Vite.
+ */
+
+import { SceneManager } from './scene/SceneManager';
+import { HUD } from './ui/HUD';
 import { WorldState } from './world/WorldState';
-import { AIEngine, GenerationConfig } from './ai/AIEngine';
-import { DimensionRunner, DimensionConfig } from './dimension/DimensionRunner';
-import { GameplayManager, Match3Module, TowerModule, CardModule, ParkourModule, PuzzleModule } from './gameplay/GameplayManager';
-import { DimensionBlueprint } from './ai/AIEngine';
+import { AIEngine, GameplayCombinerAI, SmartWorldAI } from './ai/AIEngine';
+import { combineMemes, compileFallback, parseDSL, toEngineJSON } from './dsl/MemeCompiler';
+import type { DimensionBlueprint } from './ai/AIEngine';
 
-export class GameManager {
+interface AppRefs {
+    canvas: HTMLCanvasElement;
+    hudRoot: HTMLElement;
+}
+
+class App {
+    private scene: SceneManager;
+    private hud: HUD;
     private worldState: WorldState;
-    private aiEngine: AIEngine;
-    private dimensionRunner: DimensionRunner;
-    private gameplayManager: GameplayManager;
-    private currentDimension: DimensionBlueprint | null = null;
-    private isPaused: boolean = false;
+    private ai: AIEngine;
+    private currentDim: DimensionBlueprint | null = null;
 
-    constructor(accountId: string) {
-        this.worldState = new WorldState(accountId);
-        this.aiEngine = new AIEngine(Date.now());
-        this.dimensionRunner = new DimensionRunner();
-        this.gameplayManager = new GameplayManager();
+    constructor(refs: AppRefs) {
+        this.scene = new SceneManager(refs.canvas);
+        this.hud = new HUD(refs.hudRoot);
+        this.worldState = new WorldState('local-player', '次元旅者');
+        this.ai = new AIEngine(Date.now());
 
-        this.registerGameplayModules();
-    }
-
-    private registerGameplayModules(): void {
-        this.gameplayManager.registerModule('match3', () => new Match3Module());
-        this.gameplayManager.registerModule('tower_defense', () => new TowerModule());
-        this.gameplayManager.registerModule('card', () => new CardModule());
-        this.gameplayManager.registerModule('parkour', () => new ParkourModule());
-        this.gameplayManager.registerModule('puzzle', () => new PuzzleModule());
-    }
-
-    async enterNewDimension(): Promise<void> {
-        const config: GenerationConfig = {
-            minAtoms: 2,
-            maxAtoms: 4,
-            difficultyRange: [0.3, 0.8],
+        this.hud.setState({
             playerLevel: this.worldState.player.level,
-            preferredTypes: [],
-            excludedTypes: [],
-            rewardMultiplier: 1.0,
-        };
-
-        this.currentDimension = this.aiEngine.generateDimension(config);
-
-        console.log(`Entering dimension: ${this.currentDimension.name}`);
-        console.log(`Gameplay modules: ${this.currentDimension.atomIds.join(', ')}`);
-
-        this.worldState.setActiveDimension(
-            this.currentDimension.id,
-            this.currentDimension.atomIds
-        );
-
-        await this.gameplayManager.loadGameplay(this.currentDimension.atomIds);
-
-        const dimConfig: DimensionConfig = {
-            id: this.currentDimension.id,
-            name: this.currentDimension.name,
-            description: this.currentDimension.description,
-            atomIds: this.currentDimension.atomIds,
-            difficulty: this.currentDimension.difficulty,
-            timeLimitSecs: this.currentDimension.timeLimitSecs,
-            rules: this.currentDimension.rules.map(r => ({
-                ruleId: r.ruleId,
-                name: r.name,
-                description: r.description,
-                isActive: true,
-                params: r.params,
-            })),
-            rewards: this.currentDimension.rewards.map(r => ({
-                itemId: r.itemId,
-                quantity: r.baseQuantity,
-            })),
-            objectives: this.currentDimension.objectives.map(o => ({
-                id: o.id,
-                description: o.description,
-                target: o.targetValue,
-                isOptional: o.isOptional,
-            })),
-        };
-
-        this.dimensionRunner.start(dimConfig);
-    }
-
-    update(dt: number): void {
-        if (this.isPaused) return;
-
-        this.dimensionRunner.update(dt);
-        this.gameplayManager.update(dt);
-
-        if (this.dimensionRunner.isCompleted()) {
-            this.completeDimension();
-        }
-    }
-
-    pause(): void {
-        this.isPaused = true;
-        this.dimensionRunner.pause();
-        this.gameplayManager.pause();
-    }
-
-    resume(): void {
-        this.isPaused = false;
-        this.dimensionRunner.resume();
-        this.gameplayManager.resume();
-    }
-
-    private completeDimension(): void {
-        if (!this.currentDimension) return;
-
-        const score = this.gameplayManager.getTotalScore();
-        const rewards = this.currentDimension.rewards.map(r => ({
-            itemId: r.itemId,
-            quantity: r.baseQuantity,
-        }));
-
-        this.worldState.recordDimensionComplete(
-            this.currentDimension.id,
-            score,
-            rewards
-        );
-
-        this.aiEngine.recordSession({
-            dimensionId: this.currentDimension.id,
-            difficulty: this.currentDimension.difficulty,
-            playerLevel: this.worldState.player.level,
-            score,
-            durationSecs: this.dimensionRunner.getElapsedTime(),
-            completed: true,
+            gold: this.worldState.getGold(),
+            gem: this.worldState.getGem(),
         });
-
-        console.log(`Dimension complete! Score: ${score}`);
-        this.currentDimension = null;
+        this.hud.log('AGI-miniGame 已启动');
+        this.hud.log('4 大 AI 中枢已就位: 玩法组合 / 内容生成 / 平衡调参 / 智能世界');
     }
 
-    getWorldState(): WorldState {
-        return this.worldState;
+    async start(): Promise<void> {
+        await this.scene.start();
+        this.hud.log('Three.js 场景加载完成，进入「无限次元城」');
+        // Demo: roll a world event after a short delay.
+        setTimeout(() => this.rollWorldEvent(), 3000);
     }
 
-    getAIEngine(): AIEngine {
-        return this.aiEngine;
+    enterNewDimension(): void {
+        // 1. GameplayCombinerAI picks a combination
+        const suggestion = this.ai.gameplayAI.suggest(this.worldState.player.level);
+        this.hud.log(`玩法组合 AI 决策: 阶段=${suggestion.stage} 主玩法=${suggestion.primary.join('+')}`);
+
+        // 2. Build the GenerationConfig from the suggestion
+        const config = this.ai.gameplayAI.toGenerationConfig(
+            this.worldState.player.level,
+            0,
+            { minAtoms: 2, maxAtoms: 4, rewardMultiplier: 1.0, difficultyRange: [0.3, 0.8] },
+        );
+
+        // 3. AIEngine.generateDimension uses all 4 AIs
+        const dim = this.ai.generateDimension(config);
+        this.currentDim = dim;
+        this.worldState.setActiveDimension(dim.id, dim.atomIds);
+        this.hud.setState({ dimension: dim });
+        this.scene.onDimensionEntered(dim);
+        this.hud.log(`进入次元: ${dim.name} (难度 ${dim.difficulty.toFixed(2)})`);
+        this.hud.log(`生成 art 提示词: ${(dim.theme as any).artPrompt?.slice(0, 60) ?? 'n/a'}…`);
     }
 
-    getDimensionRunner(): DimensionRunner {
-        return this.dimensionRunner;
+    rollWorldEvent(): void {
+        const evt = this.ai.worldAI.rollEvent(this.worldState.player.level, 0);
+        if (!evt) return;
+        this.hud.setState({ worldEvent: evt });
+        this.hud.log(`世界 AI 事件: ${evt.name} — ${evt.description}`);
+        this.hud.log(`NPC: "${evt.npcLine}"`);
     }
 
-    getGameplayManager(): GameplayManager {
-        return this.gameplayManager;
-    }
-
-    getCurrentDimension(): DimensionBlueprint | null {
-        return this.currentDimension;
+    demoMemeCompile(): void {
+        const memes = ['Fire', 'Speed', 'Create'] as const;
+        const prompt = combineMemes([...memes]);
+        this.hud.log(`[DSL] 准备调用 LLM，prompt 长度 ${prompt.prompt.length}`);
+        // Offline fallback: deterministic rule
+        const rule = compileFallback([...memes]);
+        const dslLine = `On(${rule.event.kind}${rule.event.arg !== undefined ? `, ${rule.event.arg}` : ''}) -> ${rule.actions.map(a => `Apply(${a.kind}${a.args.length ? `, ${a.args.join(', ')}` : ''})`).join(', ')}`;
+        this.hud.log(`[DSL] 离线编译结果: ${dslLine}`);
+        this.hud.log(`[DSL] 引擎 JSON: ${JSON.stringify(toEngineJSON(rule))}`);
     }
 }
 
-export { WorldState } from './world/WorldState';
-export { AIEngine, GenerationConfig, DimensionBlueprint } from './ai/AIEngine';
-export { DimensionRunner, DimensionConfig, DimensionState } from './dimension/DimensionRunner';
-export { GameplayManager, GameplayModule } from './gameplay/GameplayManager';
-export { PlayerProfile } from './player/PlayerProfile';
-export { Wallet, Inventory } from './economy';
+async function bootstrap(): Promise<void> {
+    const canvas = document.getElementById('game-canvas') as HTMLCanvasElement | null;
+    const hudRoot = document.getElementById('hud-root') as HTMLElement | null;
+    if (!canvas || !hudRoot) {
+        console.error('Missing #game-canvas or #hud-root in DOM');
+        return;
+    }
+
+    const app = new App({ canvas, hudRoot });
+    (window as any).__AGI__ = app; // for debugging
+    await app.start();
+
+    // Demo bindings
+    document.getElementById('btn-enter')?.addEventListener('click', () => app.enterNewDimension());
+    document.getElementById('btn-event')?.addEventListener('click', () => app.rollWorldEvent());
+    document.getElementById('btn-dsl')?.addEventListener('click', () => app.demoMemeCompile());
+
+    // Auto-enter the first dimension after 1.5s so the demo is visible.
+    setTimeout(() => app.enterNewDimension(), 1500);
+}
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('DOMContentLoaded', () => { void bootstrap(); });
+}
+
+export { App, bootstrap };
