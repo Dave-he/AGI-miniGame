@@ -9,6 +9,7 @@
 
 import type { DimensionBlueprint } from '../ai/AIEngine';
 import type { WorldEventDraft } from '../ai/SmartWorldAI';
+import type { I18n } from '../i18n/I18n';
 
 export interface HUDState {
     dimension: DimensionBlueprint | null;
@@ -22,10 +23,13 @@ export interface HUDState {
 
 export class HUD {
     private root: HTMLElement;
+    private i18n: I18n;
     private state: HUDState;
+    private langBtn: HTMLButtonElement | null = null;
 
-    constructor(root: HTMLElement) {
+    constructor(root: HTMLElement, i18n: I18n) {
         this.root = root;
+        this.i18n = i18n;
         this.state = {
             dimension: null,
             playerLevel: 1,
@@ -35,6 +39,7 @@ export class HUD {
             worldEvent: null,
             logLines: [],
         };
+        this.i18n.onChange(() => this.render());
         this.render();
     }
 
@@ -59,29 +64,43 @@ export class HUD {
         const evtName = evt ? `${evt.isPositive ? '🟢' : '🔴'} ${evt.name}` : '—';
 
         const logText = s.logLines.length === 0
-            ? '<div class="hud-log-empty">等待事件…</div>'
+            ? `<div class="hud-log-empty">${escapeHtml(this.i18n.t('hud.console'))} …</div>`
             : s.logLines.map(l => `<div class="hud-log-line">${escapeHtml(l)}</div>`).join('');
+
+        const otherLocale: 'zh-CN' | 'en-US' = this.i18n.getLocale() === 'zh-CN' ? 'en-US' : 'zh-CN';
+        const langLabel = this.i18n.getLocale() === 'zh-CN' ? 'EN' : '中';
 
         this.root.innerHTML = `
             <div class="hud-panel hud-stats">
-                <div class="hud-title">AGI · 实时数据</div>
-                <div class="hud-row"><span>Lv</span><b>${s.playerLevel}</b></div>
-                <div class="hud-row"><span>Gold</span><b>${s.gold}</b></div>
-                <div class="hud-row"><span>Gem</span><b>${s.gem}</b></div>
+                <div class="hud-title-row">
+                    <span class="hud-title">${escapeHtml(this.i18n.t('hud.stats'))}</span>
+                    <button class="hud-lang" type="button" data-locale="${otherLocale}">${langLabel}</button>
+                </div>
+                <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.level'))}</span><b>${s.playerLevel}</b></div>
+                <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gold'))}</span><b>${s.gold}</b></div>
+                <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gem'))}</span><b>${s.gem}</b></div>
                 <div class="hud-row"><span>Score</span><b>${s.score}</b></div>
             </div>
             <div class="hud-panel hud-dim">
-                <div class="hud-title">当前次元</div>
+                <div class="hud-title">${escapeHtml(this.i18n.t('hud.dim'))}</div>
                 <div class="hud-dim-name">${escapeHtml(dimName)}</div>
                 <div class="hud-row"><span>玩法</span><b>${escapeHtml(dimAtoms)}</b></div>
                 <div class="hud-row"><span>主题</span><b>${escapeHtml(dimTheme)}</b></div>
                 <div class="hud-row"><span>事件</span><b>${escapeHtml(evtName)}</b></div>
             </div>
             <div class="hud-panel hud-log">
-                <div class="hud-title">控制台</div>
+                <div class="hud-title">${escapeHtml(this.i18n.t('hud.console'))}</div>
                 <div class="hud-log-body">${logText}</div>
             </div>
         `;
+
+        this.langBtn = this.root.querySelector<HTMLButtonElement>('.hud-lang');
+        this.langBtn?.addEventListener('click', () => {
+            const target = this.langBtn?.getAttribute('data-locale');
+            if (target === 'zh-CN' || target === 'en-US') {
+                this.i18n.setLocale(target);
+            }
+        });
     }
 }
 

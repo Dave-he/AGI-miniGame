@@ -20,6 +20,7 @@
 
 import { SceneManager } from './scene/SceneManager';
 import { HUD } from './ui/HUD';
+import { I18n } from './i18n/I18n';
 import { ProgressionUI } from './ui/ProgressionUI';
 import { EconomyPanel } from './ui/EconomyPanel';
 import { EpochPanel } from './ui/EpochPanel';
@@ -47,6 +48,7 @@ interface AppRefs {
 
 class App {
     private scene: SceneManager;
+    private i18n: I18n;
     private hud: HUD;
     private progUI: ProgressionUI;
     private economy: EconomyPanel;
@@ -72,7 +74,8 @@ class App {
 
     constructor(refs: AppRefs) {
         this.scene = new SceneManager(refs.canvas);
-        this.hud = new HUD(refs.hudRoot);
+        this.i18n = new I18n();
+        this.hud = new HUD(refs.hudRoot, this.i18n);
         this.worldState = new WorldState('local-player', '次元旅者');
         this.progression = new Progression();
         this.epoch = new EpochSystem(Date.now());
