@@ -1,0 +1,164 @@
+/**
+ * I18n — minimal bilingual (zh-CN / en-US) catalog with a tiny
+ * interpolation helper.
+ *
+ * The catalog is intentionally compact: HUD labels, tutorial copy,
+ * NPC dialogue topics, save/load errors, and a handful of error
+ * messages. Anything not in the catalog falls back to the key, so
+ * this module never throws and never silently returns the wrong
+ * language.
+ *
+ * Default language is auto-detected from `navigator.language`. The
+ * active language is stored in localStorage so the player's choice
+ * (or the first-run auto-detect) is preserved across sessions.
+ */
+
+export type Locale = 'zh-CN' | 'en-US';
+
+export const CATALOG: Record<Locale, Record<string, string>> = {
+    'zh-CN': {
+        'app.title':             'AGI-miniGame · 无限次元城',
+        'app.tagline':           '基于玩家行为与实时生成的游戏元宇宙引擎',
+
+        'hud.stats':             '玩家数据',
+        'hud.dim':               '当前次元',
+        'hud.console':           '控制台',
+        'hud.level':             '等级',
+        'hud.gold':              '金币',
+        'hud.gem':               '钻石',
+        'hud.energy':            '体力',
+
+        'epoch.title':           '纪元',
+        'epoch.collapse':        '触发大坍缩',
+        'epoch.next':            '进入纪元 {n}',
+
+        'tut.step':              '第 {n} 步',
+        'tut.remaining':         '剩余 {n} 步',
+        'tut.skip':              '跳过教程',
+        'tut.complete':          '教程完成！',
+
+        'inv.title':             '背包',
+        'inv.empty':             '背包空空如也',
+        'inv.use':               '使用',
+        'inv.drop':              '丢弃',
+
+        'scene.enter':           '进入次元',
+        'scene.event':           '世界事件',
+        'scene.dsl':             '模因→DSL',
+        'scene.collapse':        '大坍缩',
+        'scene.complete':        '完成试炼',
+        'scene.save':            '存档',
+        'scene.load':            '读档',
+        'scene.talk':            '对话',
+
+        'npc.greeting':          '你好',
+        'npc.farewell':          '再见',
+
+        'audio.mute':            '静音',
+        'audio.unmute':          '取消静音',
+
+        'sys.save.ok':           '存档已保存',
+        'sys.save.fail':         '存档保存失败',
+        'sys.load.ok':           '读档成功',
+        'sys.load.empty':        '没有可恢复的存档',
+    },
+    'en-US': {
+        'app.title':             'AGI-miniGame · Infinite Dimensional City',
+        'app.tagline':           'A behaviour-driven real-time game multiverse',
+
+        'hud.stats':             'Player',
+        'hud.dim':               'Current Dimension',
+        'hud.console':           'Console',
+        'hud.level':             'Lv',
+        'hud.gold':              'Gold',
+        'hud.gem':               'Gem',
+        'hud.energy':            'Energy',
+
+        'epoch.title':           'Epoch',
+        'epoch.collapse':        'Trigger the Great Collapse',
+        'epoch.next':            'Enter Epoch {n}',
+
+        'tut.step':              'Step {n}',
+        'tut.remaining':         '{n} steps left',
+        'tut.skip':              'Skip tutorial',
+        'tut.complete':          'Tutorial complete!',
+
+        'inv.title':             'Inventory',
+        'inv.empty':             'Empty',
+        'inv.use':               'Use',
+        'inv.drop':              'Drop',
+
+        'scene.enter':           'Enter dimension',
+        'scene.event':           'World event',
+        'scene.dsl':             'Meme → DSL',
+        'scene.collapse':        'Collapse',
+        'scene.complete':        'Complete run',
+        'scene.save':            'Save',
+        'scene.load':            'Load',
+        'scene.talk':            'Talk',
+
+        'npc.greeting':          'Hello',
+        'npc.farewell':          'Goodbye',
+
+        'audio.mute':            'Mute',
+        'audio.unmute':          'Unmute',
+
+        'sys.save.ok':           'Save successful',
+        'sys.save.fail':         'Save failed',
+        'sys.load.ok':           'Save loaded',
+        'sys.load.empty':        'No save to load',
+    },
+};
+
+const STORAGE_KEY = 'agi_locale';
+
+function detect(): Locale {
+    if (typeof navigator === 'undefined') return 'zh-CN';
+    const lang = (navigator.language || '').toLowerCase();
+    if (lang.startsWith('en')) return 'en-US';
+    return 'zh-CN';
+}
+
+export class I18n {
+    private locale: Locale;
+    private listeners: Array<(l: Locale) => void> = [];
+
+    constructor() {
+        if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored === 'zh-CN' || stored === 'en-US') {
+                this.locale = stored;
+            } else {
+                this.locale = detect();
+            }
+        } else {
+            this.locale = 'zh-CN';
+        }
+    }
+
+    getLocale(): Locale { return this.locale; }
+
+    setLocale(l: Locale): void {
+        if (this.locale === l) return;
+        this.locale = l;
+        if (typeof localStorage !== 'undefined') {
+            try { localStorage.setItem(STORAGE_KEY, l); } catch { /* noop */ }
+        }
+        for (const fn of this.listeners) fn(l);
+    }
+
+    /** Subscribe to locale changes. */
+    onChange(fn: (l: Locale) => void): () => void {
+        this.listeners.push(fn);
+        return () => { this.listeners = this.listeners.filter(l => l !== fn); };
+    }
+
+    /** Resolve a key to the current locale's string. Falls back to en-US, then to the key. */
+    t(key: string, params?: Record<string, string | number>): string {
+        const cur = CATALOG[this.locale][key]
+            ?? CATALOG['en-US'][key]
+            ?? key;
+        if (!params) return cur;
+        return cur.replace(/\{(\w+)\}/g, (_m, k) => String(params[k] ?? `{${k}}`));
+    }
+}

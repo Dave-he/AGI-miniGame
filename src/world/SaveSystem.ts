@@ -26,7 +26,7 @@ export interface SaveSnapshot {
     aiLastSessions: Array<{ dimensionId: string; difficulty: number; score: number; completed: boolean; ts: number }>;
 }
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 export const AUTO_SAVE_INTERVAL_MS = 30_000;
 export const SAVE_KEY = 'agi_world_save';
 
