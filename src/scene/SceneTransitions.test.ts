@@ -37,7 +37,7 @@ describe('SceneTransitions', () => {
         expect(trans.getPhase()).toBe('fading-out');
         expect(events[0]).toBe('fading-out');
         // Wait long enough for fade-out + hub hold + fade-in to complete.
-        await new Promise(r => setTimeout(r, 30));
+        await new Promise(r => setTimeout(r, 80));
         expect(trans.getPhase()).toBe('in-dimension');
         expect(events).toContain('in-hub');
         expect(events).toContain('fading-in');
@@ -47,7 +47,7 @@ describe('SceneTransitions', () => {
     test('enterNextDimension selects atoms from the manifest', async () => {
         const { trans } = make();
         trans.returnToHub();
-        await new Promise(r => setTimeout(r, 30));
+        await new Promise(r => setTimeout(r, 80));
         const phase = trans.getPhase();
         expect(['in-dimension', 'fading-in']).toContain(phase);
     });

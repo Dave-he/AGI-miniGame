@@ -46,6 +46,7 @@ export class SceneManager {
     private floats: any[] = [];
     private dungeon: any[] = [];
     private npcs: any[] = [];
+    private avatar: { group: any; body: any; dir: any; aura: any; lastPulse: number } | null = null;
     private rafHandle: number | null = null;
     private resizeHandler: () => void;
     private activeAtomId: string | null = null;
@@ -218,6 +219,89 @@ export class SceneManager {
         this.camera.position.x = Math.max(-maxR, Math.min(maxR, x));
         this.camera.position.z = Math.max(-maxR, Math.min(maxR, z));
         this.camera.lookAt(0, 4, 0);
+    }
+
+    /**
+     * Spawn (or update) a player avatar in the world. A glowing capsule
+     * with a small directional indicator on top. The avatar is positioned
+     * at the camera so the player always sees their character.
+     */
+    spawnPlayerAvatar(): void {
+        if (!this.scene) return;
+        const THREE = this.THREE;
+        if (!THREE) return;
+
+        if (this.avatar) {
+            // Already exists — re-position to current camera.
+            this.updateAvatarPosition();
+            return;
+        }
+
+        const group = new THREE.Group();
+
+        // Body
+        const bodyGeo = new THREE.CapsuleGeometry(0.5, 1.0, 4, 8);
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color: 0x4ecdc4,
+            emissive: 0x4ecdc4,
+            emissiveIntensity: 0.7,
+            metalness: 0.4,
+            roughness: 0.4,
+        });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 1.0;
+        group.add(body);
+
+        // Direction indicator (small forward-pointing cone)
+        const dirGeo = new THREE.ConeGeometry(0.2, 0.5, 6);
+        const dirMat = new THREE.MeshStandardMaterial({
+            color: 0xffd166,
+            emissive: 0xffd166,
+            emissiveIntensity: 0.8,
+        });
+        const dir = new THREE.Mesh(dirGeo, dirMat);
+        dir.position.set(0, 1.6, 0.5);
+        dir.rotation.x = -Math.PI / 2;
+        group.add(dir);
+
+        // Aura ring (a flat torus that pulses)
+        const auraGeo = new THREE.TorusGeometry(0.7, 0.05, 8, 24);
+        const auraMat = new THREE.MeshBasicMaterial({
+            color: 0xa06cd5,
+            transparent: true,
+            opacity: 0.6,
+        });
+        const aura = new THREE.Mesh(auraGeo, auraMat);
+        aura.rotation.x = -Math.PI / 2;
+        aura.position.y = 0.05;
+        group.add(aura);
+
+        this.scene.add(group);
+        this.avatar = { group, body, dir, aura, lastPulse: 0 };
+        this.updateAvatarPosition();
+    }
+
+    /** Update the avatar's world position from the camera. */
+    updateAvatarPosition(): void {
+        if (!this.avatar || !this.camera) return;
+        const p = this.camera.position;
+        this.avatar.group.position.set(p.x, 0, p.z);
+        // Face the same direction the camera looks (toward origin).
+        const dx = -p.x, dz = -p.z;
+        this.avatar.group.rotation.y = Math.atan2(dx, dz);
+    }
+
+    /** Pulse the avatar's aura ring (called from the tick). */
+    pulseAvatar(now: number): void {
+        if (!this.avatar) return;
+        if (now - this.avatar.lastPulse < 100) return;
+        this.avatar.lastPulse = now;
+        const s = 1 + Math.sin(now * 0.005) * 0.1;
+        this.avatar.aura.scale.set(s, s, 1);
+        const mat = this.avatar.aura.material as any;
+        if (mat && 'opacity' in mat) {
+            mat.opacity = 0.4 + Math.sin(now * 0.005) * 0.3;
+        }
     }
 
     /**
@@ -486,6 +570,10 @@ export class SceneManager {
         this.camera.lookAt(0, 4, 0);
 
         this.fadeOldSpawned();
+        if (this.avatar) {
+            this.updateAvatarPosition();
+            this.pulseAvatar(performance.now());
+        }
         this.renderer.render(this.scene, this.camera);
         this.rafHandle = requestAnimationFrame(this.tick);
     };
