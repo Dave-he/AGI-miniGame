@@ -191,6 +191,36 @@ export class SceneManager {
     }
 
     /**
+     * Move the camera in the hub by (dx, dy) in world units. Clamps
+     * to a comfortable orbit radius so the player can't fly out.
+     */
+    moveCamera(dx: number, dz: number): void {
+        if (!this.camera) return;
+        const maxR = 18;
+        this.camera.position.x = Math.max(-maxR, Math.min(maxR, this.camera.position.x + dx));
+        this.camera.position.z = Math.max(-maxR, Math.min(maxR, this.camera.position.z + dz));
+        this.camera.lookAt(0, 4, 0);
+    }
+
+    /**
+     * Camera position helper (used by the click-to-move controller).
+     */
+    cameraPosition(): { x: number; y: number; z: number } {
+        return this.camera ? { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z } : { x: 0, y: 0, z: 0 };
+    }
+
+    /**
+     * Move camera to a world position (used when clicking a portal/NPC).
+     */
+    moveCameraTo(x: number, z: number): void {
+        if (!this.camera) return;
+        const maxR = 18;
+        this.camera.position.x = Math.max(-maxR, Math.min(maxR, x));
+        this.camera.position.z = Math.max(-maxR, Math.min(maxR, z));
+        this.camera.lookAt(0, 4, 0);
+    }
+
+    /**
      * Spawn an NPC entity (capsule + name sprite + dialogue bubble).
      * The bubble is hidden by default; call `setNpcDialogue(id, text)`
      * to show a one-liner above the NPC's head.

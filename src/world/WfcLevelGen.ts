@@ -31,6 +31,8 @@ export const TILE_DOOR:  TileId = 2;
 export const TILE_CHEST: TileId = 3;
 export const TILE_SPAWN: TileId = 4;
 export const TILE_GOAL:  TileId = 5;
+export const TILE_TRAP:  TileId = 6;
+export const TILE_SHRINE:TileId = 7;
 
 export const DEFAULT_TILES: TileDefinition[] = [
     { id: TILE_FLOOR, name: 'floor', weight: 6, walkable: true,  color: '#1d2840', height: 0.1,
@@ -63,6 +65,16 @@ export const DEFAULT_TILES: TileDefinition[] = [
                 [TILE_FLOOR, TILE_GOAL],
                 [TILE_FLOOR, TILE_GOAL],
                 [TILE_FLOOR, TILE_GOAL]] },
+    { id: TILE_TRAP,  name: 'trap',  weight: 1, walkable: true,  color: '#ff4d4d', height: 0.15,
+      allowed: [[TILE_FLOOR, TILE_TRAP],
+                [TILE_FLOOR, TILE_TRAP],
+                [TILE_FLOOR, TILE_TRAP],
+                [TILE_FLOOR, TILE_TRAP]] },
+    { id: TILE_SHRINE,name: 'shrine',weight: 1, walkable: true,  color: '#9c89ff', height: 1.2,
+      allowed: [[TILE_FLOOR, TILE_SHRINE, TILE_WALL],
+                [TILE_FLOOR, TILE_SHRINE, TILE_WALL],
+                [TILE_FLOOR, TILE_SHRINE, TILE_WALL],
+                [TILE_FLOOR, TILE_SHRINE, TILE_WALL]] },
 ];
 
 export type WfcCell = {
