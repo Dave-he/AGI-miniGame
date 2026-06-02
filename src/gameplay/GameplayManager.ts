@@ -217,48 +217,6 @@ export class TowerModule implements GameplayModule {
     }
 }
 
-export class CardModule implements GameplayModule {
-    id = 'card';
-    name = '卡牌';
-    
-    private score: number = 0;
-    private hand: string[] = [];
-    private deck: string[] = [];
-    private mana: number = 3;
-
-    async load(): Promise<void> {
-        this.score = 0;
-        this.hand = [];
-        this.deck = ['fireball', 'heal', 'shield', 'attack', 'attack'];
-        this.mana = 3;
-        this.drawCards(3);
-    }
-
-    update(dt: number): void {}
-    pause(): void {}
-    resume(): void {}
-    unload(): void {}
-    getScore(): number { return this.score; }
-
-    drawCards(count: number): void {
-        for (let i = 0; i < count; i++) {
-            if (this.deck.length > 0 && this.hand.length < 8) {
-                this.hand.push(this.deck.pop()!);
-            }
-        }
-    }
-
-    playCard(cardIndex: number, cost: number): boolean {
-        if (this.mana >= cost && cardIndex < this.hand.length) {
-            this.mana -= cost;
-            this.hand.splice(cardIndex, 1);
-            this.score += 50;
-            return true;
-        }
-        return false;
-    }
-}
-
 export class ParkourModule implements GameplayModule {
     id = 'parkour';
     name = '跑酷';
@@ -296,7 +254,7 @@ export class ParkourModule implements GameplayModule {
 export class PuzzleModule implements GameplayModule {
     id = 'puzzle';
     name = '解谜';
-    
+
     private score: number = 0;
     private moves: number = 0;
     private solved: boolean = false;
@@ -321,5 +279,259 @@ export class PuzzleModule implements GameplayModule {
         this.solved = true;
         const bonus = Math.max(100 - this.moves * 2, 10);
         this.score += bonus;
+    }
+}
+
+export type SynthesisTier = 1 | 2 | 3 | 4 | 5;
+export type SynthesisItemKind = 'wood' | 'stone' | 'iron' | 'crystal' | 'fire' | 'water' | 'life' | 'shadow' | 'light';
+
+export interface SynthesisItem {
+    id: string;
+    name: string;
+    kind: SynthesisItemKind;
+    tier: SynthesisTier;
+}
+
+const SYNTHESIS_RECIPES: Record<string, { name: string; tier: SynthesisTier; kind: SynthesisItemKind }> = {
+    // tier-1 → tier-2
+    'wood+stone':  { name: '石斧',   tier: 2, kind: 'iron' },
+    'wood+wood':   { name: '木棒',   tier: 2, kind: 'wood' },
+    'stone+stone': { name: '石砖',   tier: 2, kind: 'stone' },
+    'water+water': { name: '冰晶',   tier: 2, kind: 'crystal' },
+    // tier-2 → tier-3
+    'iron+iron':   { name: '钢锭',   tier: 3, kind: 'iron' },
+    'iron+fire':   { name: '熔岩剑', tier: 3, kind: 'fire' },
+    'life+water':  { name: '生命水', tier: 3, kind: 'life' },
+    'crystal+crystal': { name: '能量核心', tier: 3, kind: 'crystal' },
+    // tier-3 → tier-4
+    'crystal+fire':   { name: '等离子宝石', tier: 4, kind: 'crystal' },
+    'shadow+light':   { name: '黄昏宝珠',   tier: 4, kind: 'shadow' },
+    'life+life':      { name: '精灵之心',   tier: 4, kind: 'life' },
+    // tier-4 → tier-5
+    'crystal+life+fire': { name: '创世碎片', tier: 5, kind: 'crystal' },
+};
+
+/**
+ * SynthesisModule — merge two items of compatible kinds to produce a
+ * higher-tier item. Implements the PRD §2.2.A "合成" gameplay atom.
+ *
+ * Score = sum of resulting item tiers × 100; bonuses for cross-kind
+ * synthesis (fire + water > fire + fire).
+ */
+export class SynthesisModule implements GameplayModule {
+    id = 'synthesis';
+    name = '合成';
+    private score: number = 0;
+    private items: SynthesisItem[] = [];
+    private combo: number = 0;
+    private bestTier: SynthesisTier = 1;
+
+    async load(): Promise<void> {
+        this.score = 0;
+        this.items = [
+            this.makeItem('wood',   1),
+            this.makeItem('wood',   1),
+            this.makeItem('stone',  1),
+            this.makeItem('iron',   2),
+            this.makeItem('crystal',3),
+            this.makeItem('life',   2),
+        ];
+        this.combo = 0;
+        this.bestTier = 1;
+    }
+
+    update(_dt: number): void {}
+    pause(): void {}
+    resume(): void {}
+    unload(): void {}
+    getScore(): number { return this.score; }
+
+    getItems(): SynthesisItem[] { return [...this.items]; }
+    getBestTier(): SynthesisTier { return this.bestTier; }
+    getCombo(): number { return this.combo; }
+
+    /**
+     * Try to merge two items. Returns the produced item on success or
+     * null if the recipe is unknown. Consumes the inputs in either case.
+     */
+    merge(a: SynthesisItem, b: SynthesisItem): SynthesisItem | null {
+        const aIdx = this.items.findIndex(i => i === a);
+        const bIdx = this.items.findIndex(i => i === b);
+        if (aIdx < 0 || bIdx < 0) return null;
+        // remove higher index first so the lower index stays valid
+        const [hi, lo] = aIdx > bIdx ? [aIdx, bIdx] : [bIdx, aIdx];
+        this.items.splice(hi, 1);
+        this.items.splice(lo, 1);
+
+        const key1 = `${a.kind}+${b.kind}`;
+        const key2 = `${b.kind}+${a.kind}`;
+        const recipe = SYNTHESIS_RECIPES[key1] ?? SYNTHESIS_RECIPES[key2];
+        if (!recipe) {
+            // Failed merge: -5 score, reset combo
+            this.score = Math.max(0, this.score - 5);
+            this.combo = 0;
+            return null;
+        }
+        const produced: SynthesisItem = this.makeItem(recipe.kind, recipe.tier, recipe.name);
+        this.items.push(produced);
+        this.score += recipe.tier * 100;
+        this.bestTier = Math.max(this.bestTier, recipe.tier) as SynthesisTier;
+        this.combo += 1;
+        // Cross-kind bonus
+        if (a.kind !== b.kind) this.score += 50;
+        return produced;
+    }
+
+    private makeItem(kind: SynthesisItemKind, tier: SynthesisTier, name?: string): SynthesisItem {
+        return {
+            id: `${kind}_${tier}_${Math.random().toString(36).slice(2, 7)}`,
+            name: name ?? this.defaultName(kind, tier),
+            kind,
+            tier,
+        };
+    }
+
+    private defaultName(kind: SynthesisItemKind, tier: SynthesisTier): string {
+        const tierName = ['', '碎片', '粗坯', '成品', '精品', '传说'][tier];
+        const kindName: Record<SynthesisItemKind, string> = {
+            wood: '木材', stone: '石材', iron: '铁块', crystal: '水晶',
+            fire: '火焰', water: '清水', life: '生命', shadow: '暗影', light: '光辉',
+        };
+        return `${tierName}${kindName[kind]}`;
+    }
+}
+
+export type CardElement = 'fire' | 'water' | 'wind' | 'earth' | 'light' | 'shadow';
+export type CardRarity = 'common' | 'rare' | 'epic' | 'legendary';
+
+export interface CardDef {
+    id: string;
+    name: string;
+    cost: number;
+    element: CardElement;
+    rarity: CardRarity;
+    damage: number;
+    shield: number;
+    heal: number;
+    draw: number;
+}
+
+const STARTER_DECK: CardDef[] = [
+    { id: 'strike',  name: '打击',   cost: 1, element: 'earth', rarity: 'common',    damage: 6,  shield: 0, heal: 0, draw: 0 },
+    { id: 'defend',  name: '防御',   cost: 1, element: 'earth', rarity: 'common',    damage: 0,  shield: 5, heal: 0, draw: 0 },
+    { id: 'heal',    name: '治疗',   cost: 2, element: 'water', rarity: 'common',    damage: 0,  shield: 0, heal: 8, draw: 0 },
+    { id: 'fireball',name: '火球',   cost: 3, element: 'fire',  rarity: 'rare',      damage: 16, shield: 0, heal: 0, draw: 0 },
+    { id: 'draw',    name: '抽牌',   cost: 1, element: 'wind',  rarity: 'common',    damage: 0,  shield: 0, heal: 0, draw: 2 },
+    { id: 'cleave',  name: '顺劈',   cost: 2, element: 'earth', rarity: 'common',    damage: 10, shield: 0, heal: 0, draw: 0 },
+    { id: 'barrier', name: '壁垒',   cost: 2, element: 'light', rarity: 'rare',      damage: 0,  shield: 12,heal: 0, draw: 0 },
+    { id: 'tsunami', name: '海啸',   cost: 4, element: 'water', rarity: 'epic',      damage: 18, shield: 0, heal: 4, draw: 0 },
+    { id: 'meteor',  name: '陨石',   cost: 5, element: 'fire',  rarity: 'legendary', damage: 28, shield: 0, heal: 0, draw: 0 },
+];
+
+/**
+ * CardModule — implements a real deck-builder with energy, draw, and
+ * per-card effects (damage / shield / heal / draw). Replaces the
+ * earlier stub that just played cards for +50 score.
+ */
+export class CardModule implements GameplayModule {
+    id = 'card';
+    name = '卡牌';
+
+    private score: number = 0;
+    private deck: CardDef[] = [];
+    private hand: CardDef[] = [];
+    private discard: CardDef[] = [];
+    private maxHand: number = 6;
+    private energy: number = 3;
+    private maxEnergy: number = 3;
+    private energyRegen: number = 3;
+    private turn: number = 0;
+    private enemyHp: number = 50;
+
+    async load(): Promise<void> {
+        this.score = 0;
+        this.deck = STARTER_DECK.flatMap(c => [c, c, c, c]); // 4 of each
+        this.hand = [];
+        this.discard = [];
+        this.energy = this.maxEnergy;
+        this.turn = 0;
+        this.enemyHp = 50;
+        this.draw(this.maxHand);
+    }
+
+    update(_dt: number): void {}
+    pause(): void {}
+    resume(): void {}
+    unload(): void {}
+    getScore(): number { return this.score; }
+
+    getHand(): CardDef[] { return [...this.hand]; }
+    getEnergy(): number { return this.energy; }
+    getTurn(): number { return this.turn; }
+    getEnemyHp(): number { return this.enemyHp; }
+    isEnemyAlive(): boolean { return this.enemyHp > 0; }
+
+    private draw(count: number): void {
+        for (let i = 0; i < count; i++) {
+            if (this.hand.length >= this.maxHand) return;
+            if (this.deck.length === 0) {
+                this.deck = this.discard;
+                this.discard = [];
+                this.shuffle();
+            }
+            const c = this.deck.pop();
+            if (c) this.hand.push(c);
+        }
+    }
+
+    private shuffle(): void {
+        for (let i = this.deck.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
+        }
+    }
+
+    playCard(idx: number): { ok: boolean; log: string[] } {
+        const log: string[] = [];
+        if (idx < 0 || idx >= this.hand.length) {
+            return { ok: false, log: ['无效的手牌索引'] };
+        }
+        const card = this.hand[idx];
+        if (this.energy < card.cost) {
+            return { ok: false, log: [`能量不足 (${this.energy}/${card.cost})`] };
+        }
+        this.energy -= card.cost;
+        this.hand.splice(idx, 1);
+        this.discard.push(card);
+
+        if (card.damage > 0) {
+            this.enemyHp = Math.max(0, this.enemyHp - card.damage);
+            this.score += card.damage * 2;
+            log.push(`${card.name} 造成 ${card.damage} 点伤害`);
+        }
+        if (card.shield > 0) {
+            this.score += card.shield;
+            log.push(`${card.name} 提供了 ${card.shield} 点护盾`);
+        }
+        if (card.heal > 0) {
+            this.score += card.heal * 3;
+            log.push(`${card.name} 回复了 ${card.heal} 点生命`);
+        }
+        if (card.draw > 0) {
+            this.draw(card.draw);
+            log.push(`${card.name} 抽了 ${card.draw} 张牌`);
+        }
+        return { ok: true, log };
+    }
+
+    endTurn(): void {
+        this.turn += 1;
+        this.energy = Math.min(this.maxEnergy, this.energy + this.energyRegen);
+        // Discard the hand
+        this.discard.push(...this.hand);
+        this.hand = [];
+        this.draw(this.maxHand);
+        // Enemy "counterattacks" for 4 damage
+        this.enemyHp = Math.min(50, this.enemyHp + 2); // small regen
     }
 }

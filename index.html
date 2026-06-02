@@ -12,6 +12,7 @@
         --neon-pink: #ff66cc;
         --neon-violet: #a06cd5;
         --neon-cyan: #4ecdc4;
+        --neon-yellow: #ffd166;
         --text-0: #e6e8ff;
         --text-1: #9da3c4;
       }
@@ -24,65 +25,156 @@
         overflow: hidden;
       }
       #game-canvas { display: block; width: 100vw; height: 100vh; }
-      #hud-root { position: fixed; inset: 0; pointer-events: none; }
+      .panel { position: fixed; pointer-events: none; }
+      .panel > * { pointer-events: auto; }
+
+      #hud-root { top: 0; right: 0; width: 360px; max-height: 100vh; }
+      #hud-root .hud-panel { position: relative; margin: 8px; }
+      #hud-root .hud-stats { top: 0; left: auto; right: 0; }
+      #hud-root .hud-dim { top: auto; right: 0; left: auto; bottom: auto; }
+
+      #progression-root {
+        left: 0; bottom: 0; width: 380px; max-height: 38vh; overflow: auto;
+        background: rgba(11, 11, 34, 0.78); border-right: 1px solid rgba(160, 108, 213, 0.45);
+        border-top: 1px solid rgba(160, 108, 213, 0.45);
+        padding: 10px; backdrop-filter: blur(8px);
+        box-shadow: 0 0 24px rgba(160, 108, 213, 0.18);
+      }
+      #economy-root {
+        left: 0; top: 0; width: 240px; max-height: 100vh; overflow: auto;
+        background: rgba(11, 11, 34, 0.78); border-right: 1px solid rgba(160, 108, 213, 0.45);
+        border-bottom: 1px solid rgba(160, 108, 213, 0.45);
+        padding: 10px; backdrop-filter: blur(8px);
+      }
+      #epoch-root {
+        right: 0; bottom: 0; width: 320px; max-height: 36vh; overflow: auto;
+        background: rgba(11, 11, 34, 0.78); border-left: 1px solid rgba(160, 108, 213, 0.45);
+        border-top: 1px solid rgba(160, 108, 213, 0.45);
+        padding: 10px; backdrop-filter: blur(8px);
+      }
+
+      /* progression */
+      .prog-panel { margin-bottom: 8px; }
+      .prog-title { font-size: 11px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+      .prog-row { display: flex; align-items: center; gap: 8px; }
+      .prog-level { font-size: 22px; color: var(--neon-pink); }
+      .prog-bar { width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; margin: 6px 0; overflow: hidden; }
+      .prog-bar-fill { height: 100%; background: linear-gradient(90deg, var(--neon-violet), var(--neon-pink)); transition: width 200ms; }
+      .prog-points { color: var(--text-1); font-size: 11px; }
+      .prog-talents { margin-top: 8px; max-height: 26vh; overflow: auto; }
+      .prog-talent {
+        padding: 6px 8px; border-radius: 6px; margin: 4px 0;
+        background: rgba(255,255,255,0.04); border: 1px solid rgba(160, 108, 213, 0.2);
+        font-size: 12px; line-height: 1.4;
+      }
+      .prog-talent.is-learned { opacity: 0.5; }
+      .prog-talent.is-available { cursor: pointer; border-color: var(--neon-cyan); }
+      .prog-talent-head { display: flex; justify-content: space-between; }
+      .prog-talent-cost { color: var(--neon-yellow); font-size: 10px; }
+      .prog-talent-desc { color: var(--text-1); font-size: 11px; }
+      .prog-talent-tag { color: var(--neon-cyan); font-size: 10px; }
+
+      /* economy */
+      .econ-panel .econ-title { font-size: 11px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+      .econ-section-label { font-size: 10px; color: var(--text-1); margin: 6px 0 4px; }
+      .econ-row { display: flex; flex-wrap: wrap; gap: 4px; }
+      .econ-chip { padding: 4px 6px; border-radius: 4px; background: rgba(255,255,255,0.04); border: 1px solid; border-color: var(--chip-color, var(--neon-violet)); font-size: 11px; }
+      .econ-chip-name { color: var(--text-1); margin-right: 4px; }
+      .econ-chip-amt { color: var(--chip-color, var(--neon-violet)); }
+      .econ-inventory { max-height: 18vh; overflow: auto; }
+      .econ-item { display: flex; justify-content: space-between; padding: 2px 0; font-size: 11px; color: var(--text-1); }
+      .econ-item-qty { color: var(--neon-yellow); }
+      .econ-empty { color: var(--text-1); font-style: italic; font-size: 11px; }
+
+      /* epoch */
+      .epoch-panel .epoch-title { font-size: 14px; color: var(--neon-pink); margin-bottom: 4px; }
+      .epoch-stats { display: flex; gap: 12px; font-size: 11px; color: var(--text-1); }
+      .epoch-section-label { font-size: 10px; color: var(--neon-cyan); margin: 8px 0 4px; }
+      .epoch-rules, .epoch-relics { font-size: 11px; max-height: 12vh; overflow: auto; }
+      .epoch-rule { display: flex; gap: 6px; padding: 2px 0; }
+      .epoch-rule-num { color: var(--neon-violet); }
+      .epoch-rule-name { color: var(--text-0); flex: 1; }
+      .epoch-rule-kind { color: var(--neon-yellow); font-size: 10px; }
+      .epoch-relic { display: flex; gap: 6px; padding: 2px 0; }
+      .epoch-relic.buff .epoch-relic-icon { color: var(--neon-cyan); }
+      .epoch-relic.debuff .epoch-relic-icon { color: var(--neon-pink); }
+      .epoch-relic-name { color: var(--text-0); flex: 1; }
+      .epoch-relic-mag { color: var(--neon-yellow); }
+      .epoch-empty { color: var(--text-1); font-style: italic; }
+      .epoch-muls { display: flex; gap: 12px; margin: 8px 0; font-size: 11px; color: var(--neon-cyan); }
+      .epoch-collapse-btn {
+        width: 100%; padding: 8px; border-radius: 6px; border: none;
+        background: linear-gradient(135deg, var(--neon-pink), var(--neon-violet));
+        color: white; font-weight: 600; cursor: pointer; font-size: 12px;
+        box-shadow: 0 0 16px rgba(255, 102, 204, 0.4);
+      }
+      .epoch-collapse-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+
+      /* hud */
       .hud-panel {
-        position: absolute;
-        background: rgba(11, 11, 34, 0.72);
+        background: rgba(11, 11, 34, 0.78);
         border: 1px solid rgba(160, 108, 213, 0.45);
         border-radius: 10px;
         padding: 10px 14px;
         backdrop-filter: blur(8px);
-        pointer-events: auto;
         font-size: 12px;
         line-height: 1.6;
-        box-shadow: 0 0 24px rgba(160, 108, 213, 0.25);
+        box-shadow: 0 0 24px rgba(160, 108, 213, 0.18);
       }
-      .hud-title {
-        font-size: 11px;
-        letter-spacing: 2px;
-        color: var(--neon-cyan);
-        text-transform: uppercase;
-        margin-bottom: 6px;
-      }
-      .hud-stats  { top: 16px; left: 16px; min-width: 180px; }
-      .hud-dim    { top: 16px; right: 16px; min-width: 220px; }
-      .hud-log    { bottom: 16px; right: 16px; width: 360px; max-height: 30vh; }
+      .hud-title { font-size: 11px; letter-spacing: 2px; color: var(--neon-cyan); text-transform: uppercase; margin-bottom: 6px; }
+      .hud-stats  { margin-bottom: 8px; }
       .hud-row { display: flex; justify-content: space-between; }
       .hud-row span { color: var(--text-1); }
       .hud-row b { color: var(--neon-pink); }
-      .hud-dim-name { font-size: 16px; color: var(--neon-blue); margin: 4px 0 8px; font-weight: 600; }
-      .hud-log-body { max-height: 22vh; overflow: auto; }
-      .hud-log-line { color: var(--text-1); font-size: 11px; }
-      .hud-log-empty { color: var(--text-1); font-style: italic; font-size: 11px; }
-      .hud-controls {
-        position: absolute;
-        left: 16px;
-        bottom: 16px;
-        display: flex; gap: 8px;
+      .hud-dim-name { font-size: 14px; color: var(--neon-blue); margin: 4px 0 8px; }
+      .hud-log { max-height: 30vh; overflow: auto; }
+      .hud-log-line { color: var(--text-1); font-size: 10px; }
+      .hud-log-empty { color: var(--text-1); font-style: italic; font-size: 10px; }
+
+      /* controls */
+      .controls {
+        position: fixed;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex; flex-wrap: wrap; gap: 6px;
         pointer-events: auto;
+        z-index: 10;
       }
-      .hud-btn {
+      .ctl {
         background: linear-gradient(135deg, var(--neon-violet), var(--neon-pink));
         color: white;
         border: none;
-        padding: 8px 14px;
-        border-radius: 6px;
-        font-size: 12px;
-        letter-spacing: 1px;
+        padding: 6px 10px;
+        border-radius: 5px;
+        font-size: 11px;
         cursor: pointer;
-        box-shadow: 0 0 16px rgba(255, 102, 204, 0.45);
+        box-shadow: 0 0 12px rgba(255, 102, 204, 0.4);
       }
-      .hud-btn:hover { filter: brightness(1.15); }
+      .ctl:hover { filter: brightness(1.15); }
     </style>
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
-    <div id="hud-root"></div>
-    <div class="hud-controls">
-      <button id="btn-enter" class="hud-btn">进入次元</button>
-      <button id="btn-event" class="hud-btn">触发事件</button>
-      <button id="btn-dsl" class="hud-btn">编译 DSL</button>
+
+    <div class="panel" id="economy-root"></div>
+    <div class="panel" id="progression-root"></div>
+    <div class="panel" id="hud-root"></div>
+    <div class="panel" id="epoch-root"></div>
+
+    <div class="controls">
+      <button class="ctl" id="btn-enter">进入次元</button>
+      <button class="ctl" id="btn-event">世界事件</button>
+      <button class="ctl" id="btn-dsl">模因→DSL</button>
+      <button class="ctl" id="btn-collapse">大坍缩</button>
+      <button class="ctl" id="btn-complete">完成试炼</button>
+      <button class="ctl" id="btn-save">存档</button>
+      <button class="ctl" id="btn-load">读档</button>
+      <button class="ctl" id="btn-npc-0">对话·玄真</button>
+      <button class="ctl" id="btn-npc-1">对话·阿灰</button>
+      <button class="ctl" id="btn-npc-2">对话·小灵</button>
     </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

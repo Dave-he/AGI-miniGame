@@ -44,6 +44,8 @@ export class SceneManager {
     private portals: Array<{ mesh: any; def: PortalDef }> = [];
     private spawned: any[] = [];
     private floats: any[] = [];
+    private dungeon: any[] = [];
+    private npcs: any[] = [];
     private rafHandle: number | null = null;
     private resizeHandler: () => void;
     private activeAtomId: string | null = null;
@@ -189,6 +191,176 @@ export class SceneManager {
     }
 
     /**
+     * Spawn an NPC entity (capsule + name sprite + dialogue bubble).
+     * The bubble is hidden by default; call `setNpcDialogue(id, text)`
+     * to show a one-liner above the NPC's head.
+     */
+    spawnNpc(id: number, name: string, position?: { x: number; y: number; z: number }): void {
+        if (!this.scene) return;
+        const THREE = this.THREE;
+        if (!THREE) return;
+        const palette = [0xff66cc, 0x06d6a0, 0xffd166, 0xa06cd5, 0x4ecdc4];
+        const color = palette[id % palette.length];
+
+        // Body
+        const bodyGeo = new THREE.CapsuleGeometry(0.4, 1.0, 4, 8);
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color,
+            emissive: color,
+            emissiveIntensity: 0.4,
+            metalness: 0.3,
+            roughness: 0.5,
+        });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        const p = position ?? { x: 6 + (Math.random() - 0.5) * 4, y: 0, z: 6 + (Math.random() - 0.5) * 4 };
+        body.position.set(p.x, 1.0, p.z);
+        this.scene.add(body);
+
+        // Name sprite
+        const nameCanvas = document.createElement('canvas');
+        nameCanvas.width = 256; nameCanvas.height = 64;
+        const nctx = nameCanvas.getContext('2d');
+        if (nctx) {
+            nctx.font = 'bold 36px sans-serif';
+            nctx.fillStyle = '#ffffff';
+            nctx.textAlign = 'center';
+            nctx.textBaseline = 'middle';
+            nctx.fillText(name, 128, 32);
+        }
+        const nameTex = new THREE.CanvasTexture(nameCanvas);
+        const nameMat = new THREE.SpriteMaterial({ map: nameTex, transparent: true });
+        const nameSprite = new THREE.Sprite(nameMat);
+        nameSprite.scale.set(2.5, 0.6, 1.0);
+        nameSprite.position.set(p.x, 3.0, p.z);
+        this.scene.add(nameSprite);
+
+        // Dialogue bubble (initially hidden)
+        const bubbleCanvas = document.createElement('canvas');
+        bubbleCanvas.width = 512; bubbleCanvas.height = 128;
+        const bctx = bubbleCanvas.getContext('2d');
+        const bubbleTex = new THREE.CanvasTexture(bubbleCanvas);
+        const bubbleMat = new THREE.SpriteMaterial({ map: bubbleTex, transparent: true, opacity: 0 });
+        const bubble = new THREE.Sprite(bubbleMat);
+        bubble.scale.set(4.0, 1.0, 1.0);
+        bubble.position.set(p.x, 3.8, p.z);
+        this.scene.add(bubble);
+
+        this.npcs.push({ id, name, body, nameSprite, bubble, bubbleCanvas, bctx, color });
+    }
+
+    /** Update the dialogue bubble for a previously-spawned NPC. */
+    setNpcDialogue(id: number, text: string): void {
+        const npc = this.npcs.find(n => n.id === id);
+        if (!npc || !npc.bctx) return;
+        const ctx = npc.bctx;
+        ctx.clearRect(0, 0, npc.bubbleCanvas.width, npc.bubbleCanvas.height);
+        // Background
+        ctx.fillStyle = 'rgba(11, 11, 34, 0.85)';
+        ctx.strokeStyle = '#45b7d1';
+        ctx.lineWidth = 3;
+        const w = npc.bubbleCanvas.width, h = npc.bubbleCanvas.height;
+        ctx.fillRect(4, 4, w - 8, h - 8);
+        ctx.strokeRect(4, 4, w - 8, h - 8);
+        // Text
+        ctx.fillStyle = '#e6e8ff';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Wrap text to 2 lines
+        const words = text.split('');
+        const maxCharsPerLine = 18;
+        const lines: string[] = [];
+        for (let i = 0; i < words.length; i += maxCharsPerLine) {
+            lines.push(words.slice(i, i + maxCharsPerLine).join(''));
+            if (lines.length === 2) break;
+        }
+        for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], w / 2, h / 2 - 18 + i * 36);
+        }
+        const mat = npc.bubble.material as any;
+        if (mat) mat.opacity = 1.0;
+        if (npc.bubble.material.map) (npc.bubble.material.map as any).needsUpdate = true;
+    }
+
+    /** Hide the dialogue bubble for an NPC. */
+    clearNpcDialogue(id: number): void {
+        const npc = this.npcs.find(n => n.id === id);
+        if (!npc) return;
+        const mat = npc.bubble.material as any;
+        if (mat) mat.opacity = 0;
+    }
+
+    /**
+     * Render a 2D WFC dungeon into the scene as a mini-3D grid. Floor
+     * tiles are flat planes, walls are raised boxes, the spawn and goal
+     * get coloured markers. The grid is centred on the origin.
+     */
+    renderWfcDungeon(grid: number[][], tileSize: number = 1.2): void {
+        if (!this.scene) return;
+        const THREE = this.THREE;
+        if (!THREE) return;
+        // Clear previous dungeon
+        for (const obj of this.dungeon) this.scene.remove(obj);
+        this.dungeon = [];
+        if (grid.length === 0) return;
+
+        const w = grid[0].length, h = grid.length;
+        const offX = -w * tileSize / 2;
+        const offZ = -h * tileSize / 2;
+
+        // Tile colours (TILE_* from WfcLevelGen)
+        const tileColors: Record<number, [number, number]> = {
+            0: [0x101030, 0.1],  // floor
+            1: [0x0a0e1d, 2.0],  // wall
+            2: [0xa06cd5, 1.5],  // door
+            3: [0xffd166, 0.6],  // chest
+            4: [0x06d6a0, 0.2],  // spawn
+            5: [0xff66cc, 0.2],  // goal
+        };
+
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const t = grid[y][x];
+                const entry = tileColors[t] ?? tileColors[0];
+                const [color, height] = entry;
+                if (height <= 0.1) {
+                    // Floor plane
+                    const g = new THREE.PlaneGeometry(tileSize, tileSize);
+                    const m = new THREE.MeshStandardMaterial({
+                        color,
+                        emissive: color,
+                        emissiveIntensity: 0.15,
+                        metalness: 0.2,
+                        roughness: 0.6,
+                    });
+                    const mesh = new THREE.Mesh(g, m);
+                    mesh.rotation.x = -Math.PI / 2;
+                    mesh.position.set(offX + x * tileSize, 0, offZ + y * tileSize);
+                    this.scene.add(mesh);
+                    this.dungeon.push(mesh);
+                } else {
+                    // Wall / door / chest
+                    const g = new THREE.BoxGeometry(tileSize, height, tileSize);
+                    const m = new THREE.MeshStandardMaterial({
+                        color,
+                        emissive: color,
+                        emissiveIntensity: t === 4 || t === 5 ? 0.6 : 0.3,
+                        metalness: 0.4,
+                        roughness: 0.4,
+                    });
+                    const mesh = new THREE.Mesh(g, m);
+                    mesh.position.set(offX + x * tileSize, height / 2, offZ + y * tileSize);
+                    if (t === 4 || t === 5) {
+                        mesh.userData = { marker: t === 4 ? 'spawn' : 'goal' };
+                    }
+                    this.scene.add(mesh);
+                    this.dungeon.push(mesh);
+                }
+            }
+        }
+    }
+
+    /**
      * Pop a 3D floating-text mesh into the world. We don't load a font;
      * instead we attach a coloured sprite. For text we'd normally use
      * troika-three-text, but to keep zero external deps we use a small
@@ -300,5 +472,7 @@ export class SceneManager {
         this.portals = [];
         this.spawned = [];
         this.floats = [];
+        this.dungeon = [];
+        this.npcs = [];
     }
 }
