@@ -16,7 +16,9 @@ export type AnalyticsEventKind =
     | 'tutorial.step' | 'tutorial.completed'
     | 'save.persisted' | 'save.loaded'
     | 'feedback.submitted'
-    | 'settings.changed';
+    | 'settings.changed'
+    | 'player.damaged' | 'player.died'
+    | 'replay.started' | 'replay.stopped';
 
 export interface AnalyticsEvent {
     kind: AnalyticsEventKind;
