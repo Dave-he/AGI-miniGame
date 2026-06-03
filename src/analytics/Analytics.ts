@@ -14,7 +14,9 @@ export type AnalyticsEventKind =
     | 'npc.talked'
     | 'item.used' | 'item.dropped'
     | 'tutorial.step' | 'tutorial.completed'
-    | 'save.persisted' | 'save.loaded';
+    | 'save.persisted' | 'save.loaded'
+    | 'feedback.submitted'
+    | 'settings.changed';
 
 export interface AnalyticsEvent {
     kind: AnalyticsEventKind;

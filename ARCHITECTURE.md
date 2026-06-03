@@ -1,8 +1,36 @@
 # AGI-miniGame 技术架构文档
 
-> **版本**: 2026-06-03 — 历经 9 轮迭代后的实现状态。
+> **版本**: 2026-06-04 — 历经 12 轮迭代后的实现状态。
 > **范围**: 描述 `src/` (TypeScript 游戏层) + `src/dsl/*` (Rust WASM DSL)
 > + 镜像到 `cocos4-rust/src/agi_minigame/dsl/*` (引擎层) 的代码。
+
+## 与 9 轮迭代版的差异 (rounds 10-12 新增)
+
+相对 round 9 版本，rounds 10-12 新增了：
+
+- **SettingsPanel** (`src/ui/SettingsPanel.ts`)：音效静音、难度选择
+  (简单/普通/困难)、语言切换。
+- **EngineAtomManifest** (`src/gameplay/EngineAtomManifest.ts`)：6 个
+  cocos4-rust agi_minigame 原子的 TS 端类型化清单，是引擎 ↔ 游戏的
+  契约。
+- **真实 Match3 游戏循环** (`Match3Module.findMatches` + `cascade`)：
+  完整的连锁消除 + 重力 + 重生 + 评分。
+- **WFC 按生物群系渲染**：`SceneManager.renderWfcDungeon(grid, biome?)`，
+  `WfcBiomes` 提供 6 套主题色板。
+- **Match3Bridge** (`src/gameplay/Match3Bridge.ts`)：2D 模块棋盘与 3D
+  立方体网格的双向同步。
+- **StatsPanel 实时刷新** + 1s 间隔 `uptime` 更新。
+- **FeedbackService** (`src/feedback/FeedbackService.ts`)：玩家反馈 →
+  Analytics 事件。
+- **EndlessMode** (`src/world/EndlessMode.ts`)：通关后自动进入下一个
+  次元，难度随 step 递增，可暂停。
+- **EngineTypeBridge** (`src/engine/EngineTypeBridge.ts`)：cocos4-rust
+  `agi_minigame::dsl` AST 的 TS 端类型化映射（含 `toEngineRule` 强制
+  类型守卫）。
+
+## 9 轮迭代版（rounds 6-9）回顾
+
+相对 [PRD §2.4 原始架构](PRD.md)，rounds 6-9 新增了：
 
 ## 与 4 轮迭代版的差异
 
