@@ -35,8 +35,14 @@ import { GameplayManager, SynthesisModule, CardModule } from './gameplay/Gamepla
 import { DslExecutor } from './scene/DslExecutor';
 import { HotReloadController } from './scene/HotReloadController';
 import { SceneTransitions } from './scene/SceneTransitions';
+import { NpcCombat } from './scene/NpcCombat';
 import { generateDungeon, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
+import { TutorialOverlay } from './ui/TutorialOverlay';
+import { WebAudioService, NullAudioService } from './audio/AudioService';
+import { GameAudio } from './audio/GameAudio';
+import { Analytics } from './analytics/Analytics';
+import { HttpLLMClient } from './ai/HttpLLMClient';
 
 interface AppRefs {
     canvas: HTMLCanvasElement;
@@ -44,6 +50,7 @@ interface AppRefs {
     progressionRoot: HTMLElement;
     economyRoot: HTMLElement;
     epochRoot: HTMLElement;
+    tutorialRoot?: HTMLElement;
 }
 
 class App {
@@ -65,6 +72,11 @@ class App {
     private dslExec: DslExecutor;
     private hot: HotReloadController;
     private transitions: SceneTransitions;
+    private tutorial: TutorialOverlay | null = null;
+    private npcCombat: NpcCombat;
+    private audio: GameAudio;
+    private analytics: Analytics;
+    private llm: HttpLLMClient | { complete: typeof HttpLLMClient.prototype.complete } | null = null;
 
     private npcs: NPCProfile[] = [
         { id: 'sage',   name: '玄真道长', personality: 'wise',      faction: '隐者之塔' },
@@ -84,6 +96,33 @@ class App {
         this.npcAI = new NPCDialogueAI(Date.now());
         this.gameplay = new GameplayManager();
         this.bridge = new AIBridge(this.ai, this.gameplay, this.worldState);
+        // Audio: prefer Web Audio when available, otherwise silent stub.
+        this.audio = new GameAudio(
+            (typeof window !== 'undefined' && (window as any).AudioContext)
+                ? new WebAudioService()
+                : new NullAudioService(),
+        );
+        this.analytics = new Analytics();
+        // NpcCombat wired to the scene's NPC dialog methods.
+        this.npcCombat = new NpcCombat({
+            flashNpc: (i) => { this.scene.flashNpc(i); },
+            hideNpc: (i) => { this.scene.hideNpc(i); },
+            floatOverNpc: (i, t, c) => { this.scene.spawnFloatingText(t, c); },
+            setNpcDialogue: (i, t) => this.scene.setNpcDialogue(i, t),
+            clearNpcDialogue: (i) => this.scene.clearNpcDialogue(i),
+        }, {
+            onDefeated: (i, n) => this.hud.log(`${n} 已被击败`),
+            onDamage:    (i, n, d) => this.audio.fire('trap.hit'),
+        });
+        // Real LLM client (falls back to MockLLMClient when no apiKey).
+        this.llm = new HttpLLMClient({
+            baseUrl: 'https://api.openai.com/v1',
+            model: 'gpt-4o-mini',
+            apiKey: '', // empty → mock fallback
+        });
+        if (refs.tutorialRoot) {
+            this.tutorial = new TutorialOverlay(refs.tutorialRoot);
+        }
         this.dslExec = new DslExecutor(this.scene, {
             log: (line) => this.hud.log(line),
             onPlayerDamage: (n) => this.hud.log(`受到 ${n} 点伤害`),
@@ -142,17 +181,25 @@ class App {
         this.hud.log(`进入次元: ${r.blueprint.name}`);
         this.hud.log(`玩法组合: ${r.atomIds.join(' + ')}`);
         this.hud.log(`主题: ${(r.blueprint.theme as any).visualStyle}`);
+        this.audio.fire('dimension.entered');
+        this.analytics.track('dimension.entered', { id: r.blueprint.id });
+        this.tutorial?.notify('dimension-entered');
     }
 
     /** Demo: AGI receives memes and we hot-reload the resulting DSL. */
     async hotReloadFromMemes(memes: Array<'Fire' | 'Speed' | 'Life' | 'Gravity' | 'Shield' | 'Time' | 'Create'>): Promise<void> {
         const prompt = combineMemes(memes);
         this.hud.log(`[AGI] 发送 prompt (${prompt.prompt.length} 字符) → LLM`);
-        // Simulate LLM latency
-        await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
-        const rule = compileFallback(memes);
-        const dsl = `On(${rule.event.kind}${rule.event.arg !== undefined ? `, ${rule.event.arg}` : ''}) -> ${rule.actions.map(a => `Apply(${a.kind}${a.args.length ? `, ${a.args.join(', ')}` : ''})`).join(', ')}`;
-        this.hud.log(`[AGI] 回复 DSL: ${dsl}`);
+        this.analytics.track('dsl.applied', { memes: memes.join('+') });
+        // Call the real LLM (or mock fallback). The HttpLLMClient
+        // falls back to MockLLMClient when apiKey is empty.
+        const completion = await this.llm!.complete({
+            system: 'You are the AGI controlling AGI-miniGame. Emit exactly one DSL line.',
+            user: prompt.prompt,
+            seed: Date.now(),
+        });
+        const dsl = completion.dsl ?? compileFallback(memes).toString();
+        this.hud.log(`[AGI] 回复 DSL: ${dsl} (${completion.provider})`);
         const accepted = this.hot.begin(dsl);
         if (accepted) {
             this.hud.log('[HotReload] 开始编译，护盾激活…');
@@ -165,12 +212,18 @@ class App {
     private unlistenHot?: () => void;
 
     private onHotEvent(ev: { state: string; charge?: number; reason?: string }): void {
+        // Forward to the audio service.
+        if (ev.state === 'applied' || ev.state === 'rejected' || ev.state === 'shielded' || ev.state === 'compiling') {
+            this.audio.fireHotReload(ev.state as 'compiling' | 'shielded' | 'applied' | 'rejected');
+        }
         if (ev.state === 'rejected') this.hud.log(`[HotReload] 拒绝：${ev.reason}`);
         if (ev.state === 'compiling' && typeof ev.charge === 'number' && ev.charge >= 0.99) {
             this.hud.log('[HotReload] 编译完成，应用规则…');
         }
         if (ev.state === 'applied') {
             this.hud.log('[HotReload] 规则已生效，世界突变！');
+            this.analytics.track('dsl.applied');
+            this.tutorial?.notify('hot-reload-applied');
             this.epoch.addRule({
                 id: `dsl_${Date.now()}`,
                 name: 'AGI 突变',
@@ -208,13 +261,20 @@ class App {
 
     /** Player gains XP from a dimension run. */
     completeRun(score: number, rewards: Array<{ itemId: string; quantity: number }>): void {
+        const before = this.progression.level;
         this.progUI.applyXp(Math.floor(score / 10));
+        if (this.progression.level > before) {
+            this.audio.fire('level.up');
+            this.analytics.track('session.start'); // session event placeholder
+        }
         for (const r of rewards) {
             if (r.itemId === 'gold') this.worldState.addGold(r.quantity);
             else if (r.itemId === 'gem') this.worldState.addGem(r.quantity);
         }
         this.worldState.recordDimensionComplete('manual', score, rewards);
         this.hud.log(`通关！得分 ${score}, 金币 +${rewards.find(r => r.itemId === 'gold')?.quantity ?? 0}`);
+        this.audio.fire('dimension.completed');
+        this.analytics.track('dimension.completed', { score });
         this.renderAllPanels();
     }
 
@@ -224,16 +284,23 @@ class App {
         this.hud.log(`[大坍缩] 已坍缩，生成 ${r.newRelics.length} 个历史遗迹`);
         this.hud.log(`[新纪元] ${this.epoch.epochName}`);
         this.epochPanel.render();
+        this.audio.fire('epoch.collapsed');
+        this.analytics.track('epoch.collapsed', { epoch: this.epoch.epochNumber });
+        this.tutorial?.notify('epoch-collapsed');
     }
 
     saveGame(): void {
         const ok = this.save.persist();
         this.hud.log(ok ? '[存档] 已保存' : '[存档] 保存失败');
+        this.analytics.track('save.persisted', { ok });
+        this.tutorial?.notify('save-persisted');
     }
 
     loadGame(): void {
         const ok = this.save.restore();
         this.hud.log(ok ? '[读档] 已恢复' : '[读档] 没有可恢复的存档');
+        if (ok) this.analytics.track('save.loaded');
+        this.renderAllPanels();
         this.renderAllPanels();
     }
 }
@@ -244,12 +311,13 @@ async function bootstrap(): Promise<void> {
     const progRoot = document.getElementById('progression-root') as HTMLElement | null;
     const econRoot = document.getElementById('economy-root') as HTMLElement | null;
     const epochRoot = document.getElementById('epoch-root') as HTMLElement | null;
+    const tutorialRoot = document.getElementById('tutorial-root') as HTMLElement | null;
     if (!canvas || !hudRoot || !progRoot || !econRoot || !epochRoot) {
         console.error('Missing required DOM roots');
         return;
     }
 
-    const app = new App({ canvas, hudRoot, progressionRoot: progRoot, economyRoot: econRoot, epochRoot });
+    const app = new App({ canvas, hudRoot, progressionRoot: progRoot, economyRoot: econRoot, epochRoot, tutorialRoot: tutorialRoot ?? undefined });
     (window as any).__AGI__ = app;
     await app.start();
 

@@ -404,6 +404,29 @@ export class SceneManager {
         if (mat) mat.opacity = 0;
     }
 
+    /** Briefly flash an NPC (used for damage feedback). */
+    flashNpc(id: number): void {
+        const npc = this.npcs.find(n => n.id === id);
+        if (!npc) return;
+        const mat = npc.body.material as any;
+        if (!mat) return;
+        // Save original emissive, brighten, then restore in the tick loop.
+        if (!npc.body.userData.flashing) {
+            npc.body.userData.flashing = true;
+            npc.body.userData.flashUntil = performance.now() + 220;
+        }
+        mat.emissiveIntensity = 2.5;
+    }
+
+    /** Hide an NPC entirely (defeat). */
+    hideNpc(id: number): void {
+        const npc = this.npcs.find(n => n.id === id);
+        if (!npc) return;
+        npc.body.visible = false;
+        npc.nameSprite.visible = false;
+        npc.bubble.visible = false;
+    }
+
     /**
      * Render a 2D WFC dungeon into the scene as a mini-3D grid. Floor
      * tiles are flat planes, walls are raised boxes, the spawn and goal
@@ -573,6 +596,15 @@ export class SceneManager {
         if (this.avatar) {
             this.updateAvatarPosition();
             this.pulseAvatar(performance.now());
+        }
+        // NPC flash restore
+        const now = performance.now();
+        for (const npc of this.npcs) {
+            if (npc.body.userData?.flashing && now > (npc.body.userData.flashUntil ?? 0)) {
+                const mat = npc.body.material as any;
+                if (mat) mat.emissiveIntensity = 0.4;
+                npc.body.userData.flashing = false;
+            }
         }
         this.renderer.render(this.scene, this.camera);
         this.rafHandle = requestAnimationFrame(this.tick);

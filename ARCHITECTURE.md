@@ -1,8 +1,66 @@
 # AGI-miniGame 技术架构文档
 
-> **版本**: 2026-06 — 历经 4 轮迭代后的实现状态。
+> **版本**: 2026-06-03 — 历经 9 轮迭代后的实现状态。
 > **范围**: 描述 `src/` (TypeScript 游戏层) + `src/dsl/*` (Rust WASM DSL)
 > + 镜像到 `cocos4-rust/src/agi_minigame/dsl/*` (引擎层) 的代码。
+
+## 与 4 轮迭代版的差异
+
+相对 [PRD §2.4 原始架构](PRD.md)，当前实现新增/强化了：
+
+- **HttpLLMClient**：OpenAI 兼容 `/v1/chat/completions` 真实客户端
+  （`src/ai/HttpLLMClient.ts`），缺失 API key / 网络错误时优雅回退
+  到 `MockLLMClient`。
+- **SaveMigrator**：版本化存档格式（v0 → v1 → v2），`SaveSystem.loadFromJson()`
+  在加载老存档时自动迁移；`SAVE_VERSION` 已升至 2。
+- **I18n**：zh-CN / en-US 双语目录，auto-detect `navigator.language`，
+  localStorage 持久化；`HUD` 内置语言切换按钮。
+- **Analytics**：零依赖事件/计数器追踪器，bounded ring (50) + 13
+  event kinds + JSON 导出。
+- **NpcCombat**：`src/scene/NpcCombat.ts`，3D 玩家 vs NPC，HP /
+  攻击 / 治愈 / 击败。
+- **GameAudio**：`src/audio/GameAudio.ts` 把 15 个高层 game events
+  映射到 10 个 `AudioCue`；`AudioService` 用 Web Audio API 程序
+  化合成 SFX（无外部资源）。
+- **StatsPanel**：`src/ui/StatsPanel.ts` 渲染 Analytics snapshot
+  （uptime、top-8 计数器、最近 5 个事件）。
+- **cocos4-rust 端**：agi_minigame::atoms 集成测试覆盖 6 个原子的注册
+  与生命周期；DSL AST 暴露 `to_json() / from_json()` 无需 serde 依赖。
+- **3D Match3 网格**：`SceneManager.renderMatch3Grid()` 把
+  `Match3Module` 的 2D 棋盘渲染为 3D 立方体，命中时可闪烁。
+
+## 体验层 → AI → 引擎 数据流（当前实现）
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  App  ─  I18n  ─  HUD  ─  ProgressionUI  ─  EconomyPanel         │
+│            ─  EpochPanel  ─  StatsPanel  ─  TutorialOverlay    │
+│            ─  GameAudio (WebAudioService)                       │
+│            ─  Analytics (event ring)                            │
+├──────────────────────────────────────────────────────────────────┤
+│  AIBridge.planAndLoad()   ─  GameplayManager (6 modules)        │
+│       │                                                          │
+│       └─ AIEngine.{gameplayAI, contentAI, tuner, worldAI}       │
+│                + NPCDialogueAI + HttpLLMClient (OpenAI compat)  │
+├──────────────────────────────────────────────────────────────────┤
+│  MemeCompiler → HttpLLMClient.complete() → DslRule              │
+│       │                                                          │
+│       └─ HotReloadController → DslExecutor → SceneManager.spawn*│
+├──────────────────────────────────────────────────────────────────┤
+│  WorldState + Progression + EpochSystem + SaveSystem             │
+│  + SaveMigrator (v0/v1 → v2)                                   │
+├──────────────────────────────────────────────────────────────────┤
+│  SceneManager (Three.js): portals, NPCs, WFC dungeon,            │
+│                            Match3 grid, spawned entities,         │
+│                            floating text, avatar                 │
+│  + HubController (WASD / click-to-move)                         │
+│  + NpcCombat (player vs NPC HP / damage)                        │
+├──────────────────────────────────────────────────────────────────┤
+│  cocos4-rust: agi_minigame::{dsl, atoms, ai_engine, dimension,   │
+│                                 world_state, economy, gameplay}  │
+│  + 引擎核心: core, scene, renderer, physics, input, audio      │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 ## 项目概述
 
