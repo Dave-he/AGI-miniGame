@@ -7,16 +7,19 @@
  */
 
 import type { EpochSystem, WorldRule, HistoricalRelic } from '../world/EpochSystem';
+import type { I18n } from '../i18n/I18n';
 
 export class EpochPanel {
     private root: HTMLElement;
     private epoch: EpochSystem;
+    private i18n: I18n | null;
     private onCollapse?: () => void;
 
-    constructor(root: HTMLElement, epoch: EpochSystem, onCollapse?: () => void) {
+    constructor(root: HTMLElement, epoch: EpochSystem, onCollapse?: () => void, i18n?: I18n) {
         this.root = root;
         this.epoch = epoch;
         this.onCollapse = onCollapse;
+        this.i18n = i18n ?? null;
     }
 
     render(): void {
@@ -60,13 +63,17 @@ export class EpochPanel {
                     <span>金币 × ${goldMul}</span>
                 </div>
                 <button class="epoch-collapse-btn" ${snap.activeRules.length === 0 ? 'disabled' : ''}>
-                    触发大坍缩 → 进入纪元 ${snap.epochNumber + 1}
+                    ${this.t('epoch.collapse')} → ${this.t('epoch.next', { n: snap.epochNumber + 1 })}
                 </button>
             </div>
         `;
 
         const btn = this.root.querySelector<HTMLButtonElement>('.epoch-collapse-btn');
         if (btn) btn.addEventListener('click', () => this.onCollapse?.());
+    }
+
+    private t(key: string, params?: Record<string, string | number>): string {
+        return this.i18n ? this.i18n.t(key, params) : key;
     }
 }
 

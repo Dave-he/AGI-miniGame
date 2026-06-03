@@ -38,15 +38,15 @@ describe('StatsPanel', () => {
 
     test('recent events render newest-first', () => {
         const { root, a, h } = make();
-        a.track('npc.talked', { id: 1 });
-        a.track('npc.talked', { id: 2 });
-        a.track('npc.talked', { id: 3 });
+        a.track('session.start');
+        a.track('dimension.entered');
+        a.track('dsl.applied');
         h.refresh();
         const evs = Array.from(root.querySelectorAll('.stats-event')).map(e => e.textContent ?? '');
-        // id 3 should appear before id 1 in the rendered order
-        const i3 = evs.findIndex(t => t.includes('3'));
-        const i1 = evs.findIndex(t => t.includes('1'));
-        expect(i3).toBeLessThan(i1);
+        expect(evs.length).toBe(3);
+        // Newest first
+        expect(evs[0]).toContain('dsl.applied');
+        expect(evs[2]).toContain('session.start');
     });
 
     test('top-N counter truncation', () => {

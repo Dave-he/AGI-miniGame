@@ -39,6 +39,7 @@ import { NpcCombat } from './scene/NpcCombat';
 import { generateDungeon, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
 import { TutorialOverlay } from './ui/TutorialOverlay';
+import { renderStatsPanel, StatsPanelHandle } from './ui/StatsPanel';
 import { WebAudioService, NullAudioService } from './audio/AudioService';
 import { GameAudio } from './audio/GameAudio';
 import { Analytics } from './analytics/Analytics';
@@ -51,6 +52,7 @@ interface AppRefs {
     economyRoot: HTMLElement;
     epochRoot: HTMLElement;
     tutorialRoot?: HTMLElement;
+    statsRoot?: HTMLElement;
 }
 
 class App {
@@ -76,6 +78,8 @@ class App {
     private npcCombat: NpcCombat;
     private audio: GameAudio;
     private analytics: Analytics;
+    private statsHandle: StatsPanelHandle | null = null;
+    private statsTimer: ReturnType<typeof setInterval> | null = null;
     private llm: HttpLLMClient | { complete: typeof HttpLLMClient.prototype.complete } | null = null;
 
     private npcs: NPCProfile[] = [
@@ -123,6 +127,13 @@ class App {
         if (refs.tutorialRoot) {
             this.tutorial = new TutorialOverlay(refs.tutorialRoot);
         }
+        if (refs.statsRoot) {
+            this.statsHandle = renderStatsPanel(refs.statsRoot, this.analytics, this.i18n);
+            // Refresh the panel whenever an event is fired.
+            this.analytics.onEvent(() => this.statsHandle?.refresh());
+            // Plus a 1s tick for the uptime counter.
+            this.statsTimer = setInterval(() => this.statsHandle?.refresh(), 1000);
+        }
         this.dslExec = new DslExecutor(this.scene, {
             log: (line) => this.hud.log(line),
             onPlayerDamage: (n) => this.hud.log(`受到 ${n} 点伤害`),
@@ -143,7 +154,7 @@ class App {
             onTalentLearned: (t) => this.hud.log(`习得天赋：${t.name}`),
         });
         this.economy = new EconomyPanel(refs.economyRoot, this.worldState);
-        this.epochPanel = new EpochPanel(refs.epochRoot, this.epoch, () => this.triggerCollapse());
+        this.epochPanel = new EpochPanel(refs.epochRoot, this.epoch, () => this.triggerCollapse(), this.i18n);
     }
 
     async start(): Promise<void> {
@@ -312,12 +323,13 @@ async function bootstrap(): Promise<void> {
     const econRoot = document.getElementById('economy-root') as HTMLElement | null;
     const epochRoot = document.getElementById('epoch-root') as HTMLElement | null;
     const tutorialRoot = document.getElementById('tutorial-root') as HTMLElement | null;
+    const statsRoot = document.getElementById('stats-root') as HTMLElement | null;
     if (!canvas || !hudRoot || !progRoot || !econRoot || !epochRoot) {
         console.error('Missing required DOM roots');
         return;
     }
 
-    const app = new App({ canvas, hudRoot, progressionRoot: progRoot, economyRoot: econRoot, epochRoot, tutorialRoot: tutorialRoot ?? undefined });
+    const app = new App({ canvas, hudRoot, progressionRoot: progRoot, economyRoot: econRoot, epochRoot, tutorialRoot: tutorialRoot ?? undefined, statsRoot: statsRoot ?? undefined });
     (window as any).__AGI__ = app;
     await app.start();
 
