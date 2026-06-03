@@ -150,30 +150,109 @@ export class Match3Module implements GameplayModule {
         }
     }
 
+    /**
+     * Find all horizontal and vertical 3+ matches. Each match is a
+     * list of (row, col) cells. Returns an empty list if no matches.
+     */
+    findMatches(): Array<Array<[number, number]>> {
+        const groups: Array<Array<[number, number]>> = [];
+        // Horizontal runs of 3+
+        for (let r = 0; r < this.rows; r++) {
+            let run = 1;
+            for (let c = 1; c <= this.cols; c++) {
+                const same = c < this.cols && this.board[r][c] === this.board[r][c - 1] && this.board[r][c] !== -1;
+                if (same) { run += 1; continue; }
+                if (run >= 3) {
+                    const group: Array<[number, number]> = [];
+                    for (let k = c - run; k < c; k++) group.push([r, k]);
+                    groups.push(group);
+                }
+                run = 1;
+            }
+        }
+        // Vertical runs of 3+
+        for (let c = 0; c < this.cols; c++) {
+            let run = 1;
+            for (let r = 1; r <= this.rows; r++) {
+                const same = r < this.rows && this.board[r][c] === this.board[r - 1][c] && this.board[r][c] !== -1;
+                if (same) { run += 1; continue; }
+                if (run >= 3) {
+                    const group: Array<[number, number]> = [];
+                    for (let k = r - run; k < r; k++) group.push([k, c]);
+                    groups.push(group);
+                }
+                run = 1;
+            }
+        }
+        return groups;
+    }
+
+    /** Remove all cells in the given groups (mark -1) and award score. */
+    private removeMatches(groups: Array<Array<[number, number]>>): number {
+        let removed = 0;
+        for (const g of groups) {
+            for (const [r, c] of g) {
+                if (this.board[r][c] !== -1) {
+                    this.board[r][c] = -1;
+                    removed += 1;
+                }
+            }
+        }
+        // 3-in-a-row: 30 pts per cell, 4: 60, 5+: 100.
+        for (const g of groups) {
+            const per = g.length === 3 ? 30 : g.length === 4 ? 60 : 100;
+            this.score += per * g.length;
+        }
+        return removed;
+    }
+
+    /** Apply gravity: drop non -1 cells into the lowest empty row. */
+    private applyGravity(): void {
+        for (let c = 0; c < this.cols; c++) {
+            let writeRow = this.rows - 1;
+            for (let r = this.rows - 1; r >= 0; r--) {
+                if (this.board[r][c] !== -1) {
+                    this.board[writeRow][c] = this.board[r][c];
+                    if (writeRow !== r) this.board[r][c] = -1;
+                    writeRow -= 1;
+                }
+            }
+        }
+    }
+
+    /** Refill empty cells with new random gems. */
+    private refill(): void {
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+                if (this.board[r][c] === -1) {
+                    this.board[r][c] = Math.floor(Math.random() * 6);
+                }
+            }
+        }
+    }
+
+    /**
+     * Cascade: keep removing matches + applying gravity + refilling
+     * until the board is stable. Returns the total number of cells
+     * removed across all cascades.
+     */
+    cascade(): number {
+        let total = 0;
+        for (let safety = 0; safety < 50; safety++) {
+            const groups = this.findMatches();
+            if (groups.length === 0) break;
+            total += this.removeMatches(groups);
+            this.applyGravity();
+            this.refill();
+        }
+        return total;
+    }
+
+    /** Public access to the board (for the 3D bridge). */
+    getBoard(): number[][] { return this.board.map(row => [...row]); }
+
     private checkMatches(): boolean {
-        let hasMatch = false;
-
-        for (let row = 0; row < this.rows; row++) {
-            for (let col = 0; col < this.cols - 2; col++) {
-                if (this.board[row][col] !== -1 &&
-                    this.board[row][col] === this.board[row][col + 1] &&
-                    this.board[row][col] === this.board[row][col + 2]) {
-                    hasMatch = true;
-                }
-            }
-        }
-
-        for (let col = 0; col < this.cols; col++) {
-            for (let row = 0; row < this.rows - 2; row++) {
-                if (this.board[row][col] !== -1 &&
-                    this.board[row][col] === this.board[row + 1][col] &&
-                    this.board[row][col] === this.board[row + 2][col]) {
-                    hasMatch = true;
-                }
-            }
-        }
-
-        return hasMatch;
+        return this.findMatches().length > 0;
     }
 }
 

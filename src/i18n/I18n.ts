@@ -57,6 +57,19 @@ export const CATALOG: Record<Locale, Record<string, string>> = {
         'audio.mute':            '静音',
         'audio.unmute':          '取消静音',
 
+        'settings.title':        '设置',
+        'settings.audio':        '音效',
+        'settings.difficulty':   '难度',
+        'settings.language':      '语言',
+        'settings.diff.easy':    '简单',
+        'settings.diff.normal':  '普通',
+        'settings.diff.hard':    '困难',
+
+        'stats.title':           '统计',
+        'stats.counters':        '计数器',
+        'stats.recent':          '最近事件',
+        'stats.empty':           '暂无数据',
+
         'sys.save.ok':           '存档已保存',
         'sys.save.fail':         '存档保存失败',
         'sys.load.ok':           '读档成功',
@@ -102,6 +115,19 @@ export const CATALOG: Record<Locale, Record<string, string>> = {
 
         'audio.mute':            'Mute',
         'audio.unmute':          'Unmute',
+
+        'settings.title':        'Settings',
+        'settings.audio':        'Audio',
+        'settings.difficulty':   'Difficulty',
+        'settings.language':      'Language',
+        'settings.diff.easy':    'Easy',
+        'settings.diff.normal':  'Normal',
+        'settings.diff.hard':    'Hard',
+
+        'stats.title':           'Stats',
+        'stats.counters':        'Counters',
+        'stats.recent':          'Recent',
+        'stats.empty':           'No data yet',
 
         'sys.save.ok':           'Save successful',
         'sys.save.fail':         'Save failed',

@@ -431,8 +431,12 @@ export class SceneManager {
      * Render a 2D WFC dungeon into the scene as a mini-3D grid. Floor
      * tiles are flat planes, walls are raised boxes, the spawn and goal
      * get coloured markers. The grid is centred on the origin.
+     *
+     * If `biome` is supplied (a WfcBiomes palette), its per-tile
+     * colour overrides are used; otherwise the default cyberpunk-ish
+     * palette is used.
      */
-    renderWfcDungeon(grid: number[][], tileSize: number = 1.2): void {
+    renderWfcDungeon(grid: number[][], tileSize: number = 1.2, biome?: { tileColors: Record<number, string> }): void {
         if (!this.scene) return;
         const THREE = this.THREE;
         if (!THREE) return;
@@ -445,14 +449,17 @@ export class SceneManager {
         const offX = -w * tileSize / 2;
         const offZ = -h * tileSize / 2;
 
-        // Tile colours (TILE_* from WfcLevelGen)
+        // Tile colours (TILE_* from WfcLevelGen). Biome override wins.
+        const parseHex = (s: string) => parseInt(s.replace('#', ''), 16);
         const tileColors: Record<number, [number, number]> = {
-            0: [0x101030, 0.1],  // floor
-            1: [0x0a0e1d, 2.0],  // wall
-            2: [0xa06cd5, 1.5],  // door
-            3: [0xffd166, 0.6],  // chest
-            4: [0x06d6a0, 0.2],  // spawn
-            5: [0xff66cc, 0.2],  // goal
+            0: [biome?.tileColors[0] ? parseHex(biome.tileColors[0]) : 0x101030, 0.1],
+            1: [biome?.tileColors[1] ? parseHex(biome.tileColors[1]) : 0x0a0e1d, 2.0],
+            2: [biome?.tileColors[2] ? parseHex(biome.tileColors[2]) : 0xa06cd5, 1.5],
+            3: [biome?.tileColors[3] ? parseHex(biome.tileColors[3]) : 0xffd166, 0.6],
+            4: [biome?.tileColors[4] ? parseHex(biome.tileColors[4]) : 0x06d6a0, 0.2],
+            5: [biome?.tileColors[5] ? parseHex(biome.tileColors[5]) : 0xff66cc, 0.2],
+            6: [biome?.tileColors[6] ? parseHex(biome.tileColors[6]) : 0xff4d4d, 0.15],
+            7: [biome?.tileColors[7] ? parseHex(biome.tileColors[7]) : 0x9c89ff, 1.2],
         };
 
         for (let y = 0; y < h; y++) {
@@ -461,7 +468,6 @@ export class SceneManager {
                 const entry = tileColors[t] ?? tileColors[0];
                 const [color, height] = entry;
                 if (height <= 0.1) {
-                    // Floor plane
                     const g = new THREE.PlaneGeometry(tileSize, tileSize);
                     const m = new THREE.MeshStandardMaterial({
                         color,
@@ -476,7 +482,6 @@ export class SceneManager {
                     this.scene.add(mesh);
                     this.dungeon.push(mesh);
                 } else {
-                    // Wall / door / chest
                     const g = new THREE.BoxGeometry(tileSize, height, tileSize);
                     const m = new THREE.MeshStandardMaterial({
                         color,

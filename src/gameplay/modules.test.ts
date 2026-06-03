@@ -2,7 +2,7 @@
  * Tests for the real Synthesis and Card modules.
  */
 
-import { SynthesisModule, CardModule, SynthesisItem } from '../gameplay/GameplayManager';
+import { SynthesisModule, CardModule, Match3Module, SynthesisItem } from '../gameplay/GameplayManager';
 
 describe('SynthesisModule', () => {
     test('load produces a starting inventory of tier-1 + a few tier-2/3', async () => {
@@ -63,6 +63,47 @@ describe('SynthesisModule', () => {
         const produced = m.merge(crystal, fire);
         expect(produced).not.toBeNull();
         expect(produced!.tier).toBe(4);
+    });
+});
+
+describe('Match3Module (new gameplay)', () => {
+    test('findMatches on a force-built 3-in-a-row returns one group', async () => {
+        const m = new Match3Module();
+        await m.load();
+        m['board'][0][0] = 0; m['board'][0][1] = 0; m['board'][0][2] = 0;
+        const groups = m.findMatches();
+        expect(groups.length).toBeGreaterThanOrEqual(1);
+        expect(groups[0].length).toBe(3);
+    });
+
+    test('cascade removes at least the forced match', async () => {
+        const m = new Match3Module();
+        await m.load();
+        m['board'][0][0] = 0; m['board'][0][1] = 0; m['board'][0][2] = 0;
+        const before = m.getScore();
+        const removed = m.cascade();
+        // The forced 3 cells are removed. Cascading may add more.
+        expect(removed).toBeGreaterThanOrEqual(3);
+        expect(m.getScore()).toBeGreaterThan(before);
+    });
+
+    test('swap then cascade handles cascading matches', async () => {
+        const m = new Match3Module();
+        await m.load();
+        m['board'][0][0] = 0; m['board'][0][1] = 0; m['board'][0][2] = 0;
+        m['board'][1][3] = 0; m['board'][1][4] = 0;
+        m['board'][1][2] = 0;
+        const removed = m.cascade();
+        expect(removed).toBeGreaterThanOrEqual(3);
+    });
+
+    test('getBoard returns a defensive copy', async () => {
+        const m = new Match3Module();
+        await m.load();
+        const b = m.getBoard();
+        b[0][0] = 99;
+        const b2 = m.getBoard();
+        expect(b2[0][0]).not.toBe(99);
     });
 });
 
