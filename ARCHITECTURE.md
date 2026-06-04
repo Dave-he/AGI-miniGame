@@ -1,8 +1,23 @@
 # AGI-miniGame 技术架构文档
 
-> **版本**: 2026-06-04 — 历经 14 轮迭代后的实现状态。
+> **版本**: 2026-06-04 — 历经 15 轮迭代后的实现状态。
 > **范围**: 描述 `src/` (TypeScript 游戏层) + `src/dsl/*` (Rust WASM DSL)
 > + 镜像到 `cocos4-rust/src/agi_minigame/dsl/*` (引擎层) 的代码。
+
+## rounds 15 新增 (本轮)
+
+- **DmMode 真接入场景** (`src/main.ts`)：DM 指令真正驱动世界。
+  `spawn npc` → SceneManager.spawnNpc + NpcCombat.register；
+  `rule` → HotReloadController.begin (真正 DSL 编译)；
+  `event` → AIEngine.worldAI.rollEvent (真正世界事件)；
+  `dim R C s` → generateDungeon + SceneManager.renderWfcDungeon
+  配合 biomeForVisualStyle(s)。4 个新 Analytics 事件（dm.*）。
+- **3D 死亡动画** (`src/scene/SceneManager.ts`)：playDeathAnimation()
+  让 avatar 闪红 3 次，然后生成半透明 ghost 网格向上漂 2 秒。
+- **全 6 模块端到端集成测试** (`src/integration-modules.test.ts`)：
+  AIBridge → Match3/Tower/Card/Parkour/Puzzle/Synthesis
+  八个端到端断言，与 cocos4-rust `agi_minigame::atoms::integration_tests`
+  合同对齐。
 
 ## rounds 12-14 新增 (本轮)
 
