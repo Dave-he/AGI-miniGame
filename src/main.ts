@@ -40,6 +40,10 @@ import { generateDungeon, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
 import { TutorialOverlay } from './ui/TutorialOverlay';
 import { renderStatsPanel, StatsPanelHandle } from './ui/StatsPanel';
+import { GodConsole } from './ui/GodConsole';
+import { PlayerHealth } from './player/PlayerHealth';
+import { DmMode } from './dm/DmMode';
+import { SessionReplay } from './analytics/SessionReplay';
 import { WebAudioService, NullAudioService } from './audio/AudioService';
 import { GameAudio } from './audio/GameAudio';
 import { Analytics } from './analytics/Analytics';
@@ -53,6 +57,7 @@ interface AppRefs {
     epochRoot: HTMLElement;
     tutorialRoot?: HTMLElement;
     statsRoot?: HTMLElement;
+    godRoot?: HTMLElement;
 }
 
 class App {
@@ -81,6 +86,10 @@ class App {
     private statsHandle: StatsPanelHandle | null = null;
     private statsTimer: ReturnType<typeof setInterval> | null = null;
     private llm: HttpLLMClient | { complete: typeof HttpLLMClient.prototype.complete } | null = null;
+    private health: PlayerHealth;
+    private dm: DmMode;
+    private godConsole: GodConsole | null = null;
+    private replay: SessionReplay;
 
     private npcs: NPCProfile[] = [
         { id: 'sage',   name: '玄真道长', personality: 'wise',      faction: '隐者之塔' },
@@ -107,6 +116,22 @@ class App {
                 : new NullAudioService(),
         );
         this.analytics = new Analytics();
+        this.health = new PlayerHealth({
+            epochTriggerCollapse: () => this.triggerCollapse(),
+            analytics: this.analytics,
+        }, {
+            onDamage: (amount, hp) => this.hud.log(`受到 ${amount} 伤害，HP ${hp}/${this.health.getMaxHp()}`),
+            onDeath:  () => this.hud.log('你死了！大坍缩启动，世界重置...'),
+            onRevive: () => this.hud.log('新纪元开始，你在 1 HP 复活'),
+        });
+        this.dm = new DmMode({
+            onSpawnNpc: (c) => { this.scene.spawnNpc(this.scene['npcs']?.length ?? 0, c.name); this.hud.log(`[DM] 生成 NPC: ${c.name}`); },
+            onSpawnRule: (dsl) => { this.hot.begin(dsl); this.hud.log(`[DM] 应用规则: ${dsl}`); },
+            onEvent: (name) => this.hud.log(`[DM] 触发事件: ${name}`),
+            onDimension: (r, c, s) => this.hud.log(`[DM] 切换到 ${s} 主题 (${r}x${c})`),
+        });
+        this.replay = new SessionReplay(this.analytics, 200);
+        this.replay.startRecording();
         // NpcCombat wired to the scene's NPC dialog methods.
         this.npcCombat = new NpcCombat({
             flashNpc: (i) => { this.scene.flashNpc(i); },
@@ -133,6 +158,11 @@ class App {
             this.analytics.onEvent(() => this.statsHandle?.refresh());
             // Plus a 1s tick for the uptime counter.
             this.statsTimer = setInterval(() => this.statsHandle?.refresh(), 1000);
+        }
+        if (refs.godRoot) {
+            this.godConsole = new GodConsole(refs.godRoot, this.dm, {
+                onResult: (r) => this.hud.log(`[DM] ${r.cmd.kind} → ${r.ok ? 'ok' : r.error}`),
+            });
         }
         this.dslExec = new DslExecutor(this.scene, {
             log: (line) => this.hud.log(line),
@@ -289,6 +319,9 @@ class App {
         this.renderAllPanels();
     }
 
+    /** Public: toggle the DM God console. */
+    toggleGodConsole(): void { this.godConsole?.toggle(); }
+
     /** Manual epoch collapse. */
     triggerCollapse(): void {
         const r = this.epoch.triggerCollapse();
@@ -324,12 +357,13 @@ async function bootstrap(): Promise<void> {
     const epochRoot = document.getElementById('epoch-root') as HTMLElement | null;
     const tutorialRoot = document.getElementById('tutorial-root') as HTMLElement | null;
     const statsRoot = document.getElementById('stats-root') as HTMLElement | null;
+    const godRoot = document.getElementById('god-root') as HTMLElement | null;
     if (!canvas || !hudRoot || !progRoot || !econRoot || !epochRoot) {
         console.error('Missing required DOM roots');
         return;
     }
 
-    const app = new App({ canvas, hudRoot, progressionRoot: progRoot, economyRoot: econRoot, epochRoot, tutorialRoot: tutorialRoot ?? undefined, statsRoot: statsRoot ?? undefined });
+    const app = new App({ canvas, hudRoot, progressionRoot: progRoot, economyRoot: econRoot, epochRoot, tutorialRoot: tutorialRoot ?? undefined, statsRoot: statsRoot ?? undefined, godRoot: godRoot ?? undefined });
     (window as any).__AGI__ = app;
     await app.start();
 
@@ -346,6 +380,7 @@ async function bootstrap(): Promise<void> {
     bind('btn-npc-0',     () => app.talkToNpc(0));
     bind('btn-npc-1',     () => app.talkToNpc(1));
     bind('btn-npc-2',     () => app.talkToNpc(2));
+    bind('btn-god',       () => app.toggleGodConsole());
     bind('btn-complete',  () => app.completeRun(2500, [
         { itemId: 'gold', quantity: 100 },
         { itemId: 'gem',  quantity: 5 },

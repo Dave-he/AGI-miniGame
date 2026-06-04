@@ -1,8 +1,34 @@
 # AGI-miniGame 技术架构文档
 
-> **版本**: 2026-06-04 — 历经 12 轮迭代后的实现状态。
+> **版本**: 2026-06-04 — 历经 14 轮迭代后的实现状态。
 > **范围**: 描述 `src/` (TypeScript 游戏层) + `src/dsl/*` (Rust WASM DSL)
 > + 镜像到 `cocos4-rust/src/agi_minigame/dsl/*` (引擎层) 的代码。
+
+## rounds 12-14 新增 (本轮)
+
+相对 round 11，rounds 12-14 新增了：
+
+- **PlayerHealth** (`src/player/PlayerHealth.ts`)：HP 池 (100) +
+  takeDamage / heal / kill / reviveToFull。HP=0 触发
+  `epochTriggerCollapse()` 并在新纪元以 1 HP 复活，叙事上把玩家
+  之死与「纪元更迭」绑定。
+- **SessionReplay** (`src/analytics/SessionReplay.ts`)：bounded
+  ring (200 事件) + 确定性回放，支持 speed 0 (即时) / 1 (实时) / 4
+  (4 倍速)。
+- **DmMode** (`src/dm/DmMode.ts`)：玩家作为创世者的 DM 指令解析
+  (spawn npc / rule / event / dim)，pluggable handlers，bounded
+  history，handler 异常捕获。
+- **GodConsole** (`src/ui/GodConsole.ts`)：DM 模式下的 prompt + 历
+  史面板 UI；通过 `btn-god` 切换显示。
+- **App 集成** (`src/main.ts`)：PlayerHealth / DmMode / SessionReplay /
+  GodConsole 真正接入 App loop。HP 在 HUD log 体现，DM 命令
+  通过 SceneManager / HotReloadController 立即生效。
+
+## rounds 10-11 回顾
+
+相对 round 9，rounds 10-11 新增了 SettingsPanel / EngineAtomManifest /
+真实 Match3 玩法 / 按生物群系 WFC 渲染 / Match3Bridge 等。详见
+`docs/superpowers/plans/` 中的历史 plan。
 
 ## 与 9 轮迭代版的差异 (rounds 10-12 新增)
 
