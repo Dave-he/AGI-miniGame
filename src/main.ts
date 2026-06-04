@@ -37,6 +37,7 @@ import { HotReloadController } from './scene/HotReloadController';
 import { SceneTransitions } from './scene/SceneTransitions';
 import { NpcCombat } from './scene/NpcCombat';
 import { generateDungeon, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
+import { biomeForVisualStyle } from './world/WfcBiomes';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
 import { TutorialOverlay } from './ui/TutorialOverlay';
 import { renderStatsPanel, StatsPanelHandle } from './ui/StatsPanel';
@@ -125,10 +126,34 @@ class App {
             onRevive: () => this.hud.log('新纪元开始，你在 1 HP 复活'),
         });
         this.dm = new DmMode({
-            onSpawnNpc: (c) => { this.scene.spawnNpc(this.scene['npcs']?.length ?? 0, c.name); this.hud.log(`[DM] 生成 NPC: ${c.name}`); },
-            onSpawnRule: (dsl) => { this.hot.begin(dsl); this.hud.log(`[DM] 应用规则: ${dsl}`); },
-            onEvent: (name) => this.hud.log(`[DM] 触发事件: ${name}`),
-            onDimension: (r, c, s) => this.hud.log(`[DM] 切换到 ${s} 主题 (${r}x${c})`),
+            onSpawnNpc: (c) => {
+                const idx = (this.scene as any).npcs?.length ?? 0;
+                this.scene.spawnNpc(idx, c.name);
+                this.npcCombat.register(idx, c.name, 30);
+                this.hud.log(`[DM] 生成 NPC: ${c.name} (${c.personality})`);
+            },
+            onSpawnRule: (dsl) => {
+                const accepted = this.hot.begin(dsl);
+                this.hud.log(accepted ? `[DM] 规则已提交编译: ${dsl}` : `[DM] 规则被拒绝: ${dsl}`);
+            },
+            onEvent: (name) => {
+                // Use the world AI to roll a real event
+                const evt = this.ai.worldAI.rollEvent(this.worldState.player.level, 0);
+                if (evt) {
+                    this.hud.setState({ worldEvent: evt });
+                    this.hud.log(`[DM] ${evt.name} — ${evt.description}`);
+                } else {
+                    this.hud.log(`[DM] 自定义事件: ${name}`);
+                }
+            },
+            onDimension: (r, c, s) => {
+                // Actually generate a WFC dungeon with the chosen biome
+                const biome = biomeForVisualStyle(s);
+                const dungeon = generateDungeon(r, c, Math.floor(Math.random() * 1e6));
+                this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
+                this.analytics.track('dm.dimension', { rows: r, cols: c, style: s });
+                this.hud.log(`[DM] 渲染 ${biome.name} 主题地牢 ${r}x${c}`);
+            },
         });
         this.replay = new SessionReplay(this.analytics, 200);
         this.replay.startRecording();

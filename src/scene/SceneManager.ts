@@ -305,6 +305,62 @@ export class SceneManager {
     }
 
     /**
+     * Play the player death animation. The avatar flashes red,
+     * then fades out and is replaced by a translucent "ghost"
+     * mesh that floats up. After `totalMs` the body is removed
+     * and the player can be respawned.
+     */
+    playDeathAnimation(totalMs: number = 1400): void {
+        if (!this.scene || !this.avatar) return;
+        const THREE = this.THREE;
+        if (!THREE) return;
+        // Flash red 3x
+        let flashes = 0;
+        const flashInterval = setInterval(() => {
+            if (!this.avatar) { clearInterval(flashInterval); return; }
+            const mat = this.avatar.body.material as any;
+            if (mat) {
+                mat.emissiveIntensity = flashes % 2 === 0 ? 3.0 : 0.0;
+                mat.color.setHex(flashes % 2 === 0 ? 0xff4d6d : 0x4ecdc4);
+            }
+            flashes += 1;
+            if (flashes >= 6) {
+                clearInterval(flashInterval);
+                this.spawnGhost();
+            }
+        }, totalMs / 6);
+    }
+
+    /** Spawn a translucent ghost avatar that floats up and fades. */
+    private spawnGhost(): void {
+        if (!this.scene || !this.avatar || !this.THREE) return;
+        const THREE = this.THREE;
+        const bodyGeo = new THREE.CapsuleGeometry(0.5, 1.0, 4, 8);
+        const bodyMat = new THREE.MeshBasicMaterial({
+            color: 0xa06cd5,
+            transparent: true,
+            opacity: 0.55,
+        });
+        const ghost = new THREE.Mesh(bodyGeo, bodyMat);
+        ghost.position.copy(this.avatar.group.position);
+        ghost.position.y += 0.5;
+        this.scene.add(ghost);
+        const born = performance.now();
+        const tick = () => {
+            const age = (performance.now() - born) / 1000;
+            if (age > 2) {
+                this.scene?.remove(ghost);
+                return;
+            }
+            ghost.position.y += 0.01;
+            const m = ghost.material as any;
+            if (m) m.opacity = Math.max(0, 0.55 - age * 0.3);
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    }
+
+    /**
      * Spawn an NPC entity (capsule + name sprite + dialogue bubble).
      * The bubble is hidden by default; call `setNpcDialogue(id, text)`
      * to show a one-liner above the NPC's head.

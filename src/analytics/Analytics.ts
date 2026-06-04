@@ -18,7 +18,8 @@ export type AnalyticsEventKind =
     | 'feedback.submitted'
     | 'settings.changed'
     | 'player.damaged' | 'player.died'
-    | 'replay.started' | 'replay.stopped';
+    | 'replay.started' | 'replay.stopped'
+    | 'dm.dimension' | 'dm.spawn' | 'dm.rule' | 'dm.event';
 
 export interface AnalyticsEvent {
     kind: AnalyticsEventKind;
