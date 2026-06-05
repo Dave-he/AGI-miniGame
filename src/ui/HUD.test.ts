@@ -267,3 +267,42 @@ describe('HUD — round 45 NpcMind snapshot tally', () => {
         expect(root.innerHTML).not.toContain('hud-npc-snapshot');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 46 — lastNpcDisposition HUD prompt.
+//
+// Round 35 added the average-disposition snapshot on
+// the WorldState. This round exposes a
+// "🎭 集体情绪: friendly X / fear Y / trust Z" line
+// in the stats panel so the player can see the mood
+// signal without opening the NpcMind panel.
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 46 lastNpcDisposition HUD prompt', () => {
+    test('setLastNpcDisposition_pushes_a_copy_into_state', () => {
+        const { hud } = makeHud();
+        expect(hud.getState().lastNpcDisposition).toBeUndefined();
+        const disp = { friendly: 0.4, fear: -0.1, trust: 0.2 };
+        hud.setLastNpcDisposition(disp);
+        const s = hud.getState().lastNpcDisposition;
+        expect(s).toEqual(disp);
+        // The HUD should copy, not retain the same
+        // reference, so the caller can mutate `disp`
+        // without affecting HUD state.
+        expect(s).not.toBe(disp);
+    });
+
+    test('renders_collective_mood_line_in_HTML_when_set', () => {
+        const { hud, root } = makeHud();
+        hud.setLastNpcDisposition({ friendly: 0.4, fear: 0, trust: 0.2 });
+        expect(root.innerHTML).toContain('hud-npc-mood');
+        expect(root.innerHTML).toContain('0.40');
+        expect(root.innerHTML).toContain('0.20');
+    });
+
+    test('does_not_render_mood_line_when_null', () => {
+        const { hud, root } = makeHud();
+        hud.setLastNpcDisposition(null);
+        expect(root.innerHTML).not.toContain('hud-npc-mood');
+    });
+});

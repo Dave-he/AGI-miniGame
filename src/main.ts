@@ -691,6 +691,12 @@ class App {
             // "🧠 N 个 NPC 记住了 K 段记忆" tally
             // becomes visible.
             this.hud.setNpcMindsSnapshot(this.worldState.npcMindsSnapshot);
+            // Round 46 — push the round-22/35
+            // lastNpcDisposition (the average mood
+            // snapshot) into the HUD so the
+            // "🎭 集体情绪: friendly X / fear Y / trust Z"
+            // prompt becomes visible.
+            this.hud.setLastNpcDisposition(this.worldState.lastNpcDisposition);
             // Round 44 — push the round-36 lastSpeaker
             // snapshot into the HUD so the "你刚才听见了
             // <id> 说：…" prompt becomes visible after

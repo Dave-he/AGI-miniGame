@@ -46,6 +46,14 @@ export interface HUDState {
      */
     npcMindsSnapshotCount?: number;
     npcMindsSnapshotMemories?: number;
+    /**
+     * Round 46 — the round-22/35 lastNpcDisposition
+     * snapshot (NpcRegistry.averageDisposition()).
+     * Optional; when set, the HUD renders a
+     * "集体情绪: friendly X / fear Y / trust Z" line
+     * in the stats panel.
+     */
+    lastNpcDisposition?: NpcDisposition | null;
 }
 
 export class HUD {
@@ -121,6 +129,22 @@ export class HUD {
     }
 
     /**
+     * Round 46 — push the round-22/35 lastNpcDisposition
+     * (the NpcRegistry.averageDisposition() snapshot)
+     * into the HUD. The stats panel renders a small
+     * "集体情绪: friendly X / fear Y / trust Z" line
+     * so the player can see the world's mood signal
+     * without opening the NpcMind panel.
+     */
+    setLastNpcDisposition(disp: { friendly: number; fear: number; trust: number } | null): void {
+        this.state = {
+            ...this.state,
+            lastNpcDisposition: disp ? { ...disp } : null,
+        };
+        this.render();
+    }
+
+    /**
      * Read-only snapshot of the current HUD state. Replaces the
      * `(this.hud as any).state` hack that callers used before round
      * 26 to peek at `dimension`, `worldEvent`, etc. without
@@ -166,6 +190,9 @@ export class HUD {
                     : ''}
                 ${(s.npcMindsSnapshotCount ?? 0) > 0
                     ? `<div class="hud-npc-snapshot">🧠 <b>${s.npcMindsSnapshotCount}</b> 个 NPC 记住了 <b>${s.npcMindsSnapshotMemories}</b> 段记忆</div>`
+                    : ''}
+                ${s.lastNpcDisposition
+                    ? `<div class="hud-npc-mood">🎭 集体情绪: friendly <b>${s.lastNpcDisposition.friendly.toFixed(2)}</b> / fear <b>${s.lastNpcDisposition.fear.toFixed(2)}</b> / trust <b>${s.lastNpcDisposition.trust.toFixed(2)}</b></div>`
                     : ''}
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.level'))}</span><b>${s.playerLevel}</b></div>
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gold'))}</span><b>${s.gold}</b></div>
