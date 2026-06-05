@@ -51,6 +51,41 @@ function clamp1(x: number): number {
     return x;
 }
 
+/**
+ * Round 29 — local wrapper that the NpcMind constructor calls
+ * when an archetype is supplied. We don't import the round-27
+ * `archetypeInitialDisposition` helper directly from
+ * NpcFactory here, because NpcFactory imports NPCProfile (and
+ * transitively a few scene/AI modules). Keeping the table
+ * locally in this lower-level file avoids a circular import
+ * and lets the canonical disposition rules travel with the
+ * class that actually owns the disposition state.
+ *
+ * The table mirrors `cocos4-rust/src/agi_minigame/npc.rs`'s
+ * `archetype_initial_disposition`. If anyone changes the
+ * values on one side, the round-29 integration test
+ * (`archetype_initial_disposition_matches_engine_table`)
+ * pins the cross-layer contract.
+ */
+function applyArchetypeDefault(archetype: string): NpcDisposition {
+    switch (archetype) {
+        case 'mage':
+            return { friendly: 0.0, fear: 0.0, trust: 0.1 };
+        case 'merchant':
+            return { friendly: 0.4, fear: 0.0, trust: 0.0 };
+        case 'guard':
+            return { friendly: -0.1, fear: 0.1, trust: 0.2 };
+        case 'rogue':
+            return { friendly: -0.2, fear: 0.3, trust: -0.1 };
+        case 'shaman':
+            return { friendly: 0.0, fear: 0.2, trust: 0.0 };
+        case 'peasant':
+            return { friendly: 0.1, fear: 0.2, trust: 0.0 };
+        default:
+            return defaultDisposition();
+    }
+}
+
 /** Default empty disposition — every axis at 0. */
 export function defaultDisposition(): NpcDisposition {
     return { friendly: 0, fear: 0, trust: 0 };
@@ -77,13 +112,30 @@ export class NpcMind {
     private readonly _capacity: number;
     private readonly _entries: NpcMemoryEntry[] = [];
     private _disposition: NpcDisposition = defaultDisposition();
+    /** Round 29 — archetype tag (e.g. 'mage', 'merchant'). Optional. */
+    private _archetype: string | undefined;
 
-    constructor(id: NpcId, capacity: number = NpcMind.DEFAULT_CAPACITY) {
+    constructor(
+        id: NpcId,
+        capacity: number = NpcMind.DEFAULT_CAPACITY,
+        archetype?: string,
+    ) {
         this._id = id;
         this._capacity = capacity < 0 ? 0 : capacity;
+        // Round 29 — if the caller passes an archetype, seed the
+        // initial disposition from the round-27 archetype helper
+        // (canonical in the engine; mirrored in NpcFactory). The
+        // helper is imported lazily to avoid a hard cycle through
+        // the higher-level NPCProfile machinery.
+        if (archetype) {
+            this._archetype = archetype;
+            const init = applyArchetypeDefault(archetype);
+            this._disposition = init;
+        }
     }
 
     id(): NpcId { return this._id; }
+    archetype(): string | undefined { return this._archetype; }
     len(): number { return this._entries.length; }
     isEmpty(): boolean { return this._entries.length === 0; }
     capacity(): number { return this._capacity; }

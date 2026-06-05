@@ -275,3 +275,89 @@ describe('NpcMind — round 27 reverence feedback on hard win', () => {
         expect(d.fear).toBeLessThanOrEqual(1.0);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 29 — archetype NpcMind initialization.
+//
+// Round 27 added `archetypeInitialDisposition` helpers in the
+// engine and TS, but the NpcMind constructor was never wired
+// to actually use them. So even after round 27 the "archetype"
+// tag on NPCProfile was cosmetic — the NpcMind still started at
+// the default zero disposition.
+//
+// This round makes the helpers actually run on construction:
+// `new NpcMind(id, capacity, archetype)` seeds the initial
+// _disposition from the round-27/29 archetype table.
+// ---------------------------------------------------------------------------
+
+describe('NpcMind — round 29 archetype initialization', () => {
+    test('no_archetype_arg_keeps_default_zero_disposition', () => {
+        const m = new NpcMind('n1');
+        const d = m.disposition();
+        expect(d.friendly).toBe(0);
+        expect(d.fear).toBe(0);
+        expect(d.trust).toBe(0);
+        expect(m.archetype()).toBeUndefined();
+    });
+
+    test('explicit_archetype_seeds_disposition_from_table', () => {
+        // The merchant archetype is the friendliest: friendly=+0.4.
+        const m = new NpcMind('m1', 32, 'merchant');
+        const d = m.disposition();
+        expect(d.friendly).toBeCloseTo(0.4, 5);
+        expect(d.fear).toBe(0);
+        expect(d.trust).toBe(0);
+        expect(m.archetype()).toBe('merchant');
+    });
+
+    test('rogue_archetype_yields_hostile_default_disposition', () => {
+        // Rogue archetype is unfriendly + fearful + distrustful.
+        const m = new NpcMind('r1', 32, 'rogue');
+        const d = m.disposition();
+        expect(d.friendly).toBeCloseTo(-0.2, 5);
+        expect(d.fear).toBeCloseTo(0.3, 5);
+        expect(d.trust).toBeCloseTo(-0.1, 5);
+    });
+
+    test('unknown_archetype_falls_back_to_default_disposition', () => {
+        // Defensive: an unknown archetype must not crash; it just
+        // behaves like "no archetype".
+        const m = new NpcMind('x1', 32, 'this-archetype-does-not-exist');
+        const d = m.disposition();
+        expect(d.friendly).toBe(0);
+        expect(d.fear).toBe(0);
+        expect(d.trust).toBe(0);
+        // The archetype tag is still recorded even for unknown names.
+        expect(m.archetype()).toBe('this-archetype-does-not-exist');
+    });
+
+    test('archetype_initial_disposition_is_observable_via_NpcRegistry_average', () => {
+        // The end-to-end claim: a 3-NPC roster with mixed archetypes
+        // shows a non-zero average disposition. Without round 29 the
+        // average would be exactly 0.
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('m1', 32, 'merchant'));  // friendly=+0.4
+        reg.insert(new NpcMind('m2', 32, 'guard'));     // friendly=-0.1
+        reg.insert(new NpcMind('m3', 32, 'merchant'));  // friendly=+0.4
+        const avg = reg.averageDisposition();
+        // (0.4 + -0.1 + 0.4) / 3 ≈ 0.233
+        expect(avg.friendly).toBeCloseTo(0.233333, 4);
+        expect(avg.fear).toBeCloseTo(0.033333, 4);
+    });
+
+    test('initial_disposition_does_not_double_apply_on_remember', () => {
+        // After construction, the next remember() should apply on
+        // top of the archetype-seeded disposition, not on top of
+        // a fresh zero. This guards against accidental double
+        // seeding in the constructor.
+        const m = new NpcMind('m1', 32, 'merchant');
+        const before = m.disposition().friendly;          // 0.4
+        m.remember(makeEntry('dialogue', 'hi', 1, 0.5));
+        const after = m.disposition().friendly;
+        // dialogue: friendly += 0.5 * 0.25 = 0.125
+        expect(after - before).toBeCloseTo(0.125, 5);
+        // (i.e. the next remember is *one* 0.125 step on top of 0.4,
+        //  not on top of 0 → 0.525)
+        expect(after).toBeCloseTo(0.525, 5);
+    });
+});

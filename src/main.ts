@@ -182,7 +182,12 @@ class App {
         // NpcRegistry. One mind per generated NPC profile.
         this.npcMinds = new NpcRegistry();
         for (const profile of this.npcs) {
-            this.npcMinds.insert(new NpcMind(profile.id));
+            // Round 29 — pass the profile's archetype so the
+            // new NpcMind seeds its initial disposition from
+            // the round-27 archetype table. (No-op when the
+            // profile has no archetype, e.g. vanilla
+            // generateRoster() output.)
+            this.npcMinds.insert(new NpcMind(profile.id, NpcMind.DEFAULT_CAPACITY, profile.archetype));
         }
         // NpcCombat wired to the scene's NPC dialog methods.
         this.npcCombat = new NpcCombat({
