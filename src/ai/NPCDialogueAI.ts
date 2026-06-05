@@ -33,6 +33,13 @@ export interface NPCProfile {
     offers?: string[];
     /** Quest givers etc. */
     faction?: string;
+    /**
+     * Round 24 — optional theme archetype tag from the
+     * `theme_to_scene` blueprint. Free-form string; the scene
+     * generator picks from the canonical list (`robot`, `mage`,
+     * `beast`, etc.) but consumers should treat it as opaque.
+     */
+    archetype?: string;
 }
 
 export interface DialogueLine {

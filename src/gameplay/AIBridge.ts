@@ -70,6 +70,14 @@ export interface BridgeResult {
     atomIds: string[];
     blueprint: ReturnType<AIEngine['generateDimension']>;
     modules: GameplayModule[];
+    /**
+     * Round 24 — the seed actually used to drive both
+     * `DimensionGenerator` and `themeToScene`. The caller passes it
+     * so subsequent WFC + NPC + event chain generation is
+     * deterministic. Defaults to `Date.now()` when the caller did
+     * not supply one.
+     */
+    seed: number;
 }
 
 export class AIBridge {
@@ -162,7 +170,7 @@ export class AIBridge {
             .map(id => this.gameplay.getModule(id))
             .filter((m): m is GameplayModule => !!m);
 
-        return { suggestion, atomIds: chosenAtoms, blueprint, modules };
+        return { suggestion, atomIds: chosenAtoms, blueprint, modules, seed: cfg.seed ?? Date.now() };
     }
 
     /** Sync the WorldState (player + economy + dimension history) after a run. */

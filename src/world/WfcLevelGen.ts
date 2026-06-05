@@ -293,6 +293,45 @@ export function generateDungeon(width: number, height: number, seed: number) {
     return result;
 }
 
+/**
+ * Round 24 — overload that accepts a per-tile weight override. The
+ * caller passes an 8-entry array indexed `[FLOOR, WALL, DOOR, CHEST,
+ * SPAWN, GOAL, TRAP, SHRINE]`. The `DEFAULT_TILES` are deep-cloned
+ * and the supplied weights replace the corresponding `weight` field.
+ *
+ * Mirrors the `theme_to_scene` engine output — when the content AI
+ * picks `visualStyle=desert`, it returns `[6,2,1,1,0,0,4,0]`, which
+ * makes TRAP far more common in the dungeon. The biome palette is
+ * applied later by `SceneManager.renderWfcDungeon(grid, size, biome)`.
+ */
+export function generateDungeonWithWeights(
+    width: number,
+    height: number,
+    seed: number,
+    weights: readonly number[],
+) {
+    if (weights.length !== DEFAULT_TILES.length) {
+        throw new Error(
+            `weights must have ${DEFAULT_TILES.length} entries ` +
+            `(FLOOR/WALL/DOOR/CHEST/SPAWN/GOAL/TRAP/SHRINE), got ${weights.length}`,
+        );
+    }
+    const tiles: TileDefinition[] = DEFAULT_TILES.map((t, i) => ({
+        ...t,
+        weight: weights[i] ?? t.weight,
+    }));
+    const result = new WfcLevelGen({
+        width,
+        height,
+        tiles,
+        seed,
+        spawn: { x: 0, y: 0 },
+        goal:  { x: width - 1, y: height - 1 },
+    }).generate();
+    carveCorridor(result.tiles, 0, 0, width - 1, height - 1);
+    return result;
+}
+
 function carveCorridor(tiles: TileId[][], x0: number, y0: number, x1: number, y1: number): void {
     let x = x0, y = y0;
     while (x !== x1) {

@@ -96,6 +96,41 @@ export class NpcFactory {
         return rosters;
     }
 
+    /**
+     * Round 24 — variant of `generateRoster` that tags each NPC with
+     * a theme archetype from the `theme_to_scene` blueprint. The
+     * archetypes cycle through the hint list in order (and wrap), so
+     * a `['mage', 'beast']` hint + count 4 yields
+     * `['mage', 'beast', 'mage', 'beast']`.
+     *
+     * Mirrors the engine side's `npc_archetype_hints` (see
+     * `scene_gen.rs::theme_to_scene`). Used by the scene generator
+     * pipeline to fill the hub with on-theme NPCs.
+     */
+    generateRosterByArchetype(
+        archetypes: readonly string[],
+        count: number,
+        seed: number,
+    ): NPCProfile[] {
+        if (archetypes.length === 0) {
+            return this.generateRoster({ count, seed });
+        }
+        this.rng = this.makeRng(seed);
+        const personalities = PERSONALITIES;
+        const rosters: NPCProfile[] = [];
+        for (let i = 0; i < count; i++) {
+            const id = `npc_arch_${(seed >>> 0).toString(16)}_${i}`;
+            const name = pick(FIRST_NAMES, this.rng)
+                + (this.rng() > 0.5 ? '·' + pick(TITLES, this.rng) : '');
+            const personality = pick(personalities, this.rng);
+            const faction = pick(FACTIONS, this.rng);
+            const offers = pickN(OFFER_POOL.flat(), 2 + Math.floor(this.rng() * 2), this.rng);
+            const archetype = archetypes[i % archetypes.length];
+            rosters.push({ id, name, personality, faction, offers, archetype });
+        }
+        return rosters;
+    }
+
     private makeRng(seed: number): () => number {
         let s = seed % 233280;
         if (s <= 0) s += 233280;

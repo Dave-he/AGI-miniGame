@@ -444,6 +444,35 @@ export class SceneManager {
         this.npcs.push({ id, name, body, nameSprite, bubble, bubbleCanvas, bctx, color });
     }
 
+    /**
+     * Round 24 — spawn a wave of NPCs themed to the scene. The
+     * `archetypeHints` array can be empty (then this is equivalent
+     * to spawning `count` plain NPCs at the existing random
+     * positions). The function reuses the same colour and capsule
+     * geometry as `spawnNpc`; the new field is just the count.
+     *
+     * Returns the array of spawned `{id, name, archetype}` records so
+     * the caller can register them with `NpcRegistry`.
+     */
+    spawnNpcWave(
+        count: number,
+        archetypeHints: readonly string[] = [],
+    ): Array<{ id: number; name: string; archetype: string }> {
+        const spawned: Array<{ id: number; name: string; archetype: string }> = [];
+        for (let i = 0; i < count; i++) {
+            const archetype = archetypeHints.length > 0
+                ? archetypeHints[i % archetypeHints.length]
+                : '';
+            const id = this.npcs.length + i + 1;
+            const name = archetype
+                ? `${archetype}·${String(i + 1).padStart(2, '0')}`
+                : `游荡者·${String(i + 1).padStart(2, '0')}`;
+            this.spawnNpc(id, name);
+            spawned.push({ id, name, archetype });
+        }
+        return spawned;
+    }
+
     /** Update the dialogue bubble for a previously-spawned NPC. */
     setNpcDialogue(id: number, text: string): void {
         const npc = this.npcs.find(n => n.id === id);

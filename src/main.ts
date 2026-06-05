@@ -36,7 +36,7 @@ import { DslExecutor } from './scene/DslExecutor';
 import { HotReloadController } from './scene/HotReloadController';
 import { SceneTransitions } from './scene/SceneTransitions';
 import { NpcCombat } from './scene/NpcCombat';
-import { generateDungeon, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
+import { generateDungeon, generateDungeonWithWeights, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
 import { biomeForVisualStyle } from './world/WfcBiomes';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
 import { TutorialOverlay } from './ui/TutorialOverlay';
@@ -55,6 +55,8 @@ import { DimensionVault } from './world/DimensionVault';
 import { renderVaultPanel, VaultPanelHandle } from './ui/VaultPanel';
 import { NpcMind, NpcRegistry, makeEntry } from './world/NpcMind';
 import { renderNpcMindPanel, NpcMindPanelHandle } from './ui/NpcMindPanel';
+import { themeToScene, ThemeInput } from './ai/SceneGen';
+import type { SceneBlueprint } from './ai/SceneGen';
 
 interface AppRefs {
     canvas: HTMLCanvasElement;
@@ -301,6 +303,46 @@ class App {
         const palette = r.blueprint.theme?.colorPalette ?? [];
         if (palette.length === 3) {
             this.hud.log(`[gen] mood → 调色板 [${palette.join(', ')}]`);
+        }
+        // Round 24 — close the ThemeContent → scene-structure loop.
+        // Build a `ThemeInput` from the blueprint's visualStyle / musicMood
+        // and the bridge-supplied difficulty, then call `themeToScene` to
+        // get the full scene blueprint (WFC weights, biome, NPC density,
+        // event chain, BPM, archetype hints). Re-render the WFC dungeon
+        // with the theme's tile weights and spawn a wave of on-theme NPCs.
+        const visualStyle = (r.blueprint.theme as any)?.visualStyle as
+            'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon' | undefined;
+        const musicMood = (r.blueprint.theme as any)?.musicMood as
+            'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse' | undefined;
+        let sceneBp: SceneBlueprint | null = null;
+        if (visualStyle && musicMood) {
+            const themeInput: ThemeInput = {
+                visualStyle,
+                musicMood,
+                difficulty: r.blueprint.difficulty,
+                seed: r.seed ?? Date.now(),
+            };
+            sceneBp = themeToScene(themeInput);
+            // Re-render the WFC dungeon with the theme's tile weights.
+            const themedDungeon = generateDungeonWithWeights(
+                10, 10, r.seed ?? Date.now(), sceneBp.wfcTileWeights,
+            );
+            const themedBiome = biomeForVisualStyle(sceneBp.biomeId);
+            this.scene.renderWfcDungeon(themedDungeon.tiles, 1.0, themedBiome);
+            // Spawn a wave of NPCs tagged with the theme's archetype hints.
+            const archetypeIds = sceneBp.npcArchetypeHints.map(a => a as string);
+            const spawned = this.scene.spawnNpcWave(sceneBp.npcCount, archetypeIds);
+            if (spawned.length > 0) {
+                this.hud.log(`[scene] 主题=${visualStyle} · 陷阱×${sceneBp.wfcTileWeights[6]} · 神龛×${sceneBp.wfcTileWeights[7]} · NPC×${sceneBp.npcCount} · BPM ${sceneBp.musicBpm}`);
+                this.hud.log(`[scene] biome=${sceneBp.biomeId} · density=${sceneBp.npcDensity.toFixed(2)} · events=${sceneBp.eventChain.length}`);
+                // Push the event chain into the world for downstream
+                // consumers (SmartWorldAI / God console). For now we just
+                // log the chain so the player can see the next 3-5
+                // planned events.
+                for (const evt of sceneBp.eventChain) {
+                    this.hud.log(`[event] t+${evt.delaySecs}s ${evt.kind} (${evt.payload})`);
+                }
+            }
         }
         this.hud.setState({ dimension: r.blueprint });
         this.scene.onDimensionEntered(r.blueprint);

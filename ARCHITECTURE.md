@@ -1,10 +1,66 @@
 # AGI-miniGame 技术架构文档
 
-> **版本**: 2026-06-05 — 历经 20 轮迭代后的实现状态。
+> **版本**: 2026-06-05 — 历经 24 轮迭代后的实现状态。
 > **范围**: 描述 `src/` (TypeScript 游戏层) + `src/dsl/*` (Rust WASM DSL)
 > + 镜像到 `cocos4-rust/src/agi_minigame/dsl/*` (引擎层) 的代码。
 
-## rounds 20 新增 (本轮)
+## rounds 24 新增 (本轮)
+
+- **ThemeContent → 场景结构贯通** (PRD §2.2B 落地)：
+  - 引擎层 `cocos4-rust/src/agi_minigame/scene_gen.rs`：
+    新增 `VisualStyle / MusicMood / BiomeId / NpcArchetype` 枚举 + `ThemeInput /
+    EventStep / SceneBlueprint` 结构 + `theme_to_scene(theme) → SceneBlueprint`。
+    6 个 visualStyle 各对应一组 WFC tile 权重、biome、基础 NPC 密度、
+    基础 BPM 和 archetype 提示。density 公式 `base × (0.5 + d × 0.7)`,
+    clamp [0.1, 1.0]; BPM 公式 `base ± musicMood 扰动`, clamp [60, 160];
+    event chain 3-5 步,seed-deterministic(StdRng + 0xA5A5... salt)。
+    12 个新测试(每 visualStyle 一个)+ `cross_layer_density_snapshots`
+    断言字节一致。
+  - 引擎层 `mod.rs`：re-export 新增的 11 个符号。
+  - 游戏层 `src/ai/SceneGen.ts`：完全镜像的 TS 端口(类型别名 + 函数),
+    12 个新 jest 测试(其中 `cross_layer_density_snapshots` 用同一公式
+    的精确数值数组 0.513 / 0.5445 / 0.576 ... 验证 f32 ↔ Number 无漂移)。
+  - `WfcLevelGen.generateDungeonWithWeights(w, h, seed, weights)` —
+    8 元 weights 数组 `[FLOOR, WALL, DOOR, CHEST, SPAWN, GOAL, TRAP, SHRINE]`
+    override DEFAULT_TILES。
+  - `SceneManager.spawnNpcWave(count, archetypeHints)` —
+    按 archetype 提示循环 spawn NPC,返回 `{id, name, archetype}[]`。
+  - `NpcFactory.generateRosterByArchetype(archetypes, count, seed)` —
+    给生成的 NPC 附 `archetype` tag(扩展了 `NPCProfile.archetype?: string`)。
+  - `AIBridge.BridgeResult.seed` 暴露实际使用的 seed 给下游。
+  - `main.ts enterNewDimension()`：bridge.planAndLoad 之后用
+    `themeToScene(themeInput)` 算 `SceneBlueprint`,然后:
+    1. `generateDungeonWithWeights` 重新跑 WFC,覆盖默认 tile 权重
+    2. `biomeForVisualStyle(sceneBp.biomeId)` 拿到 biome 调色板
+    3. `scene.renderWfcDungeon(tiles, 1.0, biome)` 真渲染
+    4. `scene.spawnNpcWave(sceneBp.npcCount, archetypeIds)` 真 spawn
+    5. HUD log `[scene] 主题=… 陷阱×N 神龛×M NPC×K BPM T` +
+       `[event] t+Ns <kind> (payload)` 序列
+  - 关键不变量:同 `(visualStyle, musicMood, difficulty, seed)` 在
+    Rust 和 TS 端 `themeToScene` 输出**字段值字节一致**(±1e-6 浮点)。
+
+- **mood-aware 调色板** (上一轮已存在,本轮 commit 一起):
+  - `mood_palette(mood) → Palette` 四档:
+    FEAR 冷色 / FRIENDLY 暖色 / HOSTILE 红色 / NEUTRAL 紫粉;
+    与 `BalanceTuner::mood_bias` 同优先级,视觉信号与难度信号对齐。
+  - 7 个测试,5 个常量,1 个 ALL_PALETTES 数组。
+
+## rounds 23 新增 (上一轮)
+
+- **Reflexive scene generation** (`scene_gen.rs`)：闭合 round-22 反射
+  环路,`build_generation_config_with_mood` 把 mood 直接写入
+  `difficultyRange` 和 `preferredTypes`,不再只显示在 HUD。
+- **TS 镜像** (`SceneGen.ts`)：`buildGenerationConfigWithMood` /
+  `moodPromotedAtoms` / `moodPalette` + 19 个 jest 测试。
+- **AIBridge.mood** + **enterNewDimension wiring** 实际把 mood 喂进
+  `planAndLoad`,HUD 显示 `[平衡] NPC 平均情绪 → 难度 ±X.XX`。
+
+## rounds 21-22 新增
+
+- **NpcMind** (round 21): per-NPC 记忆 + disposition + Registry.broadcast
+- **DimensionVault** (round 20): AGI 的「次元记忆」,bounded ring + suggest_next
+
+## rounds 20 新增
 
 - **DimensionVault 引擎层** (`cocos4-rust/src/agi_minigame/vault.rs`)：
   AGI 的"次元记忆"。bounded ring (default 64) + `record / recent /
