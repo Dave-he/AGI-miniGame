@@ -1,21 +1,30 @@
 /**
  * NarrationEngine — deterministic 3-sentence story intros for new
- * dimensions.
+ * dimensions, with an optional mood-driven 4th sentence.
  *
  * The engine is seeded from the dimension's id so the *same*
  * dimension always gets the same intro. Sentences are picked from
  * a small pool so we get some variety between dimensions, but no
  * randomness within a single dimension.
  *
+ * Round 25 — when a `NpcDisposition` is supplied (typically from
+ * `NpcRegistry.averageDisposition()`), the engine appends a 4th
+ * sentence picked from a mood-keyed pool. The branch order is
+ * identical to `mood_palette` and `BalanceTuner.mood_bias` so the
+ * narrative signal aligns with the difficulty and visual signals.
+ *
  * The class is engine-agnostic: it returns a `Narration` object
  * which the App logs to the HUD or pipes to the audio service.
  */
 
 import type { DimensionBlueprint } from '../ai/AIEngine';
+import type { NpcDisposition } from '../world/NpcMind';
 
 export interface Narration {
     dimensionId: string;
     sentences: string[];
+    /** Round 25 — which mood branch (if any) supplied the 4th sentence. */
+    moodBranch?: 'fear' | 'friendly' | 'hostile' | 'neutral';
 }
 
 const OPENERS = [
@@ -42,18 +51,58 @@ const CALLS = [
     '你的选择是这个世界唯一的常数',
 ];
 
+/**
+ * Round 25 — mood-driven 4th-sentence pool. Each branch has 2
+ * alternatives picked deterministically by the dimension id. Branch
+ * order matches the Rust `narration::mood_branch` exactly.
+ */
+const MOOD_4TH: Record<'fear' | 'friendly' | 'hostile', string[]> = {
+    fear: [
+        '空气本身在退避，仿佛这里有过太多恐惧。',
+        '这片次元的空气发凉，像有什么被遗忘了很久。',
+    ],
+    friendly: [
+        '当地的居民说，这里对旅人尚算友好。',
+        '他们谈起你时，似乎带着某种旧日的善意。',
+    ],
+    hostile: [
+        '他们不会原谅你上次带来的麻烦。',
+        '这里的目光带着锋利——你最好保持警惕。',
+    ],
+};
+
+export function moodBranch(mood: NpcDisposition): 'fear' | 'friendly' | 'hostile' | 'neutral' {
+    if (mood.fear > 0.5) return 'fear';
+    if (mood.friendly > 0.5 && mood.trust > 0.3) return 'friendly';
+    if (mood.friendly < -0.3) return 'hostile';
+    return 'neutral';
+}
+
 export class NarrationEngine {
-    /** Generate a 3-sentence intro for a dimension. */
-    narrate(blueprint: DimensionBlueprint): Narration {
+    /**
+     * Generate a 3-sentence intro for a dimension. When `mood` is
+     * supplied, an optional 4th sentence is appended from the
+     * mood-keyed pool (round 25).
+     */
+    narrate(blueprint: DimensionBlueprint, mood?: NpcDisposition): Narration {
         const rng = this.makeRng(this.djb2(blueprint.id));
         const theme = (blueprint.theme as any).visualStyle ?? '未名之境';
         const opener = this.pick(OPENERS, rng).replace(/%s/g, theme);
-        const mood = this.pick(MOODS, rng);
+        const moodSentence = this.pick(MOODS, rng);
         const call = this.pick(CALLS, rng);
-        return {
-            dimensionId: blueprint.id,
-            sentences: [opener, mood + '。', call + '。'],
-        };
+        const sentences: string[] = [opener, moodSentence + '。', call + '。'];
+
+        let branch: Narration['moodBranch'];
+        if (mood) {
+            branch = moodBranch(mood);
+            if (branch !== 'neutral') {
+                const pool = MOOD_4TH[branch];
+                // Re-seed with id + branch index for stable 4th-sentence pick.
+                const branchRng = this.makeRng(this.djb2(blueprint.id + '|' + branch));
+                sentences.push(this.pick(pool, branchRng));
+            }
+        }
+        return { dimensionId: blueprint.id, sentences, moodBranch: branch };
     }
 
     /** Format a Narration as a single block of text (for the HUD log). */
