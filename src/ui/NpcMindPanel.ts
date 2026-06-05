@@ -13,9 +13,13 @@
  */
 
 import type { NpcMind, NpcMemoryEntry, NpcMemoryKind, NpcMood, NpcRegistry } from '../world/NpcMind';
+import { makeEntry } from '../world/NpcMind';
 import { BalanceTuner } from '../ai/AIEngine';
 
 const RECENT_N = 6;
+
+/** Round 28 — actions the panel can take on the selected NPC. */
+export type NpcPanelAction = 'gift' | 'attack';
 
 export interface NpcMindPanelHandle {
     refresh(): void;
@@ -110,12 +114,31 @@ export function renderNpcMindPanel(
 ): NpcMindPanelHandle {
     const t = (k: string, params?: any) => i18n ? i18n.t(k, params) : k;
 
-    // Panel-local state: which NPC is selected.
+    // Panel-local state: which NPC is selected, and the monotonic
+    // turn counter for the broadcasts the panel itself issues.
     let selectedId: string | null = null;
+    let panelTurn = 0;
     const pickDefault = () => {
         if (selectedId && registry.get(selectedId)) return;
         const first = registry.iter()[0];
         selectedId = first ? first.id() : null;
+    };
+
+    // Round 28 — action helper. The panel issues a single
+    // remember() call on the selected NPC. We use the existing
+    // 'received_gift' / 'hostility' kinds (introduced in round 21)
+    // with positive / negative weights so the resulting shift is
+    // the canonical "gift → friendly up / attack → friendly down".
+    const act = (action: NpcPanelAction) => {
+        if (!selectedId) return;
+        const m = registry.get(selectedId);
+        if (!m) return;
+        const turn = ++panelTurn;
+        if (action === 'gift') {
+            m.remember(makeEntry('received_gift', 'panel: gift', turn, 0.5));
+        } else {
+            m.remember(makeEntry('hostility', 'panel: attack', turn, -0.5));
+        }
     };
 
     const doRender = () => {
@@ -149,6 +172,10 @@ export function renderNpcMindPanel(
                 <div class="npc-roster">${renderRoster(registry, selectedId)}</div>
                 <div class="npc-section-label">${escapeHtml(t('npc.memory'))}: ${escapeHtml(selectedId ?? '–')}</div>
                 <div class="npc-memory">${renderMemoryRows(recent)}</div>
+                <div class="npc-actions">
+                    <button type="button" class="npc-action-btn npc-action-gift" data-npc-action="gift" ${selectedId ? '' : 'disabled'}>🎁 ${escapeHtml(t('npc.action.gift') ?? '送礼')}</button>
+                    <button type="button" class="npc-action-btn npc-action-attack" data-npc-action="attack" ${selectedId ? '' : 'disabled'}>⚔️ ${escapeHtml(t('npc.action.attack') ?? '攻击')}</button>
+                </div>
             </div>
         `;
 
@@ -157,6 +184,15 @@ export function renderNpcMindPanel(
             el.addEventListener('click', () => {
                 const id = el.dataset.npcId;
                 if (id) { selectedId = id; doRender(); }
+            });
+        });
+        // Round 28 — wire the gift / attack buttons. Disabled when
+        // no NPC is selected; doRender() re-runs whenever the roster
+        // changes, so the disabled state stays accurate.
+        root.querySelectorAll<HTMLButtonElement>('.npc-action-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const a = btn.dataset.npcAction as NpcPanelAction | undefined;
+                if (a) { act(a); doRender(); }
             });
         });
     };
