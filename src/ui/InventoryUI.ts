@@ -52,8 +52,11 @@ export class InventoryUI {
     use(itemId?: string): InventoryAction | null {
         const id = itemId ?? this.selectedId;
         if (!id) return null;
-        const inv = (this.worldState.getInventory() as any);
-        const items: ExtendedItem[] = inv.getAllItems ? inv.getAllItems() : [];
+        // Round 41 — `as any` cleanup. WorldState's
+        // getInventory() is typed `Inventory`, which has
+        // the methods directly; no escape hatch needed.
+        const inv = this.worldState.getInventory();
+        const items: ExtendedItem[] = inv.getAllItems();
         const item = items.find(i => i.itemId === id);
         if (!item) return null;
         const kind = this.kindOf(item);
@@ -61,7 +64,7 @@ export class InventoryUI {
         if (kind === 'consumable') {
             const healed = 20 + (item.quantity > 1 ? 10 : 0);
             this.worldState.spendEnergy?.(-healed); // noop if API absent
-            inv.removeItem?.(id, 1);
+            inv.removeItem(id, 1);
             result = `使用 ${item.name}，恢复 ${healed} 体力`;
         } else if (kind === 'key') {
             result = `${item.name} 需要在特定地点使用`;
@@ -80,11 +83,11 @@ export class InventoryUI {
     drop(itemId?: string): InventoryAction | null {
         const id = itemId ?? this.selectedId;
         if (!id) return null;
-        const inv = (this.worldState.getInventory() as any);
-        const items: ExtendedItem[] = inv.getAllItems ? inv.getAllItems() : [];
+        const inv = this.worldState.getInventory();
+        const items: ExtendedItem[] = inv.getAllItems();
         const item = items.find(i => i.itemId === id);
         if (!item) return null;
-        inv.removeItem?.(id, 1);
+        inv.removeItem(id, 1);
         const action: InventoryAction = { type: 'dropped', itemId: id, name: item.name };
         this.onAction(action);
         if (this.selectedId === id) this.selectedId = null;
@@ -104,7 +107,10 @@ export class InventoryUI {
     }
 
     private kindOf(item: ExtendedItem): ItemKind {
-        if ((item as any).kind) return (item as any).kind;
+        // Round 41 — `item.kind` is now properly typed
+        // (the ExtendedItem interface already declared it
+        // as `kind?: ItemKind`). No escape hatch needed.
+        if (item.kind) return item.kind;
         if (HEALING_ITEMS.has(item.itemId) || HEALING_ITEMS.has(item.name)) return 'consumable';
         if (KEY_ITEMS.has(item.itemId) || KEY_ITEMS.has(item.name)) return 'key';
         if (CURRENCY_ITEMS.has(item.itemId) || CURRENCY_ITEMS.has(item.name)) return 'currency';
@@ -113,8 +119,8 @@ export class InventoryUI {
     }
 
     private render(): void {
-        const inv = (this.worldState.getInventory() as any);
-        const items: ExtendedItem[] = inv.getAllItems ? inv.getAllItems() : [];
+        const inv = this.worldState.getInventory();
+        const items: ExtendedItem[] = inv.getAllItems();
         const list = items.length === 0
             ? '<div class="inv-empty">背包空空如也</div>'
             : items.map(it => {

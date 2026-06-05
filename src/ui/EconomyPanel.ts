@@ -4,6 +4,7 @@
  */
 
 import type { WorldState } from '../world/WorldState';
+import type { InventoryItem } from '../economy/Inventory';
 
 export interface CurrencyDef {
     id: string;
@@ -33,20 +34,24 @@ export class EconomyPanel {
     }
 
     render(): void {
+        // Round 41 — `as any` cleanup. Wallet and
+        // Inventory expose the methods directly, and
+        // WorldState's `getInventory()` already returns
+        // a typed `Inventory`, so no escape hatch is
+        // needed. (Round 26's HUD.getState() refactor
+        // did the same for `(this.hud as any).state`.)
         const wallet = this.worldState.wallet;
-        const balances = (wallet as any).getAllBalances ? (wallet as any).getAllBalances() : {};
+        const balances: Record<string, number> = wallet.getAllBalances();
         const universal = CURRENCY_DEFS.filter(c => c.scope === 'universal');
         const perAtom = CURRENCY_DEFS.filter(c => c.scope === 'per-atom');
 
         const universalRow = universal.map(c => this.balChip(c, balances[c.id] ?? 0)).join('');
         const perAtomRow = perAtom.map(c => this.balChip(c, balances[c.id] ?? 0)).join('');
 
-        const inventory = (this.worldState.getInventory() as any).getAllItems
-            ? (this.worldState.getInventory() as any).getAllItems()
-            : [];
+        const inventory: InventoryItem[] = this.worldState.getInventory().getAllItems();
         const invRows = inventory.length === 0
             ? '<div class="econ-empty">背包空空如也</div>'
-            : inventory.slice(0, 24).map((it: any) => `
+            : inventory.slice(0, 24).map((it: InventoryItem) => `
                 <div class="econ-item">
                     <span class="econ-item-name">${escapeHtml(it.name || it.itemId)}</span>
                     <span class="econ-item-qty">x${it.quantity}</span>
