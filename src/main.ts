@@ -296,6 +296,12 @@ class App {
         if (range && (range[0] > 0.3 + 1e-4 || range[1] < 0.8 - 1e-4)) {
             this.hud.log(`[gen] mood → 难度带 [${range[0].toFixed(2)}, ${range[1].toFixed(2)}]`);
         }
+        // Round 24 — log the applied color palette so the mood-aware
+        // visual signal is visible in the HUD.
+        const palette = r.blueprint.theme?.colorPalette ?? [];
+        if (palette.length === 3) {
+            this.hud.log(`[gen] mood → 调色板 [${palette.join(', ')}]`);
+        }
         this.hud.setState({ dimension: r.blueprint });
         this.scene.onDimensionEntered(r.blueprint);
         this.hud.log(`进入次元: ${r.blueprint.name}`);

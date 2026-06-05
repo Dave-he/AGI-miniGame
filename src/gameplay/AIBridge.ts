@@ -146,8 +146,10 @@ export class AIBridge {
         const filteredPreferred = generationCfg.preferredTypes.filter(id => availableIds.has(id));
         const finalCfg = { ...generationCfg, preferredTypes: filteredPreferred };
 
-        // 4. Generate the dimension blueprint.
-        const blueprint = this.ai.generateDimension(finalCfg);
+        // 4. Generate the dimension blueprint. Round 24 — when
+        //    `mood` is present, generateDimension uses it to override
+        //    the colorPalette with the mood-tagged one.
+        const blueprint = this.ai.generateDimension(finalCfg, cfg.mood);
 
         // 5. Load the corresponding TS gameplay modules (or stand-ins).
         const chosenAtoms = blueprint.atomIds;

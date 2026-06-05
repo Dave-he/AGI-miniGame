@@ -1,4 +1,5 @@
 import type { NpcDisposition } from '../world/NpcMind';
+import { moodPalette } from './SceneGen';
 
 export interface GenerationConfig {
     minAtoms: number;
@@ -328,7 +329,7 @@ export class AIEngine {
         this.generator = new DimensionGenerator(seed);
     }
 
-    generateDimension(config: GenerationConfig): DimensionBlueprint {
+    generateDimension(config: GenerationConfig, mood?: NpcDisposition): DimensionBlueprint {
         // 1) Balance AI hands us a suggested difficulty band.
         const suggested = this.tuner.suggestDifficulty(config.playerLevel);
         const adjustedConfig: GenerationConfig = {
@@ -347,11 +348,19 @@ export class AIEngine {
         const theme = this.contentAI.generate(stage, blueprint.atomIds, blueprint.difficulty);
         blueprint.name = theme.themeName;
         blueprint.description = theme.introLore;
+        // Round 24 — when the caller passes a collective NPC mood,
+        // override the colorPalette with the mood-tagged one so the
+        // 3D scene renders in colors that reflect the world's mood.
+        // Without a mood (or with the default neutral), the
+        // contentAI's randomly-picked palette is used.
+        const finalPalette = mood
+            ? Array.from(moodPalette(mood))
+            : theme.colorPalette;
         blueprint.theme = {
             name: theme.themeName,
             visualStyle: theme.visualStyle,
             musicMood: theme.musicMood,
-            colorPalette: theme.colorPalette,
+            colorPalette: finalPalette,
         };
 
         return blueprint;

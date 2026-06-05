@@ -50,6 +50,12 @@ export class SceneManager {
     private rafHandle: number | null = null;
     private resizeHandler: () => void;
     private activeAtomId: string | null = null;
+    /**
+     * Round 24 — the active entity spawn palette. Defaults to a
+     * rainbow; replaced by the mood-tinted palette whenever a
+     * dimension is entered (see `onDimensionEntered`).
+     */
+    private entityPalette: number[] = [0xff6b6b, 0xffd166, 0x4ecdc4, 0xa06cd5, 0x06d6a0, 0xef476f, 0x45b7d1];
     private startedAt: number = 0;
 
     constructor(canvas: HTMLCanvasElement) {
@@ -151,10 +157,31 @@ export class SceneManager {
 
     onDimensionEntered(blueprint: DimensionBlueprint): void {
         this.activeAtomId = blueprint.atomIds[0] || null;
+        // Round 24 — apply the mood-tinted color palette to the
+        // 3D scene. The first entry of colorPalette is the
+        // background tint; the remaining entries are mixed into
+        // the entity spawn pool so freshly-spawned cubes pick up
+        // the new theme. The mood signal is otherwise invisible to
+        // players — this gives the reflexive loop a visible shape.
+        if (blueprint.theme?.colorPalette && this.scene) {
+            const THREE = this.THREE;
+            if (THREE) {
+                const palette = blueprint.theme.colorPalette;
+                const bg = palette[0];
+                this.scene.background = new THREE.Color(bg);
+                if (this.scene.fog) {
+                    this.scene.fog.color = new THREE.Color(bg);
+                }
+                this.entityPalette = palette.map((c) => parseInt(c.replace('#', ''), 16));
+            }
+        }
     }
 
     onDimensionCleared(): void {
         this.activeAtomId = null;
+        // Reset the entity palette to the default rainbow when
+        // leaving a dimension.
+        this.entityPalette = [0xff6b6b, 0xffd166, 0x4ecdc4, 0xa06cd5, 0x06d6a0, 0xef476f, 0x45b7d1];
     }
 
     /**
@@ -166,8 +193,7 @@ export class SceneManager {
         if (!this.scene) return;
         const THREE = this.THREE;
         if (!THREE) return;
-        const palette = [0xff6b6b, 0xffd166, 0x4ecdc4, 0xa06cd5, 0x06d6a0, 0xef476f, 0x45b7d1];
-        const color = palette[id % palette.length];
+        const color = this.entityPalette[id % this.entityPalette.length];
         const geo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
         const mat = new THREE.MeshStandardMaterial({
             color,

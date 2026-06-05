@@ -7,8 +7,22 @@ import { NpcDisposition, NpcMind, NpcRegistry, defaultDisposition, makeEntry } f
 import {
     buildGenerationConfigWithMood,
     moodPromotedAtoms,
+    moodPalette,
+    paletteBackground,
+    paletteAccent,
     DEFAULT_GENERATION_HINT,
     GenerationHint,
+    FEAR_PALETTE,
+    FRIENDLY_PALETTE,
+    HOSTILE_PALETTE,
+    NEUTRAL_PALETTE,
+    ALL_PALETTES,
+    themeToScene,
+    defaultWfcWeights,
+    ThemeInput,
+    VisualStyle,
+    MusicMood,
+    NpcArchetype,
 } from './SceneGen';
 
 const neutral = (): NpcDisposition => defaultDisposition();
@@ -174,5 +188,160 @@ describe('SceneGen — integration with NpcRegistry round trip', () => {
         const cfg = buildGenerationConfigWithMood(5, 0, avg, DEFAULT_GENERATION_HINT, 42);
         // friendly+trust should fire the lower+=0.05 nudge.
         expect(cfg.difficultyRange[0]).toBeGreaterThan(0.30);
+    });
+});
+
+describe('SceneGen — round 24 mood-aware color palettes', () => {
+    test('fear_returns_cool_dark_palette', () => {
+        const fear: NpcDisposition = { friendly: 0.0, fear: 0.8, trust: 0.0 };
+        expect(moodPalette(fear)).toEqual(FEAR_PALETTE);
+    });
+
+    test('friendly_and_trusting_returns_warm_palette', () => {
+        const loved: NpcDisposition = { friendly: 0.7, fear: 0.0, trust: 0.4 };
+        expect(moodPalette(loved)).toEqual(FRIENDLY_PALETTE);
+    });
+
+    test('hostile_returns_aggressive_palette', () => {
+        const hated: NpcDisposition = { friendly: -0.5, fear: 0.0, trust: 0.0 };
+        expect(moodPalette(hated)).toEqual(HOSTILE_PALETTE);
+    });
+
+    test('neutral_returns_neutral_palette', () => {
+        expect(moodPalette(defaultDisposition())).toEqual(NEUTRAL_PALETTE);
+        // Frightened but still friendly → no fear-priority match.
+        const warmish: NpcDisposition = { friendly: 0.2, fear: 0.1, trust: 0.0 };
+        expect(moodPalette(warmish)).toEqual(NEUTRAL_PALETTE);
+    });
+
+    test('fear_takes_priority_over_friendly_when_both_fire', () => {
+        // Canonical order: fear first, matching mood_bias and
+        // moodPromotedAtoms.
+        const nightmare: NpcDisposition = { friendly: 0.9, fear: 0.9, trust: 0.5 };
+        expect(moodPalette(nightmare)).toEqual(FEAR_PALETTE);
+    });
+
+    test('all_palettes_have_exactly_three_entries', () => {
+        for (const p of ALL_PALETTES) {
+            expect(p.length).toBe(3);
+        }
+    });
+
+    test('palette_background_and_accent_helpers', () => {
+        const p = moodPalette(defaultDisposition());
+        expect(paletteBackground(p)).toBe(p[0]);
+        expect(paletteAccent(p)).toBe(p[2]);
+    });
+
+    test('palette_colors_match_engine_1to1', () => {
+        // Cross-check the canonical hex values from the Rust side
+        // match the TS values exactly. If anyone changes one side,
+        // the test fails and forces the other to be updated.
+        expect(FEAR_PALETTE).toEqual(['#0A1A2F', '#1B4965', '#CAE9FF']);
+        expect(FRIENDLY_PALETTE).toEqual(['#FF6B35', '#F7C548', '#FFFAEB']);
+        expect(HOSTILE_PALETTE).toEqual(['#6A040F', '#9D0208', '#FFBA08']);
+        expect(NEUTRAL_PALETTE).toEqual(['#3A0CA3', '#7209B7', '#F72585']);
+    });
+});
+
+// ---- Round 24 (part 2) — ThemeContent → scene structure ----
+
+function input(visual: VisualStyle, mood: MusicMood, difficulty: number, seed: number): ThemeInput {
+    return { visualStyle: visual, musicMood: mood, difficulty, seed };
+}
+
+describe('SceneGen — round 24 theme-to-scene', () => {
+    test('theme_to_scene_cyberpunk_returns_correct_biome', () => {
+        const bp = themeToScene(input('cyberpunk', 'pulse', 0.5, 1));
+        expect(bp.biomeId).toBe('cyberpunk');
+    });
+
+    test('theme_to_scene_cyberpunk_dense_npc', () => {
+        // cyberpunk base 0.9 × (0.5 + 0.7*0.7) = 0.9 × 0.99 = 0.891
+        const bp = themeToScene(input('cyberpunk', 'pulse', 0.7, 1));
+        expect(bp.npcDensity).toBeGreaterThanOrEqual(0.6);
+        expect(bp.npcCount).toBeGreaterThanOrEqual(1);
+    });
+
+    test('theme_to_scene_dungeon_more_walls', () => {
+        const bp = themeToScene(input('dungeon', 'tense', 0.5, 1));
+        expect(bp.wfcTileWeights[1]).toBeGreaterThanOrEqual(4);
+    });
+
+    test('theme_to_scene_desert_dense_traps', () => {
+        const bp = themeToScene(input('desert', 'epic', 0.5, 1));
+        expect(bp.wfcTileWeights[6]).toBeGreaterThanOrEqual(3);
+    });
+
+    test('theme_to_scene_underwater_maps_to_ice_biome', () => {
+        const bp = themeToScene(input('underwater', 'mysterious', 0.5, 1));
+        expect(bp.biomeId).toBe('ice');
+    });
+
+    test('theme_to_scene_event_chain_length_in_range', () => {
+        for (let seed = 0; seed < 20; seed++) {
+            const bp = themeToScene(input('fantasy', 'cheerful', 0.5, seed));
+            expect(bp.eventChain.length).toBeGreaterThanOrEqual(3);
+            expect(bp.eventChain.length).toBeLessThanOrEqual(5);
+        }
+    });
+
+    test('theme_to_scene_event_chain_deterministic_for_seed', () => {
+        const a = themeToScene(input('space', 'pulse', 0.5, 42));
+        const b = themeToScene(input('space', 'pulse', 0.5, 42));
+        expect(a.eventChain).toEqual(b.eventChain);
+    });
+
+    test('theme_to_scene_music_bpm_within_bounds', () => {
+        const visuals: VisualStyle[] = ['cyberpunk', 'fantasy', 'space', 'underwater', 'desert', 'dungeon'];
+        const moods: MusicMood[] = ['epic', 'mysterious', 'cheerful', 'tense', 'melancholic', 'pulse'];
+        for (const v of visuals) {
+            for (const m of moods) {
+                const bp = themeToScene(input(v, m, 0.5, 1));
+                expect(bp.musicBpm).toBeGreaterThanOrEqual(60);
+                expect(bp.musicBpm).toBeLessThanOrEqual(160);
+            }
+        }
+    });
+
+    test('theme_to_scene_npc_density_scales_with_difficulty', () => {
+        const low = themeToScene(input('cyberpunk', 'pulse', 0.1, 1));
+        const high = themeToScene(input('cyberpunk', 'pulse', 0.9, 1));
+        expect(high.npcDensity).toBeGreaterThan(low.npcDensity);
+    });
+
+    test('theme_to_scene_archetype_hints_per_visual_style', () => {
+        const cases: Array<[VisualStyle, NpcArchetype[]]> = [
+            ['cyberpunk', ['robot']],
+            ['fantasy',   ['mage', 'beast']],
+            ['space',     ['astronaut', 'alien']],
+            ['underwater',['siren', 'diver']],
+            ['desert',    ['scorpion', 'nomad']],
+            ['dungeon',   ['skeleton', 'lich']],
+        ];
+        for (const [v, expected] of cases) {
+            const bp = themeToScene(input(v, 'pulse', 0.5, 1));
+            expect(bp.npcArchetypeHints).toEqual(expected);
+        }
+    });
+
+    test('default_wfc_weights_match_six_six_six', () => {
+        // Mirrors Rust `default_wfc_weights()` and TS WfcLevelGen.DEFAULT_TILES.
+        expect(defaultWfcWeights()).toEqual([6, 3, 1, 1, 0, 0, 1, 1]);
+    });
+
+    test('theme_to_scene_cross_layer_density_snapshots', () => {
+        // AC7 — for seeds 0..10 cyberpunk + pulse, the density must
+        // be byte-identical to the Rust side (the formula is the
+        // same f32 math on both sides, with ≤ 1e-6 rounding).
+        // cyberpunk base 0.9; density = 0.9 * (0.5 + 0.7 * d).
+        const expectedDensity: number[] = [
+            0.513, 0.5445, 0.576, 0.6075, 0.639,
+            0.6705, 0.702, 0.7335, 0.765, 0.7965, 0.828,
+        ];
+        for (let i = 0; i < expectedDensity.length; i++) {
+            const bp = themeToScene(input('cyberpunk', 'pulse', 0.1 + i * 0.05, i));
+            expect(bp.npcDensity).toBeCloseTo(expectedDensity[i], 3);
+        }
     });
 });
