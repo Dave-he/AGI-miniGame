@@ -345,11 +345,29 @@ class App {
                 this.hud.log(`[scene] 主题=${visualStyle} · 陷阱×${sceneBp.wfcTileWeights[6]} · 神龛×${sceneBp.wfcTileWeights[7]} · NPC×${sceneBp.npcCount} · BPM ${sceneBp.musicBpm}`);
                 this.hud.log(`[scene] biome=${sceneBp.biomeId} · density=${sceneBp.npcDensity.toFixed(2)} · events=${sceneBp.eventChain.length}`);
                 // Push the event chain into the world for downstream
-                // consumers (SmartWorldAI / God console). For now we just
-                // log the chain so the player can see the next 3-5
-                // planned events.
+                // consumers (SmartWorldAI / God console). Round 39 —
+                // the chain is now actually *scheduled* (delays in
+                // seconds) and each fire broadcasts a
+                // `witnessed_event` into the NpcRegistry so the
+                // world's mood reflects the story beats the
+                // theme_to_scene blueprint produced.
                 for (const evt of sceneBp.eventChain) {
                     this.hud.log(`[event] t+${evt.delaySecs}s ${evt.kind} (${evt.payload})`);
+                    // Capture loop-local refs so the closure
+                    // sees the right `evt` even if a later
+                    // event re-assigns the iteration variable.
+                    const capture = evt;
+                    setTimeout(() => {
+                        this.hud.log(`[event] ⚡ fired ${capture.kind} (${capture.payload})`);
+                        this.npcMinds.broadcast(makeEntry(
+                            'witnessed_event',
+                            `${capture.kind}: ${capture.payload}`,
+                            ++this.npcTurn,
+                            0.3,
+                        ));
+                        this.syncNpcDisposition();
+                        this.npcMindHandle?.refresh();
+                    }, capture.delaySecs * 1000);
                 }
             }
         }
