@@ -1,23 +1,26 @@
 # AGI-miniGame 技术架构文档
 
-> **版本**: 2026-06-04 — 历经 15 轮迭代后的实现状态。
+> **版本**: 2026-06-05 — 历经 19 轮迭代后的实现状态。
 > **范围**: 描述 `src/` (TypeScript 游戏层) + `src/dsl/*` (Rust WASM DSL)
 > + 镜像到 `cocos4-rust/src/agi_minigame/dsl/*` (引擎层) 的代码。
 
-## rounds 15 新增 (本轮)
+## rounds 16-19 新增 (本轮)
 
-- **DmMode 真接入场景** (`src/main.ts`)：DM 指令真正驱动世界。
-  `spawn npc` → SceneManager.spawnNpc + NpcCombat.register；
-  `rule` → HotReloadController.begin (真正 DSL 编译)；
-  `event` → AIEngine.worldAI.rollEvent (真正世界事件)；
-  `dim R C s` → generateDungeon + SceneManager.renderWfcDungeon
-  配合 biomeForVisualStyle(s)。4 个新 Analytics 事件（dm.*）。
-- **3D 死亡动画** (`src/scene/SceneManager.ts`)：playDeathAnimation()
-  让 avatar 闪红 3 次，然后生成半透明 ghost 网格向上漂 2 秒。
-- **全 6 模块端到端集成测试** (`src/integration-modules.test.ts`)：
-  AIBridge → Match3/Tower/Card/Parkour/Puzzle/Synthesis
-  八个端到端断言，与 cocos4-rust `agi_minigame::atoms::integration_tests`
-  合同对齐。
+- **NpcFactory 真正驱动 App** (`src/main.ts`)：3 个硬编码 NPC 替换
+  为 `NpcFactory.generateRoster({ count: 5, seed: Date.now() })`。
+- **Benchmark 套件** (`src/bench/Benchmark.test.ts`)：4 个软 SLA 测试
+  (AI 维度生成 / DSL 解析 / DslExecutor 应用 / EpochSystem 转场)，
+  防止跨迭代性能回归。
+- **NarrationEngine** (`src/narration/NarrationEngine.ts`)：每个次元进入
+  时生成 3 句开场白（5 opener × 5 mood × 5 call = 75 种组合），
+  djb2-seeded 决定论 — 同一 id 永远相同句子。`src/main.ts` 的
+  `enterNewDimension()` 现在调用它并把 3 句播到 HUD log。
+- **迭代计划文档** (`docs/superpowers/plans/2026-06-01-iteration-round-17.md`)：
+  捕获 round 17 的目标和 1-16 轮历史。
+- **Git 远程** (`AGI-miniGame.git` bare repo at `/Users/hyx/workspace/`)：
+  AGI-miniGame 终于有了可用的 push 目的地。
+- **cocos4-rust DSL 边角案例**（6 个新测试）：负数、小数、空字符串、
+  Unicode 标识符、负数 Heal 参数、超量空白。
 
 ## rounds 12-14 新增 (本轮)
 
