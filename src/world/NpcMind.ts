@@ -87,37 +87,45 @@ function applyArchetypeDefault(archetype: string): NpcDisposition {
 }
 
 /**
- * Round 34 — archetype → topic boost table. Returns the
- * archetype's preference weight for each topic, where higher
- * means more likely to be picked. Used as the weighting
- * vector for the NEUTRAL fallback in `suggestTopic`.
+ * Round 34 (extended in round 38) — archetype → topic boost
+ * table. Returns the archetype's preference weight for each
+ * topic, where higher means more likely to be picked. Used as
+ * the weighting vector for the NEUTRAL fallback in
+ * `suggestTopic`.
  *
- * The 6 archetypes lean toward different topic spaces:
- *   - mage     → lore (knowledge)  / quest
- *   - merchant → trade             / greeting
- *   - guard    → combat            / greeting
- *   - rogue    → quest             / trade
- *   - shaman   → lore              / greeting
- *   - peasant  → quest             / greeting
- *
- * Unrecognized archetypes get a flat weight of 1.0 across
- * all topics (i.e. the round-25 unweighted behavior).
+ * Round 38 brings the TS table into 1:1 alignment with the
+ * engine's 11-archetype set (cocos4-rust/src/agi_minigame/
+ * npc.rs::archetype_topic_boost). The values for the 6
+ * round-34 archetypes (merchant, guard, rogue, shaman,
+ * peasant) are TS-only legacy entries that the engine maps
+ * to None (flat weights); the 11 canonical archetypes share
+ * the same 4-vector on both layers so the same input →
+ * same suggestion.
  */
 function archetypeTopicBoost(archetype: string | undefined): Record<string, number> {
     if (!archetype) return { greeting: 1, lore: 1, trade: 1, quest: 1 };
     switch (archetype) {
-        case 'mage':
-            return { greeting: 1, lore: 3, trade: 0, quest: 2 };
-        case 'merchant':
-            return { greeting: 1, lore: 1, trade: 3, quest: 1 };
-        case 'guard':
-            return { greeting: 1, lore: 0, trade: 0, quest: 1 };
-        case 'rogue':
-            return { greeting: 1, lore: 1, trade: 2, quest: 3 };
-        case 'shaman':
-            return { greeting: 2, lore: 3, trade: 0, quest: 1 };
-        case 'peasant':
-            return { greeting: 2, lore: 1, trade: 1, quest: 2 };
+        // 11 canonical archetypes — values mirror
+        // cocos4-rust/src/agi_minigame/npc.rs::archetype_topic_boost
+        case 'robot':     return { greeting: 1, lore: 3, trade: 1, quest: 1 };
+        case 'mage':      return { greeting: 1, lore: 3, trade: 0, quest: 2 };
+        case 'beast':     return { greeting: 1, lore: 1, trade: 0, quest: 3 };
+        case 'astronaut': return { greeting: 1, lore: 2, trade: 1, quest: 2 };
+        case 'alien':     return { greeting: 1, lore: 2, trade: 0, quest: 3 };
+        case 'siren':     return { greeting: 3, lore: 1, trade: 1, quest: 1 };
+        case 'diver':     return { greeting: 2, lore: 1, trade: 2, quest: 1 };
+        case 'scorpion':  return { greeting: 1, lore: 0, trade: 0, quest: 3 };
+        case 'nomad':     return { greeting: 2, lore: 1, trade: 2, quest: 2 };
+        case 'skeleton':  return { greeting: 0, lore: 1, trade: 0, quest: 3 };
+        case 'lich':      return { greeting: 0, lore: 3, trade: 0, quest: 1 };
+        // TS-only legacy entries (round 34 archetypes) —
+        // the engine maps these to None (flat weights), but
+        // the TS keeps distinct profiles for game-side UX.
+        case 'merchant':  return { greeting: 1, lore: 1, trade: 3, quest: 1 };
+        case 'guard':     return { greeting: 1, lore: 0, trade: 0, quest: 1 };
+        case 'rogue':     return { greeting: 1, lore: 1, trade: 2, quest: 3 };
+        case 'shaman':    return { greeting: 2, lore: 3, trade: 0, quest: 1 };
+        case 'peasant':   return { greeting: 2, lore: 1, trade: 1, quest: 2 };
         default:
             return { greeting: 1, lore: 1, trade: 1, quest: 1 };
     }

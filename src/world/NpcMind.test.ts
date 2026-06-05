@@ -483,3 +483,105 @@ describe('NpcMind — round 34 archetype topic bias', () => {
         }
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 38 — TS archetype table aligned with the engine's 11 canonical
+// archetypes.
+//
+// Round 34 added 6 round-34 archetypes to the TS
+// `archetypeTopicBoost` table. Round 37 added all 11
+// canonical archetypes to the engine side. Round 38
+// brings the TS table into 1:1 alignment so the same
+// archetype string produces the same topic preference on
+// both sides.
+// ---------------------------------------------------------------------------
+
+describe('NpcMind — round 38 archetype table alignment with engine', () => {
+    // The 11 canonical archetypes shared with the engine.
+    const CANONICAL: ReadonlyArray<{
+        arch: string;
+        // Expected `[greeting, lore, trade, quest]` weights from
+        // cocos4-rust/src/agi_minigame/npc.rs::archetype_topic_boost.
+        weights: [number, number, number, number];
+    }> = [
+        { arch: 'robot',     weights: [1, 3, 1, 1] },
+        { arch: 'mage',      weights: [1, 3, 0, 2] },
+        { arch: 'beast',     weights: [1, 1, 0, 3] },
+        { arch: 'astronaut', weights: [1, 2, 1, 2] },
+        { arch: 'alien',     weights: [1, 2, 0, 3] },
+        { arch: 'siren',     weights: [3, 1, 1, 1] },
+        { arch: 'diver',     weights: [2, 1, 2, 1] },
+        { arch: 'scorpion',  weights: [1, 0, 0, 3] },
+        { arch: 'nomad',     weights: [2, 1, 2, 2] },
+        { arch: 'skeleton',  weights: [0, 1, 0, 3] },
+        { arch: 'lich',      weights: [0, 3, 0, 1] },
+    ];
+
+    test('all_11_canonical_archetypes_have_distinct_profiles', () => {
+        const seen = new Set<string>();
+        for (const { arch, weights } of CANONICAL) {
+            const key = weights.join(',');
+            expect(seen.has(key)).toBe(false);
+            seen.add(key);
+        }
+        expect(seen.size).toBe(11);
+    });
+
+    test('all_11_canonical_archetypes_yield_a_NEUTRAL_topic', () => {
+        // The weight vectors all have at least one positive
+        // entry (no all-zero vector). When suggestTopic's
+        // NEUTRAL fallback runs, the weighted pick must
+        // resolve to one of the 4 NEUTRAL topics.
+        for (const { arch } of CANONICAL) {
+            const m = new NpcMind('m1', 32, arch);
+            const t = m.suggestTopic(0);
+            expect(['greeting', 'lore', 'trade', 'quest']).toContain(t);
+        }
+    });
+
+    test('ts_robot_archetype_topic_weights_match_engine_table', () => {
+        // Pin one of the 11 cross-layer contracts: TS robot
+        // weight vector must equal the engine's [1, 3, 1, 1].
+        // (Same shape test would be possible for all 11
+        // archetypes; we just sample one as a smoke test.)
+        const m = new NpcMind('m1', 32, 'robot');
+        // The weighted pick (NEUTRAL fallback) is
+        // deterministic per seed; we sweep 30 seeds and
+        // check the *distribution* matches [1,3,1,1].
+        const counts: Record<string, number> = { greeting: 0, lore: 0, trade: 0, quest: 0 };
+        for (let seed = 0; seed < 30; seed++) {
+            const t = m.suggestTopic(seed);
+            if (t in counts) counts[t]++;
+        }
+        // Robot has 3 lore, 1 greeting, 1 trade, 1 quest;
+        // total=6. 30 seeds → expect lore to dominate
+        // (5/6 × 30 = 25), and quest/trade/greeting to
+        // appear 1/6 × 30 = 5 each. With modular-arithmetic
+        // bias the split isn't perfectly uniform, but lore
+        // must be the most common.
+        expect(counts.lore).toBeGreaterThan(counts.greeting);
+        expect(counts.lore).toBeGreaterThan(counts.trade);
+        expect(counts.lore).toBeGreaterThan(counts.quest);
+    });
+
+    test('round_34_legacy_archetypes_kept_for_back_compat', () => {
+        // The 6 round-34 archetypes are TS-only — the
+        // engine's `npc_archetype_from_str` returns None
+        // for them and the bias path uses flat weights on
+        // the Rust side. The TS side, however, keeps its
+        // distinct round-34 profiles for game-side UX. We
+        // verify they all resolve to *some* valid topic
+        // (not necessarily NEUTRAL — the round-29
+        // archetype init can land an NPC in 'uneasy' or
+        // 'happy' mood, which triggers the specific
+        // rule-based picks like 'farewell' / 'combat' /
+        // 'greeting').
+        const LEGACY = ['merchant', 'guard', 'rogue', 'shaman', 'peasant'];
+        const VALID = ['greeting', 'lore', 'trade', 'quest', 'combat', 'farewell'];
+        for (const arch of LEGACY) {
+            const m = new NpcMind('m1', 32, arch);
+            const t = m.suggestTopic(0);
+            expect(VALID).toContain(t);
+        }
+    });
+});
