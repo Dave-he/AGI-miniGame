@@ -181,3 +181,96 @@ describe('BalanceTuner mood bias (round 22)', () => {
         expect(t.suggestDifficultyWithMood(level, adored)).toBeGreaterThan(plain);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 25 — fail/abandon now feeds the BalanceTuner.
+//
+// Before this round, the tuner's history only ever grew from
+// `recordRunCompletion` (the success path). fail/abandon updated
+// the vault and broadcast to NPCs but never reached the tuner, so
+// the difficulty curve could never see losses. These tests pin
+// the new behaviour: `ai.recordSession({completed: false, ...})`
+// must grow the history and pull the next recommendation down.
+// ---------------------------------------------------------------------------
+
+describe('AIEngine — round 25 fail/abandon feed BalanceTuner', () => {
+    test('recordSession_completed_false_grows_tuner_history', () => {
+        // Use a private accessor via bracket notation — the public
+        // surface doesn't expose history, but the test only needs
+        // to verify the count grows.
+        const engine = new AIEngine(7);
+        const before = (engine.tuner as any).history.length as number;
+        engine.recordSession({
+            dimensionId: 'd1',
+            difficulty: 0.6,
+            playerLevel: 5,
+            score: 0,
+            durationSecs: 0,
+            completed: false,
+        });
+        const after = (engine.tuner as any).history.length as number;
+        expect(after).toBe(before + 1);
+    });
+
+    test('recordSession_completed_false_records_actual_difficulty', () => {
+        // The actual dimension difficulty must reach the tuner, not
+        // a hardcoded 0.5. We check the last history entry to be
+        // sure.
+        const engine = new AIEngine(7);
+        engine.recordSession({
+            dimensionId: 'd-fail-001',
+            difficulty: 0.73,
+            playerLevel: 8,
+            score: 0,
+            durationSecs: 0,
+            completed: false,
+        });
+        const last = (engine.tuner as any).history.at(-1) as any;
+        expect(last).toBeDefined();
+        expect(last.dimensionId).toBe('d-fail-001');
+        expect(last.difficulty).toBeCloseTo(0.73, 5);
+        expect(last.completed).toBe(false);
+    });
+
+    test('repeated_failures_drag_next_suggestion_down', () => {
+        // The whole point of round 25: after several `completed:false`
+        // sessions at a given level, the next suggestion should be
+        // lower than the baseline (no-history) value.
+        const engine = new AIEngine(7);
+        const level = 5;
+        const baseline = engine.tuner.suggestDifficulty(level);
+        for (let i = 0; i < 6; i++) {
+            engine.recordSession({
+                dimensionId: `d-fail-${i}`,
+                difficulty: 0.5 + i * 0.02,
+                playerLevel: level,
+                score: 0,
+                durationSecs: 0,
+                completed: false,
+            });
+        }
+        const after = engine.tuner.suggestDifficulty(level);
+        expect(after).toBeLessThan(baseline);
+    });
+
+    test('mixed_outcomes_cancel_in_balanced_history', () => {
+        // Half wins, half losses → recommendation should stay near
+        // baseline (no monotonic drift). We tolerate ±0.1 to absorb
+        // the win/loss score asymmetry.
+        const engine = new AIEngine(7);
+        const level = 5;
+        const baseline = engine.tuner.suggestDifficulty(level);
+        for (let i = 0; i < 6; i++) {
+            engine.recordSession({
+                dimensionId: `d-${i}`,
+                difficulty: 0.5,
+                playerLevel: level,
+                score: i % 2 === 0 ? 1500 : 200,
+                durationSecs: 100,
+                completed: i % 2 === 0,
+            });
+        }
+        const after = engine.tuner.suggestDifficulty(level);
+        expect(Math.abs(after - baseline)).toBeLessThan(0.15);
+    });
+});

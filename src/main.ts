@@ -394,6 +394,23 @@ class App {
         this.vault.record(dim, outcome, Date.now());
         this.hud.log(`[vault] 记忆: 次元 ${dim.name} 被标记为 ${outcome}`);
         this.vaultHandle?.refresh();
+        // Round 25 — feed the outcome into the BalanceTuner so the
+        // balance AI can adjust future difficulty recommendations
+        // based on actual player outcomes. Without this, the tuner
+        // would only ever see `completed=true` records and the
+        // difficulty would creep up monotonically. The
+        // `dimension.difficulty` value is the *actual* difficulty
+        // the player just faced (not a hardcoded 0.5), so the
+        // history reflects the real challenge curve.
+        this.ai.recordSession({
+            dimensionId: dim.id,
+            difficulty: dim.difficulty,
+            playerLevel: this.worldState.player.level,
+            score: 0,
+            durationSecs: 0,
+            completed: false,
+        });
+        this.hud.log(`[balance] record_result: ${dim.id} difficulty=${dim.difficulty.toFixed(2)} completed=false (${outcome})`);
         // NPCs witness the outcome — affects fear/friendly negatively.
         this.npcMinds.broadcast(makeEntry(
             'witnessed_event',
