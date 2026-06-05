@@ -13,6 +13,7 @@
  */
 
 import type { NpcMind, NpcMemoryEntry, NpcMemoryKind, NpcMood, NpcRegistry } from '../world/NpcMind';
+import { BalanceTuner } from '../ai/AIEngine';
 
 const RECENT_N = 6;
 
@@ -123,9 +124,21 @@ export function renderNpcMindPanel(
         const avg = registry.averageDisposition();
         const recent = selected ? selected.recent(RECENT_N).slice().reverse() : [];
 
+        // Round 22 — preview the reflexive loop bias the BalanceTuner
+        // will apply to the next dimension's difficulty.
+        const bias = BalanceTuner.moodBias(avg);
+        const biasLabel = bias === 0
+            ? '中性 (无影响)'
+            : `${bias > 0 ? '+' : ''}${bias.toFixed(2)}`;
+        const biasClass = bias > 0 ? 'npc-bias-up' : bias < 0 ? 'npc-bias-down' : 'npc-bias-flat';
+
         root.innerHTML = `
             <div class="npc-panel">
                 <div class="npc-title">${escapeHtml(t('npc.title'))}</div>
+                <div class="npc-bias-row">
+                    <span class="npc-bias-label">→ 影响下次难度</span>
+                    <span class="npc-bias ${biasClass}">${biasLabel}</span>
+                </div>
                 <div class="npc-avg">
                     <span class="npc-avg-label">${escapeHtml(t('npc.average'))}</span>
                     ${dispositionBar('好感', avg.friendly)}

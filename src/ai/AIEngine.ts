@@ -1,3 +1,5 @@
+import type { NpcDisposition } from '../world/NpcMind';
+
 export interface GenerationConfig {
     minAtoms: number;
     maxAtoms: number;
@@ -267,6 +269,37 @@ export class BalanceTuner {
 
         const base = 0.3 + playerLevel * 0.05;
         return Math.max(0.1, Math.min(1.0, base + adjustment));
+    }
+
+    /**
+     * Round 22 — reflexive loop with the world's NPC mood. Returns
+     * `suggestDifficulty(playerLevel)` nudged by the collective NPC
+     * disposition (typically from `NpcRegistry.averageDisposition()`).
+     *
+     * Mirror of `BalanceTuner::suggest_difficulty_with_mood` in the
+     * Rust engine — same thresholds, same coefficients, same clamp.
+     *
+     * - `fear > 0.5` → -0.10 (world already feels scary)
+     * - `friendly > 0.5 && trust > 0.3` → +0.08 (raise the stakes)
+     * - `friendly < -0.3` → -0.05 (player is hated; ease up a notch)
+     *
+     * Branches stack. Result clamped to `[0.1, 1.0]`. When `mood` is
+     * the default neutral, the function returns exactly the same
+     * value as `suggestDifficulty`.
+     */
+    suggestDifficultyWithMood(playerLevel: number, mood: NpcDisposition): number {
+        const base = this.suggestDifficulty(playerLevel);
+        const bias = BalanceTuner.moodBias(mood);
+        return Math.max(0.1, Math.min(1.0, base + bias));
+    }
+
+    /** Pure mood → bias mapping; HUD uses this to preview the nudge. */
+    static moodBias(mood: NpcDisposition): number {
+        let bias = 0;
+        if (mood.fear > 0.5) bias -= 0.10;
+        if (mood.friendly > 0.5 && mood.trust > 0.3) bias += 0.08;
+        if (mood.friendly < -0.3) bias -= 0.05;
+        return bias;
     }
 }
 

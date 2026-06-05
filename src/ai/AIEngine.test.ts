@@ -108,3 +108,76 @@ describe('MemeCompiler', () => {
         expect(reparsed.event.kind).toBe(rule.event.kind);
     });
 });
+
+// Round 22 — NpcMind ↔ BalanceTuner reflexive loop. These tests
+// mirror the Rust suite in src/agi_minigame/ai_engine.rs `tests`
+// 1-to-1 so engine ↔ game divergence surfaces immediately.
+import { BalanceTuner } from './AIEngine';
+import { defaultDisposition } from '../world/NpcMind';
+import type { NpcDisposition } from '../world/NpcMind';
+
+describe('BalanceTuner mood bias (round 22)', () => {
+    test('neutral disposition produces zero bias', () => {
+        expect(BalanceTuner.moodBias(defaultDisposition())).toBe(0);
+    });
+
+    test('high fear lowers difficulty', () => {
+        const scared: NpcDisposition = { friendly: 0, fear: 0.7, trust: 0 };
+        expect(BalanceTuner.moodBias(scared)).toBeCloseTo(-0.10, 6);
+    });
+
+    test('friendly + trusting raises difficulty', () => {
+        const beloved: NpcDisposition = { friendly: 0.8, fear: 0, trust: 0.5 };
+        expect(BalanceTuner.moodBias(beloved)).toBeCloseTo(0.08, 6);
+    });
+
+    test('friendly alone (low trust) gives no bonus', () => {
+        const liked: NpcDisposition = { friendly: 0.8, fear: 0, trust: 0.1 };
+        expect(BalanceTuner.moodBias(liked)).toBe(0);
+    });
+
+    test('hated player eases difficulty', () => {
+        const hated: NpcDisposition = { friendly: -0.5, fear: 0, trust: 0 };
+        expect(BalanceTuner.moodBias(hated)).toBeCloseTo(-0.05, 6);
+    });
+
+    test('mood branches stack', () => {
+        const nightmare: NpcDisposition = { friendly: -0.5, fear: 0.7, trust: 0 };
+        expect(BalanceTuner.moodBias(nightmare)).toBeCloseTo(-0.15, 6);
+    });
+
+    test('suggestWithMood equals plain when neutral', () => {
+        const t = new BalanceTuner();
+        for (let i = 0; i < 6; i++) {
+            t.recordResult({ playerLevel: 5, dimensionId: 'd1', difficulty: 0.5, score: 1000, durationSecs: 100, completed: i % 2 === 0 });
+        }
+        expect(t.suggestDifficultyWithMood(5, defaultDisposition()))
+            .toBeCloseTo(t.suggestDifficulty(5), 6);
+    });
+
+    test('suggestWithMood clamps at floor', () => {
+        const t = new BalanceTuner();
+        const nightmare: NpcDisposition = { friendly: -1, fear: 1, trust: 0 };
+        const d = t.suggestDifficultyWithMood(1, nightmare);
+        expect(d).toBeGreaterThanOrEqual(0.1);
+        expect(d).toBeLessThanOrEqual(1.0);
+    });
+
+    test('suggestWithMood clamps at ceiling', () => {
+        const t = new BalanceTuner();
+        const adored: NpcDisposition = { friendly: 1, fear: 0, trust: 1 };
+        const d = t.suggestDifficultyWithMood(50, adored);
+        expect(d).toBeLessThanOrEqual(1.0);
+        expect(d).toBeGreaterThanOrEqual(0.1);
+    });
+
+    test('suggestWithMood actually moves difficulty', () => {
+        const t = new BalanceTuner();
+        const level = 5;
+        const scared: NpcDisposition = { friendly: 0, fear: 0.9, trust: 0 };
+        const adored: NpcDisposition = { friendly: 0.9, fear: 0, trust: 0.5 };
+        const plain = t.suggestDifficulty(level);
+        expect(t.suggestDifficultyWithMood(level, scared)).toBeLessThan(plain);
+        expect(t.suggestDifficultyWithMood(level, adored)).toBeGreaterThan(plain);
+    });
+});

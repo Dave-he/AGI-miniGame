@@ -28,7 +28,7 @@ import { WorldState } from './world/WorldState';
 import { Progression } from './player/Progression';
 import { EpochSystem } from './world/EpochSystem';
 import { SaveSystem } from './world/SaveSystem';
-import { AIEngine } from './ai/AIEngine';
+import { AIEngine, BalanceTuner } from './ai/AIEngine';
 import { NPCDialogueAI, NPCProfile } from './ai/NPCDialogueAI';
 import { AIBridge, ATOM_MANIFEST } from './gameplay/AIBridge';
 import { GameplayManager, SynthesisModule, CardModule } from './gameplay/GameplayManager';
@@ -273,6 +273,13 @@ class App {
 
     /** Demo: AI picks a dimension combo, loads modules, generates theme. */
     async enterNewDimension(): Promise<void> {
+        // Round 22 — preview the reflexive loop: NpcMind 集体情绪 → BalanceTuner bias.
+        const avgMood = this.npcMinds.averageDisposition();
+        const moodBias = BalanceTuner.moodBias(avgMood);
+        if (moodBias !== 0) {
+            const sign = moodBias > 0 ? '+' : '';
+            this.hud.log(`[平衡] NPC 平均情绪 (友善 ${avgMood.friendly.toFixed(2)} / 恐惧 ${avgMood.fear.toFixed(2)} / 信任 ${avgMood.trust.toFixed(2)}) → 难度 ${sign}${moodBias.toFixed(2)}`);
+        }
         const r = await this.bridge.planAndLoad({ playerLevel: this.worldState.player.level });
         this.hud.setState({ dimension: r.blueprint });
         this.scene.onDimensionEntered(r.blueprint);
