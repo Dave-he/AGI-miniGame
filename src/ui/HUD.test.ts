@@ -177,3 +177,49 @@ describe('HUD — round 43 lastBiome HUD prompt', () => {
         expect(root.innerHTML).not.toContain('<script>alert(1)</script>');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 44 — lastSpeaker HUD prompt.
+//
+// Round 36 added the lastSpeaker* fields on the
+// WorldState; this round exposes them in the HUD so the
+// player sees "🗣 你刚才听见了 <id> 说：…" right after
+// the narration (round-44 wiring in main.ts) and also
+// after a save → reload (round-44 loadGame wiring).
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 44 lastSpeaker HUD prompt', () => {
+    test('setLastSpeaker_pushes_into_state', () => {
+        const { hud } = makeHud();
+        expect(hud.getState().lastSpeakerId).toBeUndefined();
+        hud.setLastSpeaker({ id: 'mage_1', branch: 'fear', disposition: { friendly: 0, fear: 0.6, trust: 0 } });
+        expect(hud.getState().lastSpeakerId).toBe('mage_1');
+        expect(hud.getState().lastSpeakerBranch).toBe('fear');
+        expect(hud.getState().lastSpeakerDisposition).toEqual({ friendly: 0, fear: 0.6, trust: 0 });
+        hud.setLastSpeaker(null);
+        expect(hud.getState().lastSpeakerId).toBeNull();
+    });
+
+    test('renders_lastSpeaker_in_HTML_when_set', () => {
+        const { hud, root } = makeHud();
+        hud.setLastSpeaker({ id: 'hostile_1', branch: 'hostile', disposition: { friendly: -0.5, fear: 0, trust: 0 } });
+        expect(root.innerHTML).toContain('hud-speaker-remembered');
+        expect(root.innerHTML).toContain('hostile_1');
+        expect(root.innerHTML).toContain('[hostile]');
+    });
+
+    test('does_not_render_lastSpeaker_line_when_null', () => {
+        const { hud, root } = makeHud();
+        hud.setLastSpeaker(null);
+        expect(root.innerHTML).not.toContain('hud-speaker-remembered');
+    });
+
+    test('escapes_speaker_id_in_HTML', () => {
+        // Defensive: an NPC id with a `<` is HTML-escaped,
+        // not injected raw.
+        const { hud, root } = makeHud();
+        hud.setLastSpeaker({ id: '<img src=x onerror=alert(1)>', branch: 'neutral', disposition: { friendly: 0, fear: 0, trust: 0 } });
+        expect(root.innerHTML).toContain('&lt;img');
+        expect(root.innerHTML).not.toContain('<img src=x onerror');
+    });
+});

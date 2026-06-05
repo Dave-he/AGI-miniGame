@@ -402,6 +402,15 @@ class App {
                 this.worldState.lastSpeakerDisposition = speakerMind.disposition();
             }
             this.hud.log(`[narr+mind] speaker=${intro.speakerId} (${intro.moodBranch}) 4th 句已记录`);
+            // Round 44 — push the round-36 lastSpeaker
+            // snapshot into the HUD so the player sees
+            // "🗣 你刚才听见了 <id> 说" right after the
+            // narration, not just on reload.
+            this.hud.setLastSpeaker({
+                id: intro.speakerId,
+                branch: (intro.moodBranch ?? 'neutral') as 'fear' | 'friendly' | 'hostile' | 'neutral',
+                disposition: this.worldState.lastSpeakerDisposition ?? { friendly: 0, fear: 0, trust: 0 },
+            });
         }
         // Round 20 — record the visit so the AGI's vault remembers it.
         this.vault.record(r.blueprint, 'completed', Date.now());
@@ -677,6 +686,25 @@ class App {
             // snapshot into the HUD so the "上次离开
             // #biome" prompt becomes visible.
             this.hud.setLastBiome(this.worldState.lastBiome);
+            // Round 44 — push the round-36 lastSpeaker
+            // snapshot into the HUD so the "你刚才听见了
+            // <id> 说：…" prompt becomes visible after
+            // a reload.
+            if (this.worldState.lastSpeakerId) {
+                this.hud.setLastSpeaker({
+                    id: this.worldState.lastSpeakerId,
+                    branch: this.worldState.lastSpeakerDisposition
+                        ? (this.worldState.lastSpeakerDisposition.fear > 0.5
+                            ? 'fear'
+                            : this.worldState.lastSpeakerDisposition.friendly < -0.3
+                                ? 'hostile'
+                                : this.worldState.lastSpeakerDisposition.friendly > 0.5
+                                    ? 'friendly'
+                                    : 'neutral')
+                        : 'neutral',
+                    disposition: this.worldState.lastSpeakerDisposition ?? { friendly: 0, fear: 0, trust: 0 },
+                });
+            }
         }
         this.renderAllPanels();
         this.renderAllPanels();

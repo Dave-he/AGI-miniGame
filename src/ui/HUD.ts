@@ -10,6 +10,7 @@
 import type { DimensionBlueprint } from '../ai/AIEngine';
 import type { WorldEventDraft } from '../ai/SmartWorldAI';
 import type { I18n } from '../i18n/I18n';
+import type { NpcDisposition } from '../world/NpcMind';
 
 export interface HUDState {
     dimension: DimensionBlueprint | null;
@@ -28,6 +29,15 @@ export interface HUDState {
      * world's "where I last was" continuity.
      */
     lastBiome?: string | null;
+    /**
+     * Round 44 — the round-33/36 lastSpeaker snapshot.
+     * Optional; when set, the HUD renders a
+     * "你刚才听见了 <id> 说：…" line in the stats panel
+     * header so the player sees which NPC spoke.
+     */
+    lastSpeakerId?: string | null;
+    lastSpeakerBranch?: 'fear' | 'friendly' | 'hostile' | 'neutral' | null;
+    lastSpeakerDisposition?: NpcDisposition | null;
 }
 
 export class HUD {
@@ -66,6 +76,22 @@ export class HUD {
      */
     setLastBiome(biome: string | null): void {
         this.state = { ...this.state, lastBiome: biome };
+        this.render();
+    }
+
+    /**
+     * Round 44 — push the round-36 lastSpeaker snapshot
+     * (id + branch + disposition) into the HUD. The
+     * stats panel renders "你刚才听见了 <id> 说：…"
+     * after a narration that picked a specific speaker.
+     */
+    setLastSpeaker(speaker: { id: string; branch: 'fear' | 'friendly' | 'hostile' | 'neutral'; disposition: { friendly: number; fear: number; trust: number } } | null): void {
+        this.state = {
+            ...this.state,
+            lastSpeakerId: speaker?.id ?? null,
+            lastSpeakerBranch: speaker?.branch ?? null,
+            lastSpeakerDisposition: speaker?.disposition ?? null,
+        };
         this.render();
     }
 
@@ -109,6 +135,9 @@ export class HUD {
                 </div>
                 ${s.lastBiome
                     ? `<div class="hud-biome-remembered">↩ 上次离开 <b>#${escapeHtml(s.lastBiome)}</b></div>`
+                    : ''}
+                ${s.lastSpeakerId
+                    ? `<div class="hud-speaker-remembered">🗣 你刚才听见了 <b>${escapeHtml(s.lastSpeakerId)}</b> 说${s.lastSpeakerBranch ? ` <span class="hud-speaker-branch hud-speaker-${escapeHtml(String(s.lastSpeakerBranch))}">[${escapeHtml(String(s.lastSpeakerBranch))}]</span>` : ''}</div>`
                     : ''}
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.level'))}</span><b>${s.playerLevel}</b></div>
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gold'))}</span><b>${s.gold}</b></div>
