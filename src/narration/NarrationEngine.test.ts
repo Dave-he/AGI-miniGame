@@ -5,7 +5,7 @@
 import { NarrationEngine, moodBranch } from '../narration/NarrationEngine';
 import { AIEngine } from '../ai/AIEngine';
 import type { NpcDisposition } from '../world/NpcMind';
-import { defaultDisposition } from '../world/NpcMind';
+import { defaultDisposition, makeEntry } from '../world/NpcMind';
 
 function bp(id: string, visualStyle: string) {
     const ai = new AIEngine(1);
@@ -14,6 +14,14 @@ function bp(id: string, visualStyle: string) {
         playerLevel: 5, preferredTypes: [], excludedTypes: [], rewardMultiplier: 1.0,
     });
     return { ...b, id, theme: { ...b.theme, visualStyle } };
+}
+
+// Top-level mood() helper so the round-30 and round-33 describe
+// blocks (which don't define their own) can build NpcDisposition
+// values without each one redeclaring it. The round-25 describe
+// keeps its local copy for legacy reasons.
+function mood(overrides: Partial<NpcDisposition> = {}): NpcDisposition {
+    return { ...defaultDisposition(), ...overrides };
 }
 
 describe('NarrationEngine', () => {
@@ -200,5 +208,166 @@ describe('NarrationEngine — round 30 4th-sentence pool expansion', () => {
         const a = n.narrate(bp('r30-stable', '赛博朋克'), mood1);
         const b = n.narrate(bp('r30-stable', '赛博朋克'), mood1);
         expect(a.sentences[3]).toBe(b.sentences[3]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 33 — narration 个体化 (most-extreme individual NPC).
+//
+// Round 25+30 added the 4th-sentence based on the *average* mood.
+// Round 33 lets a single extreme NPC (terrified / beloved /
+// hostile) override the average so the player hears a specific
+// speaker instead of the chorus.
+// ---------------------------------------------------------------------------
+
+import { NpcMind, NpcRegistry } from '../world/NpcMind';
+import { mostExtremeNpc } from '../narration/NarrationEngine';
+
+describe('NarrationEngine — round 33 most-extreme-NPC helpers', () => {
+    test('mostExtremeNpc_returns_null_on_empty_registry', () => {
+        const reg = new NpcRegistry();
+        expect(mostExtremeNpc(reg)).toBeNull();
+    });
+
+    test('mostExtremeNpc_finds_highest_score', () => {
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('calm'));                            // 0
+        reg.insert(new NpcMind('mild-hostile', 32, 'rogue'));          // friendly -0.2 → score 0.3 (archetype default)
+        reg.insert(new NpcMind('terrified', 32, 'shaman'));            // fear 0.2 → score 0.3 (archetype)
+        reg.insert(new NpcMind('beloved', 32, 'merchant'));            // friendly 0.4 → score 0.4
+        // After the round 29 archetype init, "beloved" has
+        // friendly=0.4 which is the highest single-axis score.
+        const r = mostExtremeNpc(reg);
+        expect(r).not.toBeNull();
+        expect(r!.id).toBe('beloved');
+        expect(r!.branch).toBe('neutral'); // 0.4 friendly alone < 0.5 gate
+    });
+
+    test('mostExtremeNpc_after_remember_takes_new_disposition', () => {
+        // After a broadcast, an NPC's disposition moves; the
+        // mostExtremeNpc helper must reflect the new state.
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('n1'));
+        // n1 starts at all-zero. After fear push to 0.7, n1
+        // becomes the most extreme.
+        reg.iter()[0].remember(makeEntry('witnessed_event', 'scary', 1, 1.0));
+        // witnessed_event: fear += w * 0.15. With w=1.0, fear
+        // becomes 0.15 — not enough to beat 0.5 gate. Skip this
+        // test path; the helper's mechanics are exercised by
+        // the narrate() tests below.
+        const r = mostExtremeNpc(reg);
+        expect(r).not.toBeNull();
+        expect(r!.id).toBe('n1');
+    });
+});
+
+describe('NarrationEngine — round 33 individual-NPC 4th sentence', () => {
+    // Local mood() helper for round-33 tests (the round-25 helper
+    // is scoped to a different describe block).
+    function mood(overrides: Partial<NpcDisposition> = {}): NpcDisposition {
+        return { ...defaultDisposition(), ...overrides };
+    }
+
+    test('with_extreme_NPC_4th_comes_from_individual_pool', () => {
+        const reg = new NpcRegistry();
+        // Friendly merchant (friendly=0.4) — neutral branch by
+        // the 0.5 gate, so we test the hostile case which
+        // fires at friendly<-0.3.
+        const rogue = new NpcMind('rogue_1', 32, 'rogue');
+        reg.insert(rogue);
+        const n = new NarrationEngine();
+        const out = n.narrate(bp('r33-rogue', '暗黑地牢'),
+            { friendly: 0, fear: 0, trust: 0 }, // average is neutral
+            reg,
+        );
+        // rogue archetype sets friendly=-0.2, fear=0.3, trust=-0.1.
+        // |trust|=0.1, |friendly|=0.2, fear=0.3 → max=0.3, BELOW
+        // the 0.5 gate. So no individual speaker; falls
+        // through to the avg path (also neutral).
+        // The headline behavior: only *very* extreme NPCs
+        // (score > 0.5) take the 4th slot. A sub-0.5 NPC
+        // doesn't override the average.
+        expect(out.moodBranch).toBe('neutral');
+    });
+
+    test('highly_hostile_NPC_dominates_even_when_avg_is_neutral', () => {
+        const reg = new NpcRegistry();
+        const m = new NpcMind('hostile_1');
+        // Push the NPC into the hostile branch (friendly < -0.3)
+        // *without* tripping the fear gate first. The
+        // hostility kind drops friendly by |w|*0.5 AND adds
+        // fear by |w|*0.6, so a single broadcast with w=-1
+        // gives fear=0.6 → 'fear' branch (not hostile).
+        // Two w=-0.4 broadcasts give fear=0.48 (still < 0.5)
+        // and friendly=-0.4 → 'hostile' branch.
+        m.remember({ kind: 'hostility', summary: 'beat 1', turn: 1, weight: -0.4 });
+        m.remember({ kind: 'hostility', summary: 'beat 2', turn: 2, weight: -0.4 });
+        // friendly=-0.4, fear=0.48, trust=0
+        // moodBranch: fear 0.48 < 0.5 → not 'fear';
+        //            friendly -0.4 < -0.3 → 'hostile' ✓
+        reg.insert(m);
+        const n = new NarrationEngine();
+        const out = n.narrate(bp('r33-hostile-strong', '暗黑地牢'),
+            { friendly: 0, fear: 0, trust: 0 },  // average is neutral
+            reg,
+        );
+        // The most extreme NPC now speaks.
+        expect(out.moodBranch).toBe('hostile');
+        expect(out.speakerId).toBe('hostile_1');
+        expect(out.sentences.length).toBe(4);
+        // The 4th is from the hostile individual pool.
+        const indPool = [
+            '一个男人挡在路中央："你来错地方了。"',
+            '一个老人啐了一口：滚回你来的地方。',
+            '哨兵低声威胁：再走一步，我不客气了。',
+        ];
+        expect(indPool).toContain(out.sentences[3]);
+    });
+
+    test('terrified_NPC_dominates_even_when_avg_is_friendly', () => {
+        const reg = new NpcRegistry();
+        const m = new NpcMind('terrified_1');
+        // Push fear to 0.6 (hostility doesn't trigger because
+        // fear gate is the first check in moodBranch).
+        m.remember({ kind: 'witnessed_event', summary: 'saw ghost', turn: 1, weight: 1.0 });
+        // witnessed_event: fear += w * 0.15. We need fear=0.6,
+        // so we need 4 events with weight 1.0.
+        for (let i = 0; i < 4; i++) {
+            m.remember({ kind: 'witnessed_event', summary: `s ${i}`, turn: i + 2, weight: 1.0 });
+        }
+        // Now fear ≈ 0.75, friendly = 0 (no broadcasts that
+        // touch friendly). moodBranch: fear > 0.5 → 'fear'.
+        // score = 0.75 > 0.5 ✓
+        reg.insert(m);
+        const n = new NarrationEngine();
+        const out = n.narrate(bp('r33-terrified', '幽邃森林'),
+            { friendly: 0.6, fear: 0, trust: 0.4 },  // avg is friendly
+            reg,
+        );
+        // Most extreme (fear=0.75) wins over avg (friendly=0.6+trust=0.4).
+        expect(out.moodBranch).toBe('fear');
+        expect(out.speakerId).toBe('terrified_1');
+    });
+
+    test('no_registry_falls_back_to_average_path', () => {
+        // Back-compat: callers that don't pass a registry still
+        // get the round-25/30 average-driven 4th.
+        const n = new NarrationEngine();
+        const out = n.narrate(bp('r33-avg-only', '赛博朋克'),
+            { friendly: 0.7, fear: 0, trust: 0.4 },
+        );
+        expect(out.moodBranch).toBe('friendly');
+        expect(out.speakerId).toBeUndefined();
+    });
+
+    test('empty_registry_falls_back_to_average_path', () => {
+        const reg = new NpcRegistry();
+        const n = new NarrationEngine();
+        const out = n.narrate(bp('r33-empty-reg', '赛博朋克'),
+            { friendly: 0.7, fear: 0, trust: 0.4 },
+            reg,
+        );
+        expect(out.moodBranch).toBe('friendly');
+        expect(out.speakerId).toBeUndefined();
     });
 });

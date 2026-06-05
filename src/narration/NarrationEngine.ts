@@ -18,13 +18,26 @@
  */
 
 import type { DimensionBlueprint } from '../ai/AIEngine';
-import type { NpcDisposition } from '../world/NpcMind';
+import type { NpcDisposition, NpcRegistry } from '../world/NpcMind';
 
 export interface Narration {
     dimensionId: string;
     sentences: string[];
-    /** Round 25 — which mood branch (if any) supplied the 4th sentence. */
+    /**
+     * Round 25 — which mood branch (if any) supplied the 4th
+     * sentence. When the 4th was picked from a *registry*
+     * source (round 33) and the registry disagreed with the
+     * average, this field still records the registry's
+     * individual branch.
+     */
     moodBranch?: 'fear' | 'friendly' | 'hostile' | 'neutral';
+    /**
+     * Round 33 — when the 4th was sourced from a most-extreme
+     * individual NPC (not the average), the NPC's id is
+     * recorded here so the HUD can show "守夜的士兵说：…"
+     * with a specific speaker.
+     */
+    speakerId?: string;
 }
 
 const OPENERS = [
@@ -80,6 +93,30 @@ const MOOD_4TH: Record<'fear' | 'friendly' | 'hostile', string[]> = {
     ],
 };
 
+/**
+ * Round 33 — individual-NPC 4th-sentence pool. Picked when the
+ * most-extreme NPC in the registry disagrees with the average
+ * mood. Sentences are first-person ("a soldier said: ...") so
+ * the player feels a specific speaker rather than a chorus.
+ */
+const MOOD_4TH_INDIVIDUAL: Record<'fear' | 'friendly' | 'hostile', string[]> = {
+    fear: [
+        '守夜的士兵瑟缩着说："别……别往前走了。"',
+        '一个孩子拉了拉你的衣角：里面好黑，我们逃吧。',
+        '老奶奶颤抖着说：我已经听见尖叫了。',
+    ],
+    friendly: [
+        '老猎人拍拍你的肩：上次的伤还疼吗？',
+        '村姑笑着塞给你一枚护符：带着它，会顺利的。',
+        '守门人朝你点头：你的剑我替你磨过了。',
+    ],
+    hostile: [
+        '一个男人挡在路中央："你来错地方了。"',
+        '一个老人啐了一口：滚回你来的地方。',
+        '哨兵低声威胁：再走一步，我不客气了。',
+    ],
+};
+
 export function moodBranch(mood: NpcDisposition): 'fear' | 'friendly' | 'hostile' | 'neutral' {
     if (mood.fear > 0.5) return 'fear';
     if (mood.friendly > 0.5 && mood.trust > 0.3) return 'friendly';
@@ -87,13 +124,41 @@ export function moodBranch(mood: NpcDisposition): 'fear' | 'friendly' | 'hostile
     return 'neutral';
 }
 
+/**
+ * Round 33 — find the most extreme NPC in a registry. The
+ * "extremeness" score is the maximum of (fear, |friendly|,
+ * |trust|), which lets a single terrified or hostile NPC
+ * dominate the chorus even when the average is lukewarm.
+ *
+ * Returns null if the registry is empty.
+ */
+export function mostExtremeNpc(reg: NpcRegistry): {
+    id: string;
+    disposition: NpcDisposition;
+    score: number;
+    branch: 'fear' | 'friendly' | 'hostile' | 'neutral';
+} | null {
+    let best: { id: string; disposition: NpcDisposition; score: number; branch: 'fear' | 'friendly' | 'hostile' | 'neutral' } | null = null;
+    for (const m of reg.iter()) {
+        const d = m.disposition();
+        const score = Math.max(d.fear, Math.abs(d.friendly), Math.abs(d.trust));
+        if (best === null || score > best.score) {
+            best = { id: m.id(), disposition: d, score, branch: moodBranch(d) };
+        }
+    }
+    return best;
+}
+
 export class NarrationEngine {
     /**
      * Generate a 3-sentence intro for a dimension. When `mood` is
      * supplied, an optional 4th sentence is appended from the
-     * mood-keyed pool (round 25).
+     * mood-keyed pool (round 25). When `npcRegistry` is also
+     * supplied, the 4th sentence is sourced from the most
+     * extreme individual NPC (round 33) — a single terrified or
+     * hostile NPC dominates the chorus.
      */
-    narrate(blueprint: DimensionBlueprint, mood?: NpcDisposition): Narration {
+    narrate(blueprint: DimensionBlueprint, mood?: NpcDisposition, npcRegistry?: NpcRegistry): Narration {
         const rng = this.makeRng(this.djb2(blueprint.id));
         const theme = (blueprint.theme as any).visualStyle ?? '未名之境';
         const opener = this.pick(OPENERS, rng).replace(/%s/g, theme);
@@ -101,17 +166,29 @@ export class NarrationEngine {
         const call = this.pick(CALLS, rng);
         const sentences: string[] = [opener, moodSentence + '。', call + '。'];
 
+        // Round 33 — when a registry is provided, the most extreme
+        // individual NPC takes the 4th-sentence slot. Its branch
+        // wins over the average's. We require a non-neutral
+        // branch (so the silent majority doesn't get a fake
+        // speaker).
+        const extreme = npcRegistry ? mostExtremeNpc(npcRegistry) : null;
         let branch: Narration['moodBranch'];
-        if (mood) {
+        let speakerId: string | undefined;
+        if (extreme && extreme.branch !== 'neutral' && extreme.score > 0.3) {
+            branch = extreme.branch;
+            speakerId = extreme.id;
+            const pool = MOOD_4TH_INDIVIDUAL[branch];
+            const rng2 = this.makeRng(this.djb2(blueprint.id + '|ind|' + branch));
+            sentences.push(this.pick(pool, rng2));
+        } else if (mood) {
             branch = moodBranch(mood);
             if (branch !== 'neutral') {
                 const pool = MOOD_4TH[branch];
-                // Re-seed with id + branch index for stable 4th-sentence pick.
                 const branchRng = this.makeRng(this.djb2(blueprint.id + '|' + branch));
                 sentences.push(this.pick(pool, branchRng));
             }
         }
-        return { dimensionId: blueprint.id, sentences, moodBranch: branch };
+        return { dimensionId: blueprint.id, sentences, moodBranch: branch, speakerId };
     }
 
     /** Format a Narration as a single block of text (for the HUD log). */
