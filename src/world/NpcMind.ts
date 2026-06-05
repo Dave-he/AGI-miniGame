@@ -86,6 +86,67 @@ function applyArchetypeDefault(archetype: string): NpcDisposition {
     }
 }
 
+/**
+ * Round 34 — archetype → topic boost table. Returns the
+ * archetype's preference weight for each topic, where higher
+ * means more likely to be picked. Used as the weighting
+ * vector for the NEUTRAL fallback in `suggestTopic`.
+ *
+ * The 6 archetypes lean toward different topic spaces:
+ *   - mage     → lore (knowledge)  / quest
+ *   - merchant → trade             / greeting
+ *   - guard    → combat            / greeting
+ *   - rogue    → quest             / trade
+ *   - shaman   → lore              / greeting
+ *   - peasant  → quest             / greeting
+ *
+ * Unrecognized archetypes get a flat weight of 1.0 across
+ * all topics (i.e. the round-25 unweighted behavior).
+ */
+function archetypeTopicBoost(archetype: string | undefined): Record<string, number> {
+    if (!archetype) return { greeting: 1, lore: 1, trade: 1, quest: 1 };
+    switch (archetype) {
+        case 'mage':
+            return { greeting: 1, lore: 3, trade: 0, quest: 2 };
+        case 'merchant':
+            return { greeting: 1, lore: 1, trade: 3, quest: 1 };
+        case 'guard':
+            return { greeting: 1, lore: 0, trade: 0, quest: 1 };
+        case 'rogue':
+            return { greeting: 1, lore: 1, trade: 2, quest: 3 };
+        case 'shaman':
+            return { greeting: 2, lore: 3, trade: 0, quest: 1 };
+        case 'peasant':
+            return { greeting: 2, lore: 1, trade: 1, quest: 2 };
+        default:
+            return { greeting: 1, lore: 1, trade: 1, quest: 1 };
+    }
+}
+
+/**
+ * Round 34 — weighted deterministic pick. Returns the entry
+ * of `pool` that covers the weighted range containing the
+ * deterministic target index (seed + entry_count) % total.
+ * Same inputs → same output (no rng call, just modular
+ * arithmetic), so tests can pin specific picks.
+ */
+function pickWeighted(
+    pool: string[],
+    weights: Record<string, number>,
+    seed: number,
+    entryCount: number,
+): string {
+    const total = pool.reduce((acc, t) => acc + (weights[t] ?? 1), 0);
+    if (total <= 0) return pool[0];
+    const target = ((seed >>> 0) + entryCount) % total;
+    let acc = 0;
+    for (const t of pool) {
+        acc += (weights[t] ?? 1);
+        if (target < acc) return t;
+    }
+    return pool[pool.length - 1];
+}
+
 /** Default empty disposition — every axis at 0. */
 export function defaultDisposition(): NpcDisposition {
     return { friendly: 0, fear: 0, trust: 0 };
@@ -221,13 +282,18 @@ export class NpcMind {
 
     /**
      * Suggest a topic the NPC should bring up next. Deterministic on
-     * (mood, last_kind, seed). Mirror of Rust NpcMind::suggest_topic.
+     * (mood, last_kind, seed, archetype). Mirror of Rust
+     * NpcMind::suggest_topic.
+     *
+     * Round 34 — the NEUTRAL fallback is now weighted by the
+     * NPC's archetype so a mage leans toward 'lore' and a
+     * merchant toward 'trade' even when no specific mood rule
+     * fires.
      */
     suggestTopic(seed: number): string {
         const mood = this.mood();
         const last = this._entries[this._entries.length - 1]?.kind;
         const NEUTRAL = ['greeting', 'lore', 'trade', 'quest'];
-        const idx = (((seed >>> 0) + this._entries.length) >>> 0) % NEUTRAL.length;
         if (mood === 'happy' && last === 'received_gift') return 'trade';
         if (mood === 'happy' && last === 'dialogue') return 'quest';
         if (mood === 'happy') return 'greeting';
@@ -236,7 +302,9 @@ export class NpcMind {
         if (mood === 'uneasy' && last === 'witnessed_event') return 'lore';
         if (mood === 'uneasy') return 'farewell';
         if (mood === 'neutral' && last === 'heard_about_dimension') return 'lore';
-        return NEUTRAL[idx];
+        // Weighted NEUTRAL fallback — round 34 archetype bias.
+        return pickWeighted(NEUTRAL, archetypeTopicBoost(this._archetype),
+                            seed, this._entries.length);
     }
 
     /** Drop every memory and reset disposition. */
