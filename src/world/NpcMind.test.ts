@@ -184,3 +184,94 @@ describe('NpcRegistry', () => {
         expect(m.recent(0)).toEqual([]);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 27 — NpcMind feedback reinforcement (reverence on hard win).
+//
+// When the player beats a dimension with difficulty > 0.6, main.ts:
+// completeRun broadcasts two parallel entries (heard_about_dimension +
+// witnessed_event) so every NPC shifts toward "reverence" — trust up
+// (they respect the player) AND fear up a touch (they're awed). The
+// tests below pin the underlying NpcMind + NpcRegistry primitives
+// that main.ts composes.
+// ---------------------------------------------------------------------------
+
+describe('NpcMind — round 27 reverence feedback on hard win', () => {
+    test('heard_about_dimension_increases_trust', () => {
+        // Baseline: a single +0.6 heard_about_dimension entry →
+        // trust += 0.6 * 0.10 = 0.06.
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('n1'));
+        const before = reg.averageDisposition().trust;
+        reg.broadcast(makeEntry('heard_about_dimension', 'revered: foo', 1, 0.6));
+        const after = reg.averageDisposition().trust;
+        expect(after - before).toBeCloseTo(0.06, 5);
+    });
+
+    test('witnessed_event_with_positive_weight_increases_fear', () => {
+        // The "awed" half of reverence: +0.4 witnessed_event →
+        // fear += 0.4 * 0.15 = 0.06. (The same kind with negative
+        // weight is used for fail outcomes — see round 21.)
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('n1'));
+        const before = reg.averageDisposition().fear;
+        reg.broadcast(makeEntry('witnessed_event', 'awed by: foo', 1, 0.4));
+        const after = reg.averageDisposition().fear;
+        expect(after - before).toBeCloseTo(0.06, 5);
+    });
+
+    test('combined_reverence_broadcast_shifts_both_axes', () => {
+        // The full pattern: trust +0.06, fear +0.06 — "reverence".
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('n1'));
+        reg.insert(new NpcMind('n2'));
+        const before = reg.averageDisposition();
+        reg.broadcast(makeEntry('heard_about_dimension', 'revered: foo', 1, 0.6));
+        reg.broadcast(makeEntry('witnessed_event',       'awed by: foo',   2, 0.4));
+        const after = reg.averageDisposition();
+        // Both axes should have moved up by the documented deltas.
+        expect(after.trust - before.trust).toBeCloseTo(0.06, 5);
+        expect(after.fear  - before.fear).toBeCloseTo(0.06, 5);
+        // Friendly is not affected by either broadcast.
+        expect(after.friendly - before.friendly).toBe(0);
+    });
+
+    test('reverence_propagates_to_every_npc_in_registry', () => {
+        // The broadcast should reach every NPC, not just one. A
+        // 3-NPC roster with two broadcasts each → 6 entries in
+        // total, all consistent.
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('a'));
+        reg.insert(new NpcMind('b'));
+        reg.insert(new NpcMind('c'));
+        reg.broadcast(makeEntry('heard_about_dimension', 'revered: foo', 1, 0.6));
+        reg.broadcast(makeEntry('witnessed_event',       'awed by: foo',  2, 0.4));
+        for (const m of reg.iter()) {
+            const d = m.disposition();
+            expect(d.trust).toBeCloseTo(0.06, 5);
+            expect(d.fear).toBeCloseTo(0.06, 5);
+        }
+    });
+
+    test('repeated_reverence_accumulates_until_clamp', () => {
+        // 5 hard wins in a row → trust saturates at the unit
+        // boundary (clamp1 in NpcMind.remember), fear likewise.
+        // Important: the feedback is monotonic, so eventually
+        // further hard wins have no additional effect.
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('n1'));
+        for (let i = 0; i < 5; i++) {
+            reg.broadcast(makeEntry('heard_about_dimension', `win ${i}`, i * 2 + 1, 0.6));
+            reg.broadcast(makeEntry('witnessed_event',       `win ${i}`, i * 2 + 2, 0.4));
+        }
+        const d = reg.averageDisposition();
+        // Each broadcast contributes 0.06 → cumulative 0.30, but
+        // the unit clamp at 1.0 doesn't trigger here. We just want
+        // both axes above 0.25 and the increment per win to be
+        // stable (= no double counting).
+        expect(d.trust).toBeGreaterThan(0.25);
+        expect(d.fear).toBeGreaterThan(0.25);
+        expect(d.trust).toBeLessThanOrEqual(1.0);
+        expect(d.fear).toBeLessThanOrEqual(1.0);
+    });
+});

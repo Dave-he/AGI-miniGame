@@ -542,6 +542,35 @@ class App {
         this.hud.log(`通关！得分 ${score}, 金币 +${rewards.find(r => r.itemId === 'gold')?.quantity ?? 0}`);
         this.audio.fire('dimension.completed');
         this.analytics.track('dimension.completed', { score });
+        // Round 27 — NpcMind feedback reinforcement. When the
+        // player conquers a *hard* dimension, the world's NPCs
+        // shift toward "reverence" (敬畏): trust goes up (they
+        // respect the player) AND fear goes up a touch (they're
+        // awed by the achievement). We model this as two parallel
+        // broadcasts:
+        //   - heard_about_dimension (+0.6) → trust += 0.06
+        //   - witnessed_event        (+0.4) → fear  += 0.06
+        // Both axes shift in the "reverence" direction. Below
+        // the threshold the broadcast is skipped, so easy wins
+        // don't earn reverence (otherwise the feedback signal
+        // would saturate).
+        const dim = this.hud.getState().dimension;
+        if (dim && dim.difficulty > 0.6) {
+            this.npcMinds.broadcast(makeEntry(
+                'heard_about_dimension',
+                `revered: ${dim.name} 难度 ${dim.difficulty.toFixed(2)}`,
+                ++this.npcTurn,
+                0.6,
+            ));
+            this.npcMinds.broadcast(makeEntry(
+                'witnessed_event',
+                `awed by: ${dim.name} 难度 ${dim.difficulty.toFixed(2)}`,
+                ++this.npcTurn,
+                0.4,
+            ));
+            this.hud.log(`[narr+mind] 高难度通关 (${dim.difficulty.toFixed(2)}) → NPC 集体转"敬畏" (trust+, fear+)`);
+            this.npcMindHandle?.refresh();
+        }
         this.renderAllPanels();
     }
 
