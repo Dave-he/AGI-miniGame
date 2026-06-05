@@ -52,22 +52,31 @@ const CALLS = [
 ];
 
 /**
- * Round 25 — mood-driven 4th-sentence pool. Each branch has 2
+ * Round 25 — mood-driven 4th-sentence pool. Each branch has 4-5
  * alternatives picked deterministically by the dimension id. Branch
- * order matches the Rust `narration::mood_branch` exactly.
+ * order matches the Rust `narration::mood_branch` exactly. Round
+ * 30 expanded the pools so re-visits of the same dim get
+ * different 4th sentences.
  */
 const MOOD_4TH: Record<'fear' | 'friendly' | 'hostile', string[]> = {
     fear: [
         '空气本身在退避，仿佛这里有过太多恐惧。',
-        '这片次元的空气发凉，像有什么被遗忘了很久。',
+        '远处有什么东西在低声警告你停下脚步。',
+        '脚下的地板似乎在颤抖，不是风。',
+        '阴影里残留的尖叫还没有完全散去。',
     ],
     friendly: [
         '当地的居民说，这里对旅人尚算友好。',
-        '他们谈起你时，似乎带着某种旧日的善意。',
+        '守门人朝你点了点头，似乎记得上次的英勇。',
+        '空气里飘着淡淡的节日气息，像是在欢迎。',
+        '村口的风铃响了三下，节奏恰好。',
+        '你听见远处有人在哼着熟悉的小调。',
     ],
     hostile: [
         '他们不会原谅你上次带来的麻烦。',
-        '这里的目光带着锋利——你最好保持警惕。',
+        '哨兵把手按在剑柄上，眼神很冷。',
+        '上一次的伤痕写在每一张脸上。',
+        '你听见身后有人在啐口水。',
     ],
 };
 
