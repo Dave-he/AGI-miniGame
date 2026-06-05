@@ -386,7 +386,7 @@ class App {
     abandonCurrentDimension(): void { this.recordDimensionOutcome('abandoned', -0.1); }
 
     private recordDimensionOutcome(outcome: 'failed' | 'abandoned', weight: number): void {
-        const dim = (this.hud as any).state?.dimension;
+        const dim = this.hud.getState().dimension;
         if (!dim) {
             this.hud.log(`[vault] 当前没有进入中的次元，无法标记 ${outcome}`);
             return;

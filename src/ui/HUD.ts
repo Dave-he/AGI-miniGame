@@ -48,6 +48,16 @@ export class HUD {
         this.render();
     }
 
+    /**
+     * Read-only snapshot of the current HUD state. Replaces the
+     * `(this.hud as any).state` hack that callers used before round
+     * 26 to peek at `dimension`, `worldEvent`, etc. without
+     * triggering a re-render.
+     */
+    getState(): Readonly<HUDState> {
+        return this.state;
+    }
+
     log(line: string): void {
         const ts = new Date().toISOString().slice(11, 19);
         this.state.logLines.push(`[${ts}] ${line}`);
