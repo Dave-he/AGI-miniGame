@@ -232,6 +232,17 @@ export class WorldState {
             wallet: this.wallet.getAllBalances(),
             inventory: this.inventory.getAllItems(),
             dimensionHistory: this.dimensionHistory,
+            // Round 32 — persist the round-31 lastBiome so the
+            // "你刚从 #forest 归来" HUD prompt survives a save
+            // → reload cycle. (Back-compat: omitted when null,
+            // older saves won't trip the loadFromJSON check.)
+            lastBiome: this.lastBiome ?? undefined,
+            // Also persist the active dimension's biome when
+            // present. activeDimension is otherwise *not* saved
+            // because it represents a transient session pointer;
+            // the biome alone is enough to remember the world
+            // context.
+            activeDimensionBiome: this.activeDimension?.biome,
         });
     }
 
@@ -256,7 +267,29 @@ export class WorldState {
             }
             
             this.dimensionHistory = data.dimensionHistory || [];
-            
+
+            // Round 32 — restore the round-31 lastBiome so a
+            // reload (or a hand-crafted save) brings back the
+            // "你刚从 #biome 归来" signal. Older saves that
+            // don't carry the field simply reset to null.
+            this.lastBiome = (data.lastBiome as BiomeId | null | undefined) ?? null;
+            // If we have a stale activeDimensionBiome in the
+            // save, restore it onto a re-constructed active dim.
+            // (We deliberately don't re-create the full
+            // activeDimension; that field is session-scoped.)
+            if (data.activeDimensionBiome) {
+                this.activeDimension = this.activeDimension ?? {
+                    dimensionId: 'restored',
+                    gameplayTypes: [],
+                    sessionStart: Date.now(),
+                    score: 0,
+                    biome: data.activeDimensionBiome as BiomeId,
+                };
+                if (this.activeDimension) {
+                    this.activeDimension.biome = data.activeDimensionBiome as BiomeId;
+                }
+            }
+
             return true;
         } catch (e) {
             console.error('Failed to load WorldState from JSON:', e);
