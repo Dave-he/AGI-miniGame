@@ -119,6 +119,18 @@ export class WorldState {
      */
     public lastNpcDisposition: NpcDisposition | null = null;
 
+    /**
+     * Round 36 — last NPC that spoke via the round-33
+     * individual narration pool. The HUD can show
+     * "你刚才听见了 hostile_1 说：…" after a reload, instead
+     * of the default "无人说话" placeholder. Also records
+     * the speaker's disposition at the time of speech so the
+     * "敬畏 / 恐惧 / 友善" tone survives the save → reload
+     * cycle.
+     */
+    public lastSpeakerId: string | null = null;
+    public lastSpeakerDisposition: NpcDisposition | null = null;
+
     clearActiveDimension(): DimensionInfo | null {
         const dim = this.activeDimension;
         this.activeDimension = null;
@@ -269,6 +281,11 @@ export class WorldState {
             // in sync; the HUD prompt "集体情绪: friendly 0.4
             // / fear 0 / trust 0.2" reads from this field.
             lastNpcDisposition: this.lastNpcDisposition ?? undefined,
+            // Round 36 — persist the round-33 individual
+            // speaker id + disposition so the HUD can show
+            // "你刚才听见了 hostile_1 说：…" after a reload.
+            lastSpeakerId: this.lastSpeakerId ?? undefined,
+            lastSpeakerDisposition: this.lastSpeakerDisposition ?? undefined,
         });
     }
 
@@ -322,6 +339,11 @@ export class WorldState {
             // we leave it null (the App's next NpcRegistry
             // broadcast will refresh it).
             this.lastNpcDisposition = (data.lastNpcDisposition as NpcDisposition | null | undefined) ?? null;
+            // Round 36 — restore the round-33 individual
+            // speaker id + disposition snapshot.
+            this.lastSpeakerId = (data.lastSpeakerId as string | null | undefined) ?? null;
+            this.lastSpeakerDisposition =
+                (data.lastSpeakerDisposition as NpcDisposition | null | undefined) ?? null;
 
             return true;
         } catch (e) {

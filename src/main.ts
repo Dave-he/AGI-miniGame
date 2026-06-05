@@ -363,10 +363,23 @@ class App {
         // when the mood branch is fear / friendly / hostile (neutral
         // stays at 3). The branch order matches mood_palette and
         // mood_bias so narrative + visual + difficulty all agree.
-        const intro = this.narration.narrate(r.blueprint, avgMood);
+        const intro = this.narration.narrate(r.blueprint, avgMood, this.npcMinds);
         for (const s of intro.sentences) this.hud.log(`[narr] ${s}`);
         if (intro.moodBranch && intro.moodBranch !== 'neutral') {
             this.hud.log(`[narr+mind] mood=${intro.moodBranch} → 4th 句已加入 (NPC 集体情绪驱动)`);
+        }
+        // Round 36 — persist the round-33 individual speaker
+        // so the HUD can read "你刚才听见了 X 说：…" after
+        // a reload. We also record the speaker's disposition
+        // at the time of speech for the "敬畏 / 恐惧 / 友善"
+        // tone display.
+        if (intro.speakerId) {
+            this.worldState.lastSpeakerId = intro.speakerId;
+            const speakerMind = this.npcMinds.get(intro.speakerId);
+            if (speakerMind) {
+                this.worldState.lastSpeakerDisposition = speakerMind.disposition();
+            }
+            this.hud.log(`[narr+mind] speaker=${intro.speakerId} (${intro.moodBranch}) 4th 句已记录`);
         }
         // Round 20 — record the visit so the AGI's vault remembers it.
         this.vault.record(r.blueprint, 'completed', Date.now());

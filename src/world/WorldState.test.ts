@@ -244,3 +244,87 @@ describe('WorldState — round 35 lastNpcDisposition persistence', () => {
         expect(fresh.lastNpcDisposition).toEqual({ friendly: 0.4, fear: 0, trust: 0.2 });
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 36 — individual speaker id + disposition persistence.
+//
+// Round 33 added a `speakerId` to the Narration return when a
+// single extreme NPC takes the 4th-sentence slot. Round 36
+// persists that speaker id (and the speaker's disposition at
+// the time of speech) so the HUD can show "你刚才听见了
+// hostile_1 说：…" after a reload.
+// ---------------------------------------------------------------------------
+
+describe('WorldState — round 36 individual speaker persistence', () => {
+    test('lastSpeakerId_defaults_to_null', () => {
+        const ws = new WorldState('p', 'P');
+        expect(ws.lastSpeakerId).toBeNull();
+        expect(ws.lastSpeakerDisposition).toBeNull();
+    });
+
+    test('app_can_set_lastSpeakerId_directly', () => {
+        const ws = new WorldState('p', 'P');
+        ws.lastSpeakerId = 'mage_1';
+        ws.lastSpeakerDisposition = { friendly: 0, fear: 0.7, trust: 0.1 };
+        expect(ws.lastSpeakerId).toBe('mage_1');
+        expect(ws.lastSpeakerDisposition).toEqual({ friendly: 0, fear: 0.7, trust: 0.1 });
+    });
+
+    test('lastSpeakerId_round_trips_through_save_load', () => {
+        const ws = new WorldState('p', 'P');
+        ws.lastSpeakerId = 'hostile_1';
+        ws.lastSpeakerDisposition = { friendly: -0.4, fear: 0.5, trust: 0 };
+        const json = ws.saveToJSON();
+        const parsed = JSON.parse(json);
+        expect(parsed.lastSpeakerId).toBe('hostile_1');
+        expect(parsed.lastSpeakerDisposition).toEqual({ friendly: -0.4, fear: 0.5, trust: 0 });
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastSpeakerId).toBe('hostile_1');
+        expect(fresh.lastSpeakerDisposition).toEqual({ friendly: -0.4, fear: 0.5, trust: 0 });
+    });
+
+    test('back_compat_save_without_lastSpeakerId_loads_as_null', () => {
+        // Pre-round-36 saves don't carry the field.
+        const oldJson = JSON.stringify({
+            player: { accountId: 'p' },
+            progression: { level: 1, xp: 0, talentPoints: 0 },
+            wallet: {},
+            inventory: [],
+            dimensionHistory: [],
+        });
+        const fresh = new WorldState('p', 'P');
+        const ok = fresh.loadFromJSON(oldJson);
+        expect(ok).toBe(true);
+        expect(fresh.lastSpeakerId).toBeNull();
+        expect(fresh.lastSpeakerDisposition).toBeNull();
+    });
+
+    test('null_speakerId_serialize_as_undefined', () => {
+        // Same compactness invariant: null → undefined for
+        // clean JSON.
+        const ws = new WorldState('p', 'P');
+        const parsed = JSON.parse(ws.saveToJSON());
+        expect(parsed.lastSpeakerId).toBeUndefined();
+        expect(parsed.lastSpeakerDisposition).toBeUndefined();
+    });
+
+    test('lastSpeakerId_combines_with_lastBiome_and_lastNpcDisposition', () => {
+        // Headline cross-round scenario: a single save carries
+        // round 32's lastBiome, round 35's lastNpcDisposition,
+        // and round 36's lastSpeakerId — three HUD prompts all
+        // survive a save → reload cycle.
+        const ws = new WorldState('p', 'P');
+        ws.setActiveDimension('d1', ['match3'], 'forest');
+        ws.lastNpcDisposition = { friendly: 0.4, fear: 0, trust: 0.2 };
+        ws.lastSpeakerId = 'hostile_1';
+        ws.lastSpeakerDisposition = { friendly: -0.4, fear: 0.5, trust: 0 };
+        const json = ws.saveToJSON();
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastBiome).toBe('forest');
+        expect(fresh.lastNpcDisposition).toEqual({ friendly: 0.4, fear: 0, trust: 0.2 });
+        expect(fresh.lastSpeakerId).toBe('hostile_1');
+        expect(fresh.lastSpeakerDisposition).toEqual({ friendly: -0.4, fear: 0.5, trust: 0 });
+    });
+});
