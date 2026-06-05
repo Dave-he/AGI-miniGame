@@ -103,9 +103,16 @@ export class NpcFactory {
      * a `['mage', 'beast']` hint + count 4 yields
      * `['mage', 'beast', 'mage', 'beast']`.
      *
-     * Mirrors the engine side's `npc_archetype_hints` (see
-     * `scene_gen.rs::theme_to_scene`). Used by the scene generator
-     * pipeline to fill the hub with on-theme NPCs.
+     * Round 27 — the archetype now also *drives* the NPC's
+     * personality and faction (via `archetype_default_personality`
+     * and `archetype_default_faction`), not just the tag. So
+     * `['mage']` consistently produces wise/mysterious mages in
+     * the 秘银评议会 faction, etc. The randomness is reserved for
+     * name + offers + minor personality twist only.
+     *
+     * Mirrors the engine side's `archetype_default_*` helpers (see
+     * `cocos4-rust/src/agi_minigame/npc.rs`). Cross-layer contract
+     * pinned by 5 jest tests in `NpcFactory.test.ts`.
      */
     generateRosterByArchetype(
         archetypes: readonly string[],
@@ -116,16 +123,16 @@ export class NpcFactory {
             return this.generateRoster({ count, seed });
         }
         this.rng = this.makeRng(seed);
-        const personalities = PERSONALITIES;
         const rosters: NPCProfile[] = [];
         for (let i = 0; i < count; i++) {
             const id = `npc_arch_${(seed >>> 0).toString(16)}_${i}`;
             const name = pick(FIRST_NAMES, this.rng)
                 + (this.rng() > 0.5 ? '·' + pick(TITLES, this.rng) : '');
-            const personality = pick(personalities, this.rng);
-            const faction = pick(FACTIONS, this.rng);
-            const offers = pickN(OFFER_POOL.flat(), 2 + Math.floor(this.rng() * 2), this.rng);
             const archetype = archetypes[i % archetypes.length];
+            // Round 27 — derive personality + faction from archetype.
+            const personality = archetypeDefaultPersonality(archetype);
+            const faction = archetypeDefaultFaction(archetype);
+            const offers = pickN(OFFER_POOL.flat(), 2 + Math.floor(this.rng() * 2), this.rng);
             rosters.push({ id, name, personality, faction, offers, archetype });
         }
         return rosters;
@@ -138,5 +145,96 @@ export class NpcFactory {
             s = (s * 9301 + 49297) % 233280;
             return s / 233280;
         };
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Round 27 — archetype → NPC-default mappings.
+//
+// Mirrors `cocos4-rust/src/agi_minigame/npc.rs::archetype_*` 1:1 so
+// the game-side `NpcFactory.generateRosterByArchetype` produces
+// NPCs whose personality, faction, and initial disposition match
+// the engine's canonical values. This is what closes the round-24
+// "tags" → round-27 "tags actually do something" gap.
+// ---------------------------------------------------------------------------
+
+import type { NPCPersonality } from './NPCDialogueAI';
+import type { NpcDisposition, NpcMood } from '../world/NpcMind';
+import { defaultDisposition } from '../world/NpcMind';
+
+/** Initial mood for a freshly-spawned NPC of the given archetype. */
+export function archetypeInitialMood(arch: string): NpcMood {
+    switch (arch) {
+        case 'robot':
+        case 'mage':
+        case 'astronaut':
+        case 'diver':
+        case 'nomad':    return 'neutral';
+        case 'lich':     return 'hostile';
+        case 'beast':
+        case 'alien':    return 'uneasy';
+        case 'siren':    return 'happy';
+        case 'scorpion':
+        case 'skeleton': return 'hostile';
+        default:         return 'neutral';
+    }
+}
+
+/** Default personality for the given archetype. */
+export function archetypeDefaultPersonality(arch: string): NPCPersonality {
+    switch (arch) {
+        case 'robot':
+        case 'astronaut':
+        case 'nomad':    return 'stoic';
+        case 'mage':     return 'wise';
+        case 'beast':
+        case 'siren':    return 'playful';
+        case 'alien':
+        case 'lich':     return 'mysterious';
+        case 'diver':    return 'cheerful';
+        case 'scorpion':
+        case 'skeleton': return 'grumpy';
+        default:         return 'stoic';
+    }
+}
+
+/** Default faction label for the given archetype. */
+export function archetypeDefaultFaction(arch: string): string {
+    switch (arch) {
+        case 'robot':
+        case 'astronaut': return '苍穹骑士团';
+        case 'mage':      return '秘银评议会';
+        case 'beast':     return '隐者之塔';
+        case 'alien':     return '星陨教派';
+        case 'siren':
+        case 'diver':     return '潮汐神殿';
+        case 'scorpion':
+        case 'nomad':     return '焰心旅团';
+        case 'skeleton':
+        case 'lich':      return '暗巷商会';
+        default:          return '无限次元城';
+    }
+}
+
+/**
+ * Initial disposition baseline. Picked so that
+ * `NpcMind.mood()` round-trips to the same label as
+ * `archetypeInitialMood(arch)`. Mirrors the engine helper.
+ */
+export function archetypeInitialDisposition(arch: string): NpcDisposition {
+    const base = defaultDisposition();
+    switch (arch) {
+        case 'robot':
+        case 'mage':
+        case 'astronaut':
+        case 'diver':
+        case 'nomad':    return { ...base };
+        case 'lich':     return { friendly: -0.5, fear: 0.7, trust: -0.5 };
+        case 'beast':
+        case 'alien':    return { friendly: 0.0, fear: 0.4, trust: -0.1 };
+        case 'siren':    return { friendly: 0.5, fear: 0.0, trust: 0.3 };
+        case 'scorpion':
+        case 'skeleton': return { friendly: -0.5, fear: 0.7, trust: -0.4 };
+        default:         return { ...base };
     }
 }
