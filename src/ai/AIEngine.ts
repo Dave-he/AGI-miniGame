@@ -23,6 +23,14 @@ export interface DimensionBlueprint {
     theme: DimensionTheme;
     timeLimitSecs: number | null;
     objectives: Objective[];
+    /**
+     * Round 31 — biome tag carried from the WFC scaffold (round
+     * 24's `theme_to_scene`). Optional for back-compat with
+     * blueprints that predate the integration. When set, it tells
+     * the WorldState which biome to remember for cross-visit
+     * HUD prompts and biome-aware persistence.
+     */
+    biome?: string;
 }
 
 export interface GeneratedRule {

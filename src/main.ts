@@ -328,6 +328,10 @@ class App {
                 seed: r.seed ?? Date.now(),
             };
             sceneBp = themeToScene(themeInput);
+            // Round 31 — pin the resolved BiomeId onto the
+            // blueprint so AIBridge → WorldState can carry it
+            // across visits without re-deriving from visualStyle.
+            (r.blueprint as any).biome = sceneBp.biomeId;
             // Re-render the WFC dungeon with the theme's tile weights.
             const themedDungeon = generateDungeonWithWeights(
                 10, 10, r.seed ?? Date.now(), sceneBp.wfcTileWeights,

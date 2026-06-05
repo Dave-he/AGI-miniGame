@@ -1,12 +1,19 @@
 import { PlayerProfile, PlayerProgression } from '../player/PlayerProfile';
 import { Wallet, CurrencyType } from '../economy/Wallet';
 import { Inventory, InventoryItem, Reward } from '../economy/Inventory';
+import type { BiomeId } from '../ai/SceneGen';
 
 export interface DimensionInfo {
     dimensionId: string;
     gameplayTypes: string[];
     sessionStart: number;
     score: number;
+    /**
+     * Round 31 — the biome tag for this dimension, derived from
+     * the WFC scaffold (round 24). Optional for back-compat with
+     * dimensionInfo records that predate the WFC integration.
+     */
+    biome?: BiomeId;
 }
 
 export interface DimensionRecord {
@@ -72,15 +79,27 @@ export class WorldState {
         this.inventory = new Inventory(100);
     }
 
-    setActiveDimension(dimensionId: string, gameplayTypes: string[]): void {
+    setActiveDimension(dimensionId: string, gameplayTypes: string[], biome?: BiomeId): void {
         this.activeDimension = {
             dimensionId,
             gameplayTypes,
             sessionStart: Date.now(),
             score: 0,
+            biome,
         };
+        // Round 31 — record the biome on the running tally so the
+        // last-visited biome can be queried even after
+        // clearActiveDimension.
+        if (biome) this.lastBiome = biome;
         this.progression.recordDimensionVisit(dimensionId);
     }
+
+    /**
+     * Round 31 — most recent biome the player entered. Persists
+     * across `clearActiveDimension()` calls so the HUD can still
+     * show "你刚从 #forest 归来" after the run is over.
+     */
+    public lastBiome: BiomeId | null = null;
 
     clearActiveDimension(): DimensionInfo | null {
         const dim = this.activeDimension;

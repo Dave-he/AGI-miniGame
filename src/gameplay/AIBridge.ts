@@ -164,7 +164,11 @@ export class AIBridge {
         await this.gameplay.loadGameplay(chosenAtoms);
 
         // 6. Mirror the dimension on the WorldState so reward accounting works.
-        this.worldState.setActiveDimension(blueprint.id, chosenAtoms);
+        //    Round 31 — also pass the biome (when set by themeToScene)
+        //    so the WorldState can carry the biome across visits.
+        const biome = (blueprint as any).biome as
+            import('../ai/SceneGen').BiomeId | undefined;
+        this.worldState.setActiveDimension(blueprint.id, chosenAtoms, biome);
 
         const modules: GameplayModule[] = chosenAtoms
             .map(id => this.gameplay.getModule(id))
