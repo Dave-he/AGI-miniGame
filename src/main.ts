@@ -298,8 +298,12 @@ class App {
         });
         // Round 23 — log the applied difficulty range when the mood
         // actually moved it (i.e. away from the base 0.3–0.8 hint).
-        const lo = (r.blueprint as any).difficulty ?? 0;
-        const range = (r.blueprint as any).difficultyRange as [number, number] | undefined;
+        // Round 42 — `difficulty` and `difficultyRange` are
+        // now properly typed on `DimensionBlueprint`; the
+        // `as any` casts from earlier rounds are no longer
+        // needed.
+        const lo = r.blueprint.difficulty ?? 0;
+        const range = r.blueprint.difficultyRange;
         if (range && (range[0] > 0.3 + 1e-4 || range[1] < 0.8 - 1e-4)) {
             this.hud.log(`[gen] mood → 难度带 [${range[0].toFixed(2)}, ${range[1].toFixed(2)}]`);
         }
@@ -315,9 +319,9 @@ class App {
         // get the full scene blueprint (WFC weights, biome, NPC density,
         // event chain, BPM, archetype hints). Re-render the WFC dungeon
         // with the theme's tile weights and spawn a wave of on-theme NPCs.
-        const visualStyle = (r.blueprint.theme as any)?.visualStyle as
+        const visualStyle = r.blueprint.theme?.visualStyle as
             'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon' | undefined;
-        const musicMood = (r.blueprint.theme as any)?.musicMood as
+        const musicMood = r.blueprint.theme?.musicMood as
             'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse' | undefined;
         let sceneBp: SceneBlueprint | null = null;
         if (visualStyle && musicMood) {
@@ -331,7 +335,7 @@ class App {
             // Round 31 — pin the resolved BiomeId onto the
             // blueprint so AIBridge → WorldState can carry it
             // across visits without re-deriving from visualStyle.
-            (r.blueprint as any).biome = sceneBp.biomeId;
+            r.blueprint.biome = sceneBp.biomeId;
             // Re-render the WFC dungeon with the theme's tile weights.
             const themedDungeon = generateDungeonWithWeights(
                 10, 10, r.seed ?? Date.now(), sceneBp.wfcTileWeights,
@@ -375,7 +379,7 @@ class App {
         this.scene.onDimensionEntered(r.blueprint);
         this.hud.log(`进入次元: ${r.blueprint.name}`);
         this.hud.log(`玩法组合: ${r.atomIds.join(' + ')}`);
-        this.hud.log(`主题: ${(r.blueprint.theme as any).visualStyle}`);
+        this.hud.log(`主题: ${r.blueprint.theme?.visualStyle}`);
         // NarrationEngine: log the 3-sentence intro. Round 25 —
         // pass the NPC collective mood so a 4th sentence is appended
         // when the mood branch is fear / friendly / hostile (neutral

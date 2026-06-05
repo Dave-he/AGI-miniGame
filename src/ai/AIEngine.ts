@@ -26,11 +26,20 @@ export interface DimensionBlueprint {
     /**
      * Round 31 — biome tag carried from the WFC scaffold (round
      * 24's `theme_to_scene`). Optional for back-compat with
-     * blueprints that predate the integration. When set, it tells
+     * blueprint that predate the integration. When set, it tells
      * the WorldState which biome to remember for cross-visit
      * HUD prompts and biome-aware persistence.
      */
     biome?: string;
+    /**
+     * Round 42 — the difficulty range actually used by the
+     * dimension generator (post-balance-tuner nudge). Optional
+     * because some early blueprints in the round-21 test set
+     * predate this field; the consumer code falls back to a
+     * base of `[0.3, 0.8]` when it's missing. Mirrors the
+     * `GenerationConfig.difficulty_range` in the engine.
+     */
+    difficultyRange?: [number, number];
 }
 
 export interface GeneratedRule {
