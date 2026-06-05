@@ -1,8 +1,27 @@
 # AGI-miniGame 技术架构文档
 
-> **版本**: 2026-06-05 — 历经 19 轮迭代后的实现状态。
+> **版本**: 2026-06-05 — 历经 20 轮迭代后的实现状态。
 > **范围**: 描述 `src/` (TypeScript 游戏层) + `src/dsl/*` (Rust WASM DSL)
 > + 镜像到 `cocos4-rust/src/agi_minigame/dsl/*` (引擎层) 的代码。
+
+## rounds 20 新增 (本轮)
+
+- **DimensionVault 引擎层** (`cocos4-rust/src/agi_minigame/vault.rs`)：
+  AGI 的"次元记忆"。bounded ring (default 64) + `record / recent /
+  lastOutcomeFor / suggestNext / recentThemes / stats / clear`。
+  `suggest_next` 在候选池里挑出最近 `avoid_window` 次访问中未出现
+  的蓝图，全部出现时回退到"最久未访问"的选择（确定性
+  seed-tiebreaker）。13 个单元测试覆盖所有 API 与边角。
+- **DimensionVault 游戏层** (`src/world/DimensionVault.ts`)：与引擎
+  API 严格对称的 TS 镜像，便于将来切换到 WASM-backed 实现。
+  14 个 jest 镜像测试。
+- **VaultPanel** (`src/ui/VaultPanel.ts`)：纯渲染面板，列出最近
+  8 个次元访问与统计（容量/主题数/通关率）。`App` 在
+  `enterNewDimension()` 里 `vault.record(blueprint, 'completed', now)`，
+  并把 `[vault] 记忆: N 次访问 / M 主题 / 通关率 X%` 写进 HUD log。
+- **cocos4-rust bug 修复**：`BalanceTuner::suggest_difficulty` 在
+  历史为空时的早返回路径没 clamp，导致 level≥15 时返回值 > 1.0。
+  补 clamp 到 `[0.1, 1.0]`。
 
 ## rounds 16-19 新增 (本轮)
 
