@@ -38,6 +38,14 @@ export interface HUDState {
     lastSpeakerId?: string | null;
     lastSpeakerBranch?: 'fear' | 'friendly' | 'hostile' | 'neutral' | null;
     lastSpeakerDisposition?: NpcDisposition | null;
+    /**
+     * Round 45 — derived counters from the round-40
+     * per-NPC memory snapshot. Optional; when set, the
+     * HUD renders a "🧠 N 个 NPC 记住了 K 段记忆" line
+     * in the stats panel.
+     */
+    npcMindsSnapshotCount?: number;
+    npcMindsSnapshotMemories?: number;
 }
 
 export class HUD {
@@ -96,6 +104,23 @@ export class HUD {
     }
 
     /**
+     * Round 45 — push the round-40 per-NPC memory
+     * snapshot into the HUD. The stats panel renders a
+     * small line "🧠 N 个 NPC 记住了 K 段记忆" so
+     * the player can see the cross-save memory tally.
+     */
+    setNpcMindsSnapshot(snapshot: ReadonlyArray<{ entries: ReadonlyArray<unknown> }>): void {
+        const minds = snapshot.length;
+        const memories = snapshot.reduce((acc, m) => acc + m.entries.length, 0);
+        this.state = {
+            ...this.state,
+            npcMindsSnapshotCount: minds,
+            npcMindsSnapshotMemories: memories,
+        };
+        this.render();
+    }
+
+    /**
      * Read-only snapshot of the current HUD state. Replaces the
      * `(this.hud as any).state` hack that callers used before round
      * 26 to peek at `dimension`, `worldEvent`, etc. without
@@ -138,6 +163,9 @@ export class HUD {
                     : ''}
                 ${s.lastSpeakerId
                     ? `<div class="hud-speaker-remembered">🗣 你刚才听见了 <b>${escapeHtml(s.lastSpeakerId)}</b> 说${s.lastSpeakerBranch ? ` <span class="hud-speaker-branch hud-speaker-${escapeHtml(String(s.lastSpeakerBranch))}">[${escapeHtml(String(s.lastSpeakerBranch))}]</span>` : ''}</div>`
+                    : ''}
+                ${(s.npcMindsSnapshotCount ?? 0) > 0
+                    ? `<div class="hud-npc-snapshot">🧠 <b>${s.npcMindsSnapshotCount}</b> 个 NPC 记住了 <b>${s.npcMindsSnapshotMemories}</b> 段记忆</div>`
                     : ''}
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.level'))}</span><b>${s.playerLevel}</b></div>
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gold'))}</span><b>${s.gold}</b></div>

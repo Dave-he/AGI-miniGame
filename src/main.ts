@@ -686,6 +686,11 @@ class App {
             // snapshot into the HUD so the "上次离开
             // #biome" prompt becomes visible.
             this.hud.setLastBiome(this.worldState.lastBiome);
+            // Round 45 — push the round-40 per-NPC
+            // memory snapshot into the HUD so the
+            // "🧠 N 个 NPC 记住了 K 段记忆" tally
+            // becomes visible.
+            this.hud.setNpcMindsSnapshot(this.worldState.npcMindsSnapshot);
             // Round 44 — push the round-36 lastSpeaker
             // snapshot into the HUD so the "你刚才听见了
             // <id> 说：…" prompt becomes visible after

@@ -223,3 +223,47 @@ describe('HUD — round 44 lastSpeaker HUD prompt', () => {
         expect(root.innerHTML).not.toContain('<img src=x onerror');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 45 — NpcMind snapshot HUD prompt.
+//
+// Round 40 added the per-NPC memory snapshot to the
+// WorldState. This round exposes a "🧠 N 个 NPC 记住了
+// K 段记忆" tally in the HUD header so the player can
+// see the cross-save memory count without opening any
+// panel.
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 45 NpcMind snapshot tally', () => {
+    test('setNpcMindsSnapshot_aggregates_count_and_memories', () => {
+        const { hud } = makeHud();
+        expect(hud.getState().npcMindsSnapshotCount).toBeUndefined();
+        hud.setNpcMindsSnapshot([
+            { entries: [{ kind: 'a' }, { kind: 'b' }] },  // 2 memories
+            { entries: [{ kind: 'c' }] },                 // 1 memory
+            { entries: [] },                                // 0 memories
+        ]);
+        expect(hud.getState().npcMindsSnapshotCount).toBe(3);
+        expect(hud.getState().npcMindsSnapshotMemories).toBe(3);
+    });
+
+    test('renders_NPC_mind_tally_in_HTML_when_set', () => {
+        const { hud, root } = makeHud();
+        hud.setNpcMindsSnapshot([
+            { entries: [{ kind: 'a' }, { kind: 'b' }] },
+            { entries: [{ kind: 'c' }] },
+        ]);
+        expect(root.innerHTML).toContain('hud-npc-snapshot');
+        expect(root.innerHTML).toContain('2');
+        expect(root.innerHTML).toContain('3');
+    });
+
+    test('does_not_render_tally_when_count_is_zero', () => {
+        // Sanity: a zero-length snapshot leaves the
+        // tally out (no orphan element). Same for an
+        // empty array (which has count 0).
+        const { hud, root } = makeHud();
+        hud.setNpcMindsSnapshot([]);
+        expect(root.innerHTML).not.toContain('hud-npc-snapshot');
+    });
+});
