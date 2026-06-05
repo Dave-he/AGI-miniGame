@@ -328,3 +328,114 @@ describe('WorldState — round 36 individual speaker persistence', () => {
         expect(fresh.lastSpeakerDisposition).toEqual({ friendly: -0.4, fear: 0.5, trust: 0 });
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 40 — per-NPC memory snapshot persistence.
+//
+// The NpcRegistry is rebuilt on app startup, so a full
+// "rehydration" is a larger task. Round 40 persists a
+// *snapshot* of each NPC's `(id, archetype, disposition,
+// entries)` so a save → reload preserves a record of what
+// the world remembered. The HUD prompt can read it for
+// "the world remembers N NPC minds" continuity.
+// ---------------------------------------------------------------------------
+
+describe('WorldState — round 40 npcMindsSnapshot persistence', () => {
+    test('npcMindsSnapshot_defaults_to_empty_array', () => {
+        const ws = new WorldState('p', 'P');
+        expect(ws.npcMindsSnapshot).toEqual([]);
+    });
+
+    test('updateNpcMindsSnapshot_replaces_the_array', () => {
+        const ws = new WorldState('p', 'P');
+        ws.updateNpcMindsSnapshot([
+            { id: 'mage_1', archetype: 'mage', disposition: { friendly: 0, fear: 0, trust: 0.1 },
+              entries: [] },
+        ]);
+        expect(ws.npcMindsSnapshot.length).toBe(1);
+        expect(ws.npcMindsSnapshot[0].id).toBe('mage_1');
+    });
+
+    test('npcMindsSnapshot_round_trips_through_save_load', () => {
+        const ws = new WorldState('p', 'P');
+        ws.updateNpcMindsSnapshot([
+            {
+                id: 'merchant_1',
+                archetype: 'merchant',
+                disposition: { friendly: 0.4, fear: 0, trust: 0 },
+                entries: [
+                    { kind: 'dialogue',           summary: 'hi',       turn: 1, weight: 0.1 },
+                    { kind: 'received_gift',      summary: 'potion',   turn: 2, weight: 0.5 },
+                ],
+            },
+            {
+                id: 'rogue_1',
+                archetype: 'rogue',
+                disposition: { friendly: -0.2, fear: 0.3, trust: -0.1 },
+                entries: [],
+            },
+        ]);
+        const json = ws.saveToJSON();
+        const parsed = JSON.parse(json);
+        expect(parsed.npcMindsSnapshot).toHaveLength(2);
+        expect(parsed.npcMindsSnapshot[0].id).toBe('merchant_1');
+        expect(parsed.npcMindsSnapshot[0].entries).toHaveLength(2);
+        expect(parsed.npcMindsSnapshot[0].entries[1].kind).toBe('received_gift');
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.npcMindsSnapshot).toEqual(ws.npcMindsSnapshot);
+    });
+
+    test('back_compat_save_without_npcMindsSnapshot_loads_as_empty', () => {
+        // Pre-round-40 saves don't carry the field.
+        const oldJson = JSON.stringify({
+            player: { accountId: 'p' },
+            progression: { level: 1, xp: 0, talentPoints: 0 },
+            wallet: {},
+            inventory: [],
+            dimensionHistory: [],
+        });
+        const fresh = new WorldState('p', 'P');
+        const ok = fresh.loadFromJSON(oldJson);
+        expect(ok).toBe(true);
+        expect(fresh.npcMindsSnapshot).toEqual([]);
+    });
+
+    test('empty_snapshot_round_trips_as_empty_array', () => {
+        // Sanity: a fresh WorldState's save carries
+        // npcMindsSnapshot: [] (not undefined), so a
+        // load on a never-broadcast save still has
+        // something to read.
+        const ws = new WorldState('p', 'P');
+        const parsed = JSON.parse(ws.saveToJSON());
+        expect(parsed.npcMindsSnapshot).toEqual([]);
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(ws.saveToJSON());
+        expect(fresh.npcMindsSnapshot).toEqual([]);
+    });
+
+    test('npcMindsSnapshot_combines_with_lastBiome_lastNpcDisposition_lastSpeakerId', () => {
+        // Headline cross-round scenario: a single save
+        // carries the round-32 lastBiome, the round-35
+        // lastNpcDisposition, the round-36 lastSpeakerId,
+        // AND the round-40 npcMindsSnapshot — all four
+        // HUD prompts survive a save → reload cycle.
+        const ws = new WorldState('p', 'P');
+        ws.setActiveDimension('d1', ['match3'], 'forest');
+        ws.lastNpcDisposition = { friendly: 0.4, fear: 0, trust: 0.2 };
+        ws.lastSpeakerId = 'hostile_1';
+        ws.lastSpeakerDisposition = { friendly: -0.4, fear: 0.5, trust: 0 };
+        ws.updateNpcMindsSnapshot([
+            { id: 'mage_1', archetype: 'mage', disposition: { friendly: 0, fear: 0, trust: 0.1 }, entries: [] },
+        ]);
+        const json = ws.saveToJSON();
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastBiome).toBe('forest');
+        expect(fresh.lastNpcDisposition).toEqual({ friendly: 0.4, fear: 0, trust: 0.2 });
+        expect(fresh.lastSpeakerId).toBe('hostile_1');
+        expect(fresh.lastSpeakerDisposition).toEqual({ friendly: -0.4, fear: 0.5, trust: 0 });
+        expect(fresh.npcMindsSnapshot).toHaveLength(1);
+        expect(fresh.npcMindsSnapshot[0].id).toBe('mage_1');
+    });
+});

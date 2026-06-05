@@ -430,9 +430,28 @@ class App {
      * the NpcRegistry's current average so a save → reload cycle
      * preserves the world's mood signal. Called from every site
      * that broadcasts / remembers into the registry.
+     *
+     * Round 40 — also refresh the per-NPC memory snapshot
+     * (`worldState.npcMindsSnapshot`) so a save → reload preserves
+     * the per-NPC entries too. The live registry is rebuilt on
+     * app startup, so this is *informational* — the snapshot is
+     * a record of what the world remembered at save time.
      */
     private syncNpcDisposition(): void {
         this.worldState.lastNpcDisposition = this.npcMinds.averageDisposition();
+        this.worldState.updateNpcMindsSnapshot(
+            this.npcMinds.iter().map((m) => ({
+                id: m.id(),
+                archetype: m.archetype() ?? null,
+                disposition: m.disposition(),
+                entries: m.recent(m.len()).map((e) => ({
+                    kind: e.kind,
+                    summary: e.summary,
+                    turn: e.turn,
+                    weight: e.weight,
+                })),
+            })),
+        );
     }
 
     private recordDimensionOutcome(outcome: 'failed' | 'abandoned', weight: number): void {

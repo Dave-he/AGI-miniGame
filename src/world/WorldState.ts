@@ -2,7 +2,7 @@ import { PlayerProfile, PlayerProgression } from '../player/PlayerProfile';
 import { Wallet, CurrencyType } from '../economy/Wallet';
 import { Inventory, InventoryItem, Reward } from '../economy/Inventory';
 import type { BiomeId } from '../ai/SceneGen';
-import type { NpcDisposition } from './NpcMind';
+import type { NpcDisposition, NpcMemoryKind } from './NpcMind';
 
 export interface DimensionInfo {
     dimensionId: string;
@@ -15,6 +15,28 @@ export interface DimensionInfo {
      * dimensionInfo records that predate the WFC integration.
      */
     biome?: BiomeId;
+}
+
+/**
+ * Round 40 — per-NPC memory snapshot. Captures the
+ * canonical "what the world remembers about each NPC"
+ * state for cross-save persistence. The live NpcRegistry
+ * is rebuilt on app startup, so this is a *snapshot* for
+ * HUD prompts and analytics rather than a rehydration
+ * source.
+ */
+export interface NpcMindSnapshot {
+    id: string;
+    archetype: string | null;
+    disposition: NpcDisposition;
+    entries: NpcMemorySnapshotEntry[];
+}
+
+export interface NpcMemorySnapshotEntry {
+    kind: NpcMemoryKind;
+    summary: string;
+    turn: number;
+    weight: number;
 }
 
 export interface DimensionRecord {
@@ -130,6 +152,28 @@ export class WorldState {
      */
     public lastSpeakerId: string | null = null;
     public lastSpeakerDisposition: NpcDisposition | null = null;
+
+    /**
+     * Round 40 — per-NPC memory snapshot. Each entry is a
+     * `(id, archetype, disposition, entries)` tuple taken
+     * from a live `NpcMind` at save time. The live registry
+     * is rebuilt on app startup via `NpcFactory`, so this
+     * snapshot is *informational* — the HUD log can show
+     * "world remembers 5 NPC minds" — rather than a
+     * rehydration source. (Full rehydration is a separate,
+     * larger task; round 40 just closes the persistence
+     * half.)
+     */
+    public npcMindsSnapshot: NpcMindSnapshot[] = [];
+
+    /**
+     * Round 40 — replace the snapshot. Called from
+     * `App.syncNpcMindsSnapshot()` after every NpcRegistry
+     * broadcast.
+     */
+    updateNpcMindsSnapshot(snapshot: NpcMindSnapshot[]): void {
+        this.npcMindsSnapshot = snapshot;
+    }
 
     clearActiveDimension(): DimensionInfo | null {
         const dim = this.activeDimension;
@@ -286,6 +330,11 @@ export class WorldState {
             // "你刚才听见了 hostile_1 说：…" after a reload.
             lastSpeakerId: this.lastSpeakerId ?? undefined,
             lastSpeakerDisposition: this.lastSpeakerDisposition ?? undefined,
+            // Round 40 — persist the per-NPC memory
+            // snapshot. An empty list round-trips as `[]`
+            // (not undefined) so a save that never saw a
+            // broadcast is still a valid input to load.
+            npcMindsSnapshot: this.npcMindsSnapshot,
         });
     }
 
@@ -344,6 +393,12 @@ export class WorldState {
             this.lastSpeakerId = (data.lastSpeakerId as string | null | undefined) ?? null;
             this.lastSpeakerDisposition =
                 (data.lastSpeakerDisposition as NpcDisposition | null | undefined) ?? null;
+            // Round 40 — restore the per-NPC memory snapshot.
+            // Older saves (pre round 40) don't carry it; we
+            // default to an empty list.
+            this.npcMindsSnapshot = Array.isArray(data.npcMindsSnapshot)
+                ? data.npcMindsSnapshot as NpcMindSnapshot[]
+                : [];
 
             return true;
         } catch (e) {
