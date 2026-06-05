@@ -152,6 +152,49 @@
         box-shadow: 0 0 12px rgba(255, 102, 204, 0.4);
       }
       .ctl:hover { filter: brightness(1.15); }
+
+      /* vault (round 20) */
+      .vault-panel .vault-title { font-size: 11px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+      .vault-stats { display: flex; gap: 8px; font-size: 11px; color: var(--text-1); flex-wrap: wrap; margin-bottom: 6px; }
+      .vault-stat b { color: var(--neon-pink); }
+      .vault-section-label { font-size: 10px; color: var(--neon-cyan); margin: 6px 0 4px; }
+      .vault-entries { max-height: 18vh; overflow: auto; }
+      .vault-row { display: flex; gap: 6px; padding: 2px 0; font-size: 11px; align-items: center; }
+      .vault-outcome { display: inline-block; min-width: 14px; text-align: center; border-radius: 3px; font-weight: 700; }
+      .vault-outcome-completed { color: var(--neon-cyan); }
+      .vault-outcome-failed    { color: var(--neon-pink); }
+      .vault-outcome-abandoned { color: var(--neon-yellow); }
+      .vault-name { color: var(--text-0); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .vault-theme { color: var(--neon-violet); font-size: 10px; }
+      .vault-difficulty { color: var(--text-1); font-size: 10px; }
+      .vault-empty { color: var(--text-1); font-style: italic; font-size: 11px; }
+
+      /* npc minds (round 21) */
+      .npc-panel .npc-title { font-size: 11px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+      .npc-avg { font-size: 10px; color: var(--text-1); margin-bottom: 6px; }
+      .npc-avg-label { color: var(--neon-cyan); font-size: 10px; display: block; margin-bottom: 2px; }
+      .npc-axis { display: flex; align-items: center; gap: 4px; font-size: 10px; padding: 1px 0; }
+      .npc-axis-label { color: var(--text-1); width: 28px; }
+      .npc-axis-bar { flex: 1; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; position: relative; display: flex; }
+      .npc-axis-neg { background: var(--neon-pink); height: 100%; transition: width 200ms; }
+      .npc-axis-pos { background: var(--neon-cyan); height: 100%; transition: width 200ms; margin-left: auto; }
+      .npc-section-label { font-size: 10px; color: var(--neon-cyan); margin: 6px 0 4px; }
+      .npc-roster { max-height: 12vh; overflow: auto; }
+      .npc-row { display: flex; gap: 6px; padding: 3px 4px; font-size: 11px; cursor: pointer; border-radius: 4px; align-items: center; }
+      .npc-row:hover { background: rgba(255,255,255,0.04); }
+      .npc-row-selected { background: rgba(160, 108, 213, 0.18); border: 1px solid rgba(160, 108, 213, 0.45); }
+      .npc-id { color: var(--text-0); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .npc-mood { font-size: 10px; padding: 1px 4px; border-radius: 3px; }
+      .npc-mood-happy   { color: var(--neon-cyan); }
+      .npc-mood-neutral { color: var(--text-1); }
+      .npc-mood-uneasy  { color: var(--neon-yellow); }
+      .npc-mood-hostile { color: var(--neon-pink); }
+      .npc-mem-count { color: var(--text-1); font-size: 10px; }
+      .npc-memory { max-height: 14vh; overflow: auto; }
+      .npc-mem-row { display: flex; gap: 6px; padding: 2px 0; font-size: 10px; }
+      .npc-mem-kind { width: 16px; text-align: center; }
+      .npc-mem-summary { color: var(--text-1); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .npc-empty { color: var(--text-1); font-style: italic; font-size: 10px; }
     </style>
   </head>
   <body>
@@ -164,9 +207,13 @@
     <div class="panel" id="tutorial-root"></div>
     <div class="panel" id="stats-root"></div>
     <div class="panel" id="god-root"></div>
+    <div class="panel" id="vault-root"></div>
+    <div class="panel" id="npc-mind-root"></div>
 
     <div class="controls">
       <button class="ctl" id="btn-enter">进入次元</button>
+      <button class="ctl" id="btn-fail">标记失败</button>
+      <button class="ctl" id="btn-abandon">放弃次元</button>
       <button class="ctl" id="btn-event">世界事件</button>
       <button class="ctl" id="btn-dsl">模因→DSL</button>
       <button class="ctl" id="btn-collapse">大坍缩</button>
@@ -177,6 +224,8 @@
       <button class="ctl" id="btn-npc-0">对话·玄真</button>
       <button class="ctl" id="btn-npc-1">对话·阿灰</button>
       <button class="ctl" id="btn-npc-2">对话·小灵</button>
+      <button class="ctl" id="btn-gift-0">送礼·玄真</button>
+      <button class="ctl" id="btn-attack-0">攻击·玄真</button>
     </div>
 
     <script type="module" src="/src/main.ts"></script>
