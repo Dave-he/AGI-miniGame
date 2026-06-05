@@ -280,7 +280,22 @@ class App {
             const sign = moodBias > 0 ? '+' : '';
             this.hud.log(`[平衡] NPC 平均情绪 (友善 ${avgMood.friendly.toFixed(2)} / 恐惧 ${avgMood.fear.toFixed(2)} / 信任 ${avgMood.trust.toFixed(2)}) → 难度 ${sign}${moodBias.toFixed(2)}`);
         }
-        const r = await this.bridge.planAndLoad({ playerLevel: this.worldState.player.level });
+        // Round 23 — actually feed the mood into scene generation. The
+        // bridge's `toGenerationConfig` step will use the mood to nudge
+        // the difficulty range and the preferredTypes order, closing
+        // the round-22 reflexive loop.
+        const r = await this.bridge.planAndLoad({
+            playerLevel: this.worldState.player.level,
+            mood: avgMood,
+            seed: Date.now(),
+        });
+        // Round 23 — log the applied difficulty range when the mood
+        // actually moved it (i.e. away from the base 0.3–0.8 hint).
+        const lo = (r.blueprint as any).difficulty ?? 0;
+        const range = (r.blueprint as any).difficultyRange as [number, number] | undefined;
+        if (range && (range[0] > 0.3 + 1e-4 || range[1] < 0.8 - 1e-4)) {
+            this.hud.log(`[gen] mood → 难度带 [${range[0].toFixed(2)}, ${range[1].toFixed(2)}]`);
+        }
         this.hud.setState({ dimension: r.blueprint });
         this.scene.onDimensionEntered(r.blueprint);
         this.hud.log(`进入次元: ${r.blueprint.name}`);

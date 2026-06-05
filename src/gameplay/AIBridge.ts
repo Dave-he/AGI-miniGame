@@ -20,6 +20,8 @@
 import { GameplayManager, GameplayModule, Match3Module, TowerModule, CardModule, ParkourModule, PuzzleModule } from './GameplayManager';
 import { AIEngine, GameplayCombinerAI } from '../ai/AIEngine';
 import { WorldState } from '../world/WorldState';
+import type { NpcDisposition } from '../world/NpcMind';
+import { buildGenerationConfigWithMood, DEFAULT_GENERATION_HINT } from '../ai/SceneGen';
 
 export interface AtomManifestEntry {
     id: string;
@@ -48,6 +50,19 @@ export interface BridgeConfig {
     recentLossCount?: number;
     minAtoms?: number;
     maxAtoms?: number;
+    /**
+     * Round 23 — collective NPC mood (typically
+     * `NpcRegistry.averageDisposition()`). When provided, the
+     * `toGenerationConfig` step nudges the difficulty range and the
+     * preferredTypes order to reflect the mood.
+     *
+     * Defaults to `undefined` for backwards compatibility — when
+     * absent, the bridge falls back to the original
+     * `toGenerationConfig` path with hardcoded `[0.3, 0.8]`.
+     */
+    mood?: NpcDisposition;
+    /** Seed for the deterministic atom pick (round 23). */
+    seed?: number;
 }
 
 export interface BridgeResult {
@@ -82,22 +97,49 @@ export class AIBridge {
      * Plan a new dimension: ask the AI which combination to use, then
      * resolve the suggested primary+secondary atom ids against the engine
      * manifest and load the corresponding TS gameplay modules.
+     *
+     * Round 23 — when `cfg.mood` is provided, the
+     * `toGenerationConfig` step uses `buildGenerationConfigWithMood`
+     * so the NPC collective disposition actually shapes the next
+     * scene's difficulty range and atom preferences. With no mood
+     * (or with the default neutral), the result is byte-identical
+     * to the original path (AC5).
      */
     async planAndLoad(cfg: BridgeConfig): Promise<BridgeResult> {
         // 1. Ask the AI which atom ids fit this player's level/stage.
         const suggestion = this.ai.gameplayAI.suggest(cfg.playerLevel, cfg.recentLossCount ?? 0);
 
-        // 2. Build the GenerationConfig (filters + counts) from the suggestion.
-        const generationCfg = this.ai.gameplayAI.toGenerationConfig(
-            cfg.playerLevel,
-            cfg.recentLossCount ?? 0,
-            {
-                minAtoms: cfg.minAtoms ?? 2,
-                maxAtoms: cfg.maxAtoms ?? 4,
-                rewardMultiplier: 1.0,
-                difficultyRange: [0.3, 0.8],
-            },
-        );
+        // 2. Build the GenerationConfig (filters + counts) from the
+        //    suggestion. Round 23: when `mood` is provided, the mood
+        //    nudges the difficulty range and the preferredTypes
+        //    ordering. When absent, fall back to the hardcoded hint
+        //    — same numbers as before.
+        let generationCfg;
+        if (cfg.mood) {
+            generationCfg = buildGenerationConfigWithMood(
+                cfg.playerLevel,
+                cfg.recentLossCount ?? 0,
+                cfg.mood,
+                {
+                    minAtoms: cfg.minAtoms ?? 2,
+                    maxAtoms: cfg.maxAtoms ?? 4,
+                    rewardMultiplier: 1.0,
+                    baseDifficultyRange: [0.3, 0.8],
+                },
+                cfg.seed ?? 0,
+            );
+        } else {
+            generationCfg = this.ai.gameplayAI.toGenerationConfig(
+                cfg.playerLevel,
+                cfg.recentLossCount ?? 0,
+                {
+                    minAtoms: cfg.minAtoms ?? 2,
+                    maxAtoms: cfg.maxAtoms ?? 4,
+                    rewardMultiplier: 1.0,
+                    difficultyRange: [0.3, 0.8],
+                },
+            );
+        }
 
         // 3. Constrain preferredTypes to what the engine actually provides.
         const availableIds = new Set(ATOM_MANIFEST.map(a => a.id));
