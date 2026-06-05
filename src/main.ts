@@ -671,7 +671,13 @@ class App {
     loadGame(): void {
         const ok = this.save.restore();
         this.hud.log(ok ? '[读档] 已恢复' : '[读档] 没有可恢复的存档');
-        if (ok) this.analytics.track('save.loaded');
+        if (ok) {
+            this.analytics.track('save.loaded');
+            // Round 43 — push the round-32 lastBiome
+            // snapshot into the HUD so the "上次离开
+            // #biome" prompt becomes visible.
+            this.hud.setLastBiome(this.worldState.lastBiome);
+        }
         this.renderAllPanels();
         this.renderAllPanels();
     }

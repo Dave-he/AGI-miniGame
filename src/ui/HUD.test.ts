@@ -128,3 +128,52 @@ describe('HUD — round 26 getState() (typed read-only snapshot)', () => {
         expect(hud.getState().dimension).toBe(fakeDim);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 43 — lastBiome HUD prompt.
+//
+// Round 31 added the field on the WorldState, round 32
+// persisted it across save/load. This round makes it
+// visible to the player: a small "↩ 上次离开 #<biome>"
+// line in the stats panel after reload.
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 43 lastBiome HUD prompt', () => {
+    test('setLastBiome_pushes_into_state', () => {
+        const { hud } = makeHud();
+        expect(hud.getState().lastBiome).toBeUndefined();
+        hud.setLastBiome('forest');
+        expect(hud.getState().lastBiome).toBe('forest');
+        hud.setLastBiome(null);
+        expect(hud.getState().lastBiome).toBeNull();
+    });
+
+    test('renders_lastBiome_in_HTML_when_set', () => {
+        const { hud, root } = makeHud();
+        hud.setLastBiome('forest');
+        // The HUD emits a small line tagged with the
+        // `hud-biome-remembered` class so the player
+        // can see the "上次离开 #forest" prompt.
+        expect(root.innerHTML).toContain('hud-biome-remembered');
+        expect(root.innerHTML).toContain('#forest');
+    });
+
+    test('does_not_render_lastBiome_line_when_null', () => {
+        // Sanity: the optional line is *not* in the
+        // HTML when lastBiome is null (no orphan
+        // element).
+        const { hud, root } = makeHud();
+        hud.setLastBiome(null);
+        expect(root.innerHTML).not.toContain('hud-biome-remembered');
+    });
+
+    test('escapes_biome_id_in_HTML', () => {
+        // Defensive: a biome id with a `<` (which
+        // shouldn't appear, but we don't trust
+        // upstream) is HTML-escaped, not injected raw.
+        const { hud, root } = makeHud();
+        hud.setLastBiome('<script>alert(1)</script>');
+        expect(root.innerHTML).toContain('&lt;script&gt;');
+        expect(root.innerHTML).not.toContain('<script>alert(1)</script>');
+    });
+});

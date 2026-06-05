@@ -19,6 +19,15 @@ export interface HUDState {
     score: number;
     worldEvent: WorldEventDraft | null;
     logLines: string[];
+    /**
+     * Round 43 — the round-31/round-32 lastBiome snapshot.
+     * Optional (HUDs that aren't bound to a WorldState
+     * leave it null). When set, the HUD renders a
+     * "上次离开 #biome" prompt at the top of the stats
+     * panel so a player who reloads the page sees the
+     * world's "where I last was" continuity.
+     */
+    lastBiome?: string | null;
 }
 
 export class HUD {
@@ -45,6 +54,18 @@ export class HUD {
 
     setState(patch: Partial<HUDState>): void {
         this.state = { ...this.state, ...patch };
+        this.render();
+    }
+
+    /**
+     * Round 43 — push the round-32 lastBiome snapshot
+     * into the HUD. Distinct from setState because the
+     * lastBiome is a *persistent* signal, not a per-frame
+     * game state, and the App only needs to refresh it
+     * once per save → reload.
+     */
+    setLastBiome(biome: string | null): void {
+        this.state = { ...this.state, lastBiome: biome };
         this.render();
     }
 
@@ -86,6 +107,9 @@ export class HUD {
                     <span class="hud-title">${escapeHtml(this.i18n.t('hud.stats'))}</span>
                     <button class="hud-lang" type="button" data-locale="${otherLocale}">${langLabel}</button>
                 </div>
+                ${s.lastBiome
+                    ? `<div class="hud-biome-remembered">↩ 上次离开 <b>#${escapeHtml(s.lastBiome)}</b></div>`
+                    : ''}
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.level'))}</span><b>${s.playerLevel}</b></div>
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gold'))}</span><b>${s.gold}</b></div>
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gem'))}</span><b>${s.gem}</b></div>
