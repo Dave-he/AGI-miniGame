@@ -349,9 +349,16 @@ class App {
         this.hud.log(`进入次元: ${r.blueprint.name}`);
         this.hud.log(`玩法组合: ${r.atomIds.join(' + ')}`);
         this.hud.log(`主题: ${(r.blueprint.theme as any).visualStyle}`);
-        // NarrationEngine: log the 3-sentence intro.
-        const intro = this.narration.narrate(r.blueprint);
+        // NarrationEngine: log the 3-sentence intro. Round 25 —
+        // pass the NPC collective mood so a 4th sentence is appended
+        // when the mood branch is fear / friendly / hostile (neutral
+        // stays at 3). The branch order matches mood_palette and
+        // mood_bias so narrative + visual + difficulty all agree.
+        const intro = this.narration.narrate(r.blueprint, avgMood);
         for (const s of intro.sentences) this.hud.log(`[narr] ${s}`);
+        if (intro.moodBranch && intro.moodBranch !== 'neutral') {
+            this.hud.log(`[narr+mind] mood=${intro.moodBranch} → 4th 句已加入 (NPC 集体情绪驱动)`);
+        }
         // Round 20 — record the visit so the AGI's vault remembers it.
         this.vault.record(r.blueprint, 'completed', Date.now());
         const stats = this.vault.stats();
