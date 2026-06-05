@@ -171,3 +171,76 @@ describe('WorldState — round 32 biome persistence across save/load', () => {
         expect(parsed.lastBiome).toBeUndefined();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 35 — NpcRegistry.averageDisposition persistence across save / load.
+//
+// The NpcRegistry itself is rebuilt on app startup via NpcFactory, so
+// it can't be fully round-tripped. But the *average* disposition
+// is the signal downstream consumers (scene_gen, narration, balance_tuner)
+// read; round 35 persists a snapshot so the world's mood survives
+// save → reload. The App keeps the snapshot in sync via
+// `syncNpcDisposition()` after every broadcast.
+// ---------------------------------------------------------------------------
+
+describe('WorldState — round 35 lastNpcDisposition persistence', () => {
+    test('lastNpcDisposition_defaults_to_null_on_fresh_worldState', () => {
+        const ws = new WorldState('p', 'P');
+        expect(ws.lastNpcDisposition).toBeNull();
+    });
+
+    test('app_can_set_lastNpcDisposition_directly', () => {
+        const ws = new WorldState('p', 'P');
+        ws.lastNpcDisposition = { friendly: 0.4, fear: 0, trust: 0.2 };
+        expect(ws.lastNpcDisposition).toEqual({ friendly: 0.4, fear: 0, trust: 0.2 });
+    });
+
+    test('lastNpcDisposition_round_trips_through_save_load', () => {
+        const ws = new WorldState('p', 'P');
+        ws.lastNpcDisposition = { friendly: 0.4, fear: 0, trust: 0.2 };
+        const json = ws.saveToJSON();
+        const parsed = JSON.parse(json);
+        expect(parsed.lastNpcDisposition).toEqual({ friendly: 0.4, fear: 0, trust: 0.2 });
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastNpcDisposition).toEqual({ friendly: 0.4, fear: 0, trust: 0.2 });
+    });
+
+    test('back_compat_save_without_lastNpcDisposition_field_loads_as_null', () => {
+        // Pre-round-35 saves don't carry the field; load must
+        // not crash and must leave the snapshot null.
+        const oldJson = JSON.stringify({
+            player: { accountId: 'p' },
+            progression: { level: 1, xp: 0, talentPoints: 0 },
+            wallet: {},
+            inventory: [],
+            dimensionHistory: [],
+        });
+        const fresh = new WorldState('p', 'P');
+        const ok = fresh.loadFromJSON(oldJson);
+        expect(ok).toBe(true);
+        expect(fresh.lastNpcDisposition).toBeNull();
+    });
+
+    test('null_lastNpcDisposition_serialize_as_undefined', () => {
+        // Same compactness invariant as lastBiome (round 32):
+        // null → undefined so JSON.stringify drops the key.
+        const ws = new WorldState('p', 'P');
+        const parsed = JSON.parse(ws.saveToJSON());
+        expect(parsed.lastNpcDisposition).toBeUndefined();
+    });
+
+    test('lastNpcDisposition_combines_with_lastBiome_in_one_save', () => {
+        // Headline cross-round: a save carries BOTH the biome
+        // (round 32) and the mood snapshot (round 35) and
+        // both reload correctly into a fresh WorldState.
+        const ws = new WorldState('p', 'P');
+        ws.setActiveDimension('d1', ['match3'], 'forest');
+        ws.lastNpcDisposition = { friendly: 0.4, fear: 0, trust: 0.2 };
+        const json = ws.saveToJSON();
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastBiome).toBe('forest');
+        expect(fresh.lastNpcDisposition).toEqual({ friendly: 0.4, fear: 0, trust: 0.2 });
+    });
+});

@@ -2,6 +2,7 @@ import { PlayerProfile, PlayerProgression } from '../player/PlayerProfile';
 import { Wallet, CurrencyType } from '../economy/Wallet';
 import { Inventory, InventoryItem, Reward } from '../economy/Inventory';
 import type { BiomeId } from '../ai/SceneGen';
+import type { NpcDisposition } from './NpcMind';
 
 export interface DimensionInfo {
     dimensionId: string;
@@ -100,6 +101,23 @@ export class WorldState {
      * show "你刚从 #forest 归来" after the run is over.
      */
     public lastBiome: BiomeId | null = null;
+
+    /**
+     * Round 35 — snapshot of `NpcRegistry.averageDisposition()`.
+     * The NpcRegistry itself is rebuilt on app startup via
+     * `NpcFactory`, so it can't be fully round-tripped; but
+     * the average disposition is the *signal* the world's
+     * downstream consumers care about (scene_gen, narration,
+     * balance_tuner), so persisting it lets the HUD show
+     * "集体情绪: friendly 0.4 / fear 0 / trust 0.2" across
+     * sessions instead of resetting to 0/0/0 every reload.
+     *
+     * The App keeps this in sync on every NpcRegistry
+     * broadcast / remember (see `App.recordDimensionOutcome`
+     * and the like). The field defaults to null for fresh
+     * WorldStates.
+     */
+    public lastNpcDisposition: NpcDisposition | null = null;
 
     clearActiveDimension(): DimensionInfo | null {
         const dim = this.activeDimension;
@@ -243,6 +261,14 @@ export class WorldState {
             // the biome alone is enough to remember the world
             // context.
             activeDimensionBiome: this.activeDimension?.biome,
+            // Round 35 — persist the round-22 NpcRegistry
+            // average disposition so the world's mood signal
+            // (friendly / fear / trust) survives a save → reload
+            // cycle. The NpcRegistry itself is rebuilt on
+            // startup, so this is a *snapshot* the App keeps
+            // in sync; the HUD prompt "集体情绪: friendly 0.4
+            // / fear 0 / trust 0.2" reads from this field.
+            lastNpcDisposition: this.lastNpcDisposition ?? undefined,
         });
     }
 
@@ -289,6 +315,13 @@ export class WorldState {
                     this.activeDimension.biome = data.activeDimensionBiome as BiomeId;
                 }
             }
+
+            // Round 35 — restore the round-22 NpcRegistry
+            // average-disposition snapshot. Older saves (pre
+            // round 35) don't carry the field, in which case
+            // we leave it null (the App's next NpcRegistry
+            // broadcast will refresh it).
+            this.lastNpcDisposition = (data.lastNpcDisposition as NpcDisposition | null | undefined) ?? null;
 
             return true;
         } catch (e) {

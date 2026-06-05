@@ -384,7 +384,7 @@ class App {
             ++this.npcTurn,
             weight,
         ));
-        this.npcMindHandle?.refresh();
+        this.npcMindHandle?.refresh(); this.syncNpcDisposition();
         this.audio.fire('dimension.entered');
         this.analytics.track('dimension.entered', { id: r.blueprint.id });
         this.tutorial?.notify('dimension-entered');
@@ -393,6 +393,16 @@ class App {
     /** Round 21 — record the current dimension as failed/abandoned. */
     failCurrentDimension(): void { this.recordDimensionOutcome('failed', -0.4); }
     abandonCurrentDimension(): void { this.recordDimensionOutcome('abandoned', -0.1); }
+
+    /**
+     * Round 35 — keep `worldState.lastNpcDisposition` in sync with
+     * the NpcRegistry's current average so a save → reload cycle
+     * preserves the world's mood signal. Called from every site
+     * that broadcasts / remembers into the registry.
+     */
+    private syncNpcDisposition(): void {
+        this.worldState.lastNpcDisposition = this.npcMinds.averageDisposition();
+    }
 
     private recordDimensionOutcome(outcome: 'failed' | 'abandoned', weight: number): void {
         const dim = this.hud.getState().dimension;
@@ -427,7 +437,7 @@ class App {
             ++this.npcTurn,
             weight,
         ));
-        this.npcMindHandle?.refresh();
+        this.npcMindHandle?.refresh(); this.syncNpcDisposition();
     }
 
     /** Demo: AGI receives memes and we hot-reload the resulting DSL. */
@@ -512,7 +522,7 @@ class App {
             ++this.npcTurn,
             0.4,
         ));
-        this.npcMindHandle?.refresh();
+        this.npcMindHandle?.refresh(); this.syncNpcDisposition();
     }
 
     /** Round 21 — give an NPC a gift (+friendly, +trust). */
@@ -522,7 +532,7 @@ class App {
         const mind = this.npcMinds.get(profile.id);
         mind?.remember(makeEntry('received_gift', summary, ++this.npcTurn, 0.8));
         this.hud.log(`[NPC] ${profile.name} 收到 ${summary}，好感度上升`);
-        this.npcMindHandle?.refresh();
+        this.npcMindHandle?.refresh(); this.syncNpcDisposition();
     }
 
     /** Round 21 — attack an NPC (-friendly, +fear). */
@@ -532,7 +542,7 @@ class App {
         const mind = this.npcMinds.get(profile.id);
         mind?.remember(makeEntry('hostility', summary, ++this.npcTurn, 0.8));
         this.hud.log(`[NPC] ${profile.name} 受到攻击，恐惧度上升`);
-        this.npcMindHandle?.refresh();
+        this.npcMindHandle?.refresh(); this.syncNpcDisposition();
     }
 
     /** Player gains XP from a dimension run. */
@@ -578,7 +588,7 @@ class App {
                 0.4,
             ));
             this.hud.log(`[narr+mind] 高难度通关 (${dim.difficulty.toFixed(2)}) → NPC 集体转"敬畏" (trust+, fear+)`);
-            this.npcMindHandle?.refresh();
+            this.npcMindHandle?.refresh(); this.syncNpcDisposition();
         }
         this.renderAllPanels();
     }
