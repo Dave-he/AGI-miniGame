@@ -55,8 +55,19 @@ import { DimensionVault } from './world/DimensionVault';
 import { renderVaultPanel, VaultPanelHandle } from './ui/VaultPanel';
 import { NpcMind, NpcRegistry, makeEntry } from './world/NpcMind';
 import { renderNpcMindPanel, NpcMindPanelHandle } from './ui/NpcMindPanel';
-import { themeToScene, ThemeInput } from './ai/SceneGen';
-import type { SceneBlueprint } from './ai/SceneGen';
+// Round 48 — `themeToScene` itself is no longer called from main.ts;
+// the WASM bridge below wraps it. The `ThemeInput` type alias is
+// still needed to type the input to the bridge.
+import type { ThemeInput, SceneBlueprint } from './ai/SceneGen';
+// Round 48 — WASM bridge for themeToScene. The TS mirror in
+// `./ai/SceneGen` stays in tree as a fallback for when the WASM
+// module fails to load or fails at runtime. See
+// `docs/prds/2026-06-07-round-48-wasm-bridge-a.md`.
+import {
+    loadSceneGenWasm,
+    themeToSceneWithFallback,
+    type SceneGenWasmModule,
+} from './ai/SceneGenWasm';
 
 interface AppRefs {
     canvas: HTMLCanvasElement;
@@ -105,6 +116,13 @@ class App {
     private vault: DimensionVault;
     private vaultHandle: VaultPanelHandle | null = null;
     private vaultTimer: ReturnType<typeof setInterval> | null = null;
+    /**
+     * Round 48 — the loaded WASM bridge for `themeToScene`. Null
+     * means the WASM module failed to load (browser blocks wasm,
+     * 404, version mismatch); the TS mirror takes over in that
+     * case. Injected by `bootstrap()` after `App.start()`.
+     */
+    private sceneGenWasm: SceneGenWasmModule | null = null;
     /** Round 21 — per-NPC memory + disposition. */
     private npcMinds: NpcRegistry;
     private npcMindHandle: NpcMindPanelHandle | null = null;
@@ -251,6 +269,20 @@ class App {
         this.epochPanel = new EpochPanel(refs.epochRoot, this.epoch, () => this.triggerCollapse(), this.i18n);
     }
 
+    /**
+     * Round 48 — inject the loaded WASM bridge for `themeToScene`.
+     * Called by `bootstrap()` after `App.start()` returns. Passing
+     * `null` (loader failed) is valid — the TS mirror takes over.
+     */
+    setSceneGenWasm(mod: SceneGenWasmModule | null): void {
+        this.sceneGenWasm = mod;
+        if (mod) {
+            this.hud.log(`[wasm] scene_gen 桥已装载 (${mod.wasm_module_version()})`);
+        } else {
+            this.hud.log('[wasm] scene_gen 桥未装载 — 使用 TS 镜像兜底');
+        }
+    }
+
     async start(): Promise<void> {
         await this.scene.start();
         this.hud.log('AGI-miniGame 已启动');
@@ -331,7 +363,19 @@ class App {
                 difficulty: r.blueprint.difficulty,
                 seed: r.seed ?? Date.now(),
             };
-            sceneBp = themeToScene(themeInput);
+            // Round 48 — try the WASM bridge first; on null result
+            // (module not loaded, error JSON, wasm trap), fall back
+            // to the TS mirror. `themeToSceneWithFallback` always
+            // returns a blueprint, so `sceneBp` is non-null after
+            // this line. The `source` field lets us log which
+            // branch ran.
+            const outcome = themeToSceneWithFallback(this.sceneGenWasm, themeInput);
+            sceneBp = outcome.blueprint;
+            this.hud.log(
+                outcome.source === 'wasm'
+                    ? '[scene] WASM 真出 (round 48)'
+                    : '[scene] WASM 兜底→ TS 镜像 (round 48)',
+            );
             // Round 31 — pin the resolved BiomeId onto the
             // blueprint so AIBridge → WorldState can carry it
             // across visits without re-deriving from visualStyle.
@@ -784,6 +828,13 @@ async function bootstrap(): Promise<void> {
     });
     (window as any).__AGI__ = app;
     await app.start();
+
+    // Round 48 — load the WASM bridge after `start()` so the engine
+    // boot log lands first. Loader returns null on any failure
+    // (404, browser blocks wasm, version mismatch); App.setSceneGenWasm
+    // logs the outcome and the bridge stays null → TS fallback runs.
+    const sceneGenWasm = await loadSceneGenWasm();
+    app.setSceneGenWasm(sceneGenWasm);
 
     // Bind demo buttons
     const bind = (id: string, fn: () => void) => {

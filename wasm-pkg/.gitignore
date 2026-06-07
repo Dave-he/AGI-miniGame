@@ -1,0 +1,9 @@
+# Round 48 — wasm-pkg artifacts are committed. wasm-pack writes a
+# default `*` gitignore here, which would hide the .js + .wasm pair
+# that the round-48 PRD requires checking in (so first-clone `npm
+# run dev` can smoke-test the bridge without rebuilding the engine).
+# Keep the .wasm out of git diff noise though — it changes
+# byte-for-byte on each rebuild even when the Rust source is
+# unchanged. Developers regenerate it via
+# `cocos4-rust/scripts/build-wasm.sh`.
+*.wasm

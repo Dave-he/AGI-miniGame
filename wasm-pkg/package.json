@@ -1,0 +1,24 @@
+{
+  "name": "cocos4-rust",
+  "type": "module",
+  "collaborators": [
+    "Cocos Team"
+  ],
+  "description": "Rust implementation of Cocos4 game engine",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cocos/cocos4-rust"
+  },
+  "files": [
+    "cocos4_rust_bg.wasm",
+    "cocos4_rust.js",
+    "cocos4_rust.d.ts"
+  ],
+  "main": "cocos4_rust.js",
+  "types": "cocos4_rust.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
