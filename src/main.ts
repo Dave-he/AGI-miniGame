@@ -82,6 +82,36 @@ interface AppRefs {
     npcMindRoot?: HTMLElement;
 }
 
+/**
+ * Round 50 — back-compat seed for round-49 saves that don't carry
+ * `lastDimensionSeed`. We mix a few stable scalar fields from the
+ * snapshot into a 32-bit integer; reloading the same save twice
+ * produces the same dungeon tiles (not necessarily the same as the
+ * original `enterNewDimension` would have rolled — that information
+ * is lost — but at least consistent across reloads).
+ *
+ * Not cryptographically meaningful; just a deterministic mixing of
+ * the few `number` fields the snapshot carries.
+ */
+function stableSeedFromSnapshot(snap: { wfcTileWeights: readonly number[]; npcCount: number; musicBpm: number; biomeId: string; eventChain: readonly unknown[] }): number {
+    let h = 0x811c9dc5; // FNV offset basis, 32-bit
+    h = (h ^ snap.wfcTileWeights[0]) >>> 0;
+    h = Math.imul(h, 0x01000193) >>> 0;
+    h = (h ^ snap.npcCount) >>> 0;
+    h = Math.imul(h, 0x01000193) >>> 0;
+    h = (h ^ snap.musicBpm) >>> 0;
+    h = Math.imul(h, 0x01000193) >>> 0;
+    h = (h ^ snap.eventChain.length) >>> 0;
+    h = Math.imul(h, 0x01000193) >>> 0;
+    // Fold the biomeId string into the mix so different biomes
+    // get different fallback seeds.
+    for (let i = 0; i < snap.biomeId.length; i++) {
+        h = (h ^ snap.biomeId.charCodeAt(i)) >>> 0;
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h;
+}
+
 class App {
     private scene: SceneManager;
     private i18n: I18n;
@@ -381,6 +411,12 @@ class App {
                 difficulty: r.blueprint.difficulty,
                 seed: r.seed ?? Date.now(),
             };
+            // Round 50 — persist the seed used to roll this
+            // dimension's blueprint so loadGame can re-render
+            // the exact same WFC tiles. Without this, reload
+            // would get the same blueprint but a fresh tile
+            // layout.
+            this.worldState.setLastDimensionSeed(themeInput.seed);
             // Round 48 — try the WASM bridge first; on null result
             // (module not loaded, error JSON, wasm trap), fall back
             // to the TS mirror. `themeToSceneWithFallback` always
@@ -836,6 +872,53 @@ class App {
                     + ` · biome=${snap.biomeId} · events=${snap.eventChain.length}`
                     + ` · weights=[${weightsStr}] (来自 save)`,
                 );
+                // Round 50 — turn the round-49 snapshot into an
+                // actual WFC dungeon + NPC wave + timed event
+                // chain. The seed comes from
+                // `lastDimensionSeed` (round 50) when present,
+                // or a stable hash of the snapshot for back-compat
+                // with round-49 saves. The whole block is wrapped
+                // in try/catch — if any step fails (jsdom has no
+                // Three.js renderer, archetype-string mismatch,
+                // weights.length validation), loadGame still
+                // succeeds; the player just sees the snapshot log
+                // without the visual replay.
+                try {
+                    const seed = this.worldState.lastDimensionSeed
+                        ?? stableSeedFromSnapshot(snap);
+                    const dungeon = generateDungeonWithWeights(10, 10, seed, snap.wfcTileWeights);
+                    const biome = biomeForVisualStyle(snap.biomeId);
+                    this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
+                    const spawned = this.scene.spawnNpcWave(snap.npcCount, snap.npcArchetypeHints);
+                    this.hud.log(
+                        `[scene] 真重渲染: seed=${seed} · weights=[${weightsStr}]`
+                        + ` · NPC×${spawned.length} · biome=${snap.biomeId}`
+                        + ` · events=${snap.eventChain.length} (round 50)`,
+                    );
+                    for (const evt of snap.eventChain) {
+                        // Capture loop-local ref so the closure
+                        // sees the right `evt` even if the
+                        // iteration variable is re-assigned.
+                        const capture = evt;
+                        setTimeout(() => {
+                            this.hud.log(`[event] ⚡ replay ${capture.kind} (${capture.payload})`);
+                            this.npcMinds.broadcast(makeEntry(
+                                'witnessed_event',
+                                `${capture.kind}: ${capture.payload}`,
+                                ++this.npcTurn,
+                                0.3,
+                            ));
+                            this.syncNpcDisposition();
+                            this.npcMindHandle?.refresh();
+                        }, capture.delaySecs * 1000);
+                    }
+                } catch (e) {
+                    // Defensive — never let a rehydrate failure
+                    // break loadGame. The snapshot log above
+                    // already informed the player what *would*
+                    // have rendered.
+                    this.hud.log(`[scene] 真重渲染失败: ${(e as Error).message} (fallback: 仅 HUD 还原)`);
+                }
             }
             // Round 44 — push the round-36 lastSpeaker
             // snapshot into the HUD so the "你刚才听见了

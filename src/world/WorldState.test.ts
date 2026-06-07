@@ -754,3 +754,95 @@ describe('WorldState — round 49 full SceneBlueprint snapshot persistence', () 
         expect(fresh.lastSceneBlueprint!.eventChain).toHaveLength(4);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 50 — lastDimensionSeed persistence.
+//
+// The round-49 snapshot is enough to identify *what* dungeon to
+// re-render, but not enough to make it byte-identical with the
+// original enterNewDimension's WFC tiles — generateDungeonWithWeights
+// needs the seed. Round 50 persists the seed alongside the snapshot
+// so loadGame's re-render path produces the exact tiles the player
+// left behind, not just the same blueprint with random tiles.
+// ---------------------------------------------------------------------------
+
+describe('WorldState — round 50 lastDimensionSeed persistence', () => {
+    test('lastDimensionSeed_defaults_to_null', () => {
+        const ws = new WorldState('p', 'P');
+        expect(ws.lastDimensionSeed).toBeNull();
+    });
+
+    test('setLastDimensionSeed_sets_value_and_null_clears', () => {
+        const ws = new WorldState('p', 'P');
+        ws.setLastDimensionSeed(123456);
+        expect(ws.lastDimensionSeed).toBe(123456);
+        ws.setLastDimensionSeed(null);
+        expect(ws.lastDimensionSeed).toBeNull();
+    });
+
+    test('lastDimensionSeed_round_trips_through_saveToJSON_loadFromJSON', () => {
+        const ws = new WorldState('p', 'P');
+        ws.setLastDimensionSeed(42);
+        const json = ws.saveToJSON();
+        const parsed = JSON.parse(json);
+        // Non-null value lands in the JSON verbatim — the `?? undefined`
+        // compactness guard does not strip it.
+        expect(parsed.lastDimensionSeed).toBe(42);
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastDimensionSeed).toBe(42);
+    });
+
+    test('back_compat_save_without_lastDimensionSeed_loads_as_null', () => {
+        // Pre-round-50 saves don't carry the field. loadFromJSON
+        // must default to null (the loadGame re-render path then
+        // falls back to a stable hash of the snapshot).
+        const oldJson = JSON.stringify({
+            player: { accountId: 'p' },
+            progression: { level: 1, xp: 0, talentPoints: 0 },
+            wallet: {},
+            inventory: [],
+            dimensionHistory: [],
+        });
+        const fresh = new WorldState('p', 'P');
+        const ok = fresh.loadFromJSON(oldJson);
+        expect(ok).toBe(true);
+        expect(fresh.lastDimensionSeed).toBeNull();
+        // Default (never-set) save also omits the field, keeping
+        // the JSON payload compact for users who never play.
+        const freshSave = JSON.parse(new WorldState('p', 'P').saveToJSON());
+        expect(freshSave.lastDimensionSeed).toBeUndefined();
+    });
+
+    test('headline_seven_persisted_signals_coexist_through_save_load', () => {
+        // Headline cross-round scenario for round 50: one save
+        // round-trips the round-32 lastBiome, the round-35
+        // lastNpcDisposition, the round-36 lastSpeakerId, the
+        // round-40 npcMindsSnapshot, the round-47 scalars, the
+        // round-49 full snapshot, AND the round-50 seed. Seven
+        // persistence layers, none clobber each other.
+        const ws = new WorldState('p', 'P');
+        ws.setActiveDimension('d1', ['match3'], 'cyberpunk');
+        ws.lastNpcDisposition = { friendly: 0.4, fear: 0, trust: 0.2 };
+        ws.lastSpeakerId = 'robot_1';
+        ws.lastSpeakerDisposition = { friendly: 0.5, fear: 0, trust: 0.6 };
+        ws.updateNpcMindsSnapshot([
+            { id: 'robot_1', archetype: 'robot', disposition: { friendly: 0.5, fear: 0, trust: 0.6 }, entries: [] },
+        ]);
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        ws.setLastDimensionSeed(0xDEADBEEF);
+        const json = ws.saveToJSON();
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        // Six earlier-round signals still present (regression
+        // guard for round 32/35/36/40/47/49).
+        expect(fresh.lastBiome).toBe('cyberpunk');
+        expect(fresh.lastNpcDisposition).toEqual({ friendly: 0.4, fear: 0, trust: 0.2 });
+        expect(fresh.lastSpeakerId).toBe('robot_1');
+        expect(fresh.npcMindsSnapshot).toHaveLength(1);
+        expect(fresh.lastSceneNpcCount).toBe(9);
+        expect(fresh.lastSceneBlueprint).not.toBeNull();
+        // Round 50 — the new seventh layer.
+        expect(fresh.lastDimensionSeed).toBe(0xDEADBEEF);
+    });
+});

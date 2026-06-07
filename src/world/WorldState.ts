@@ -256,6 +256,29 @@ export class WorldState {
     public lastSceneBlueprint: SceneBlueprintSnapshot | null = null;
 
     /**
+     * Round 50 — the seed that was used to roll the round-49
+     * `lastSceneBlueprint` snapshot. Persisting it lets the loadGame
+     * re-render path call `generateDungeonWithWeights(10, 10,
+     * lastDimensionSeed, snap.wfcTileWeights)` with the exact same
+     * seed the original `enterNewDimension` used, so the dungeon
+     * is **byte-identical** across save/load — not just "same
+     * blueprint, fresh tiles". Older saves (pre round 50) load as
+     * null; the loadGame path then falls back to
+     * `stableSeedFromSnapshot(snap)` so reloading twice still
+     * produces a consistent dungeon.
+     */
+    public lastDimensionSeed: number | null = null;
+
+    /**
+     * Round 50 — replace the persisted seed. `null` clears.
+     * Called by `App.enterNewDimension()` after computing the
+     * effective seed (`r.seed ?? Date.now()`).
+     */
+    setLastDimensionSeed(seed: number | null): void {
+        this.lastDimensionSeed = seed;
+    }
+
+    /**
      * Round 49 — replace the full SceneBlueprint snapshot. Also
      * keeps the round-47 four scalars in sync so callers that
      * still read them (HUD setLastSceneBlueprint, panels) get the
@@ -466,6 +489,13 @@ export class WorldState {
             // Omitted when null so back-compat readers don't
             // see a noisy `null` field.
             lastSceneBlueprint: this.lastSceneBlueprint ?? undefined,
+            // Round 50 — persist the seed used to roll the
+            // round-49 snapshot so re-render on reload is
+            // byte-identical with the original
+            // enterNewDimension. Older saves load as null and
+            // the loadGame path falls back to a stable hash
+            // of the snapshot.
+            lastDimensionSeed: this.lastDimensionSeed ?? undefined,
         });
     }
 
@@ -561,6 +591,13 @@ export class WorldState {
                     biomeId: this.lastBiome,
                 });
             }
+
+            // Round 50 — restore the persisted seed. Older saves
+            // (pre round 50) don't carry the field; the loadGame
+            // re-render path falls back to a stable hash of the
+            // snapshot when null.
+            this.lastDimensionSeed =
+                typeof data.lastDimensionSeed === 'number' ? data.lastDimensionSeed : null;
 
             return true;
         } catch (e) {
