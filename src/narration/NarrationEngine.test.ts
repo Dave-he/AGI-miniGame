@@ -89,8 +89,19 @@ describe('NarrationEngine — round 25 NpcMind-aware 4th sentence', () => {
             mood({ friendly: 0.0, fear: 0.8, trust: 0.0 }));
         expect(out.sentences.length).toBe(4);
         expect(out.moodBranch).toBe('fear');
-        // The 4th sentence should be one of the fear pool entries.
-        expect(out.sentences[3]).toMatch(/空气|凉|恐惧/);
+        // Round 30 — the fear pool has 4 alternatives; we just
+        // need to confirm the 4th sentence is one of them.
+        // Round 53b — the hash changed (djb2 → fnv1a) so the
+        // specific sentence for this id may differ from the
+        // round-25 / round-30 baselines; assert by pool
+        // containment, not by regex match.
+        const fearPool = [
+            '空气本身在退避，仿佛这里有过太多恐惧。',
+            '远处有什么东西在低声警告你停下脚步。',
+            '脚下的地板似乎在颤抖，不是风。',
+            '阴影里残留的尖叫还没有完全散去。',
+        ];
+        expect(fearPool).toContain(out.sentences[3]);
     });
 
     test('friendly+trusting mood → 4 sentences, branch=friendly', () => {
@@ -117,8 +128,17 @@ describe('NarrationEngine — round 25 NpcMind-aware 4th sentence', () => {
             mood({ friendly: -0.5, fear: 0.0, trust: 0.0 }));
         expect(out.sentences.length).toBe(4);
         expect(out.moodBranch).toBe('hostile');
-        // Either pool entry: "不会原谅" or "锋利...警惕"
-        expect(out.sentences[3]).toMatch(/原谅|警惕/);
+        // Round 30 — the hostile pool has 4 alternatives. Round
+        // 53b — the hash changed (djb2 → fnv1a) so the specific
+        // sentence for this id may differ from the round-25
+        // baseline; assert by pool containment.
+        const hostilePool = [
+            '他们不会原谅你上次带来的麻烦。',
+            '哨兵把手按在剑柄上，眼神很冷。',
+            '上一次的伤痕写在每一张脸上。',
+            '你听见身后有人在啐口水。',
+        ];
+        expect(hostilePool).toContain(out.sentences[3]);
     });
 
     test('fear takes priority over friendly+trust when both fire', () => {

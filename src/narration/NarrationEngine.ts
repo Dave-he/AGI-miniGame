@@ -13,6 +13,23 @@
  * identical to `mood_palette` and `BalanceTuner.mood_bias` so the
  * narrative signal aligns with the difficulty and visual signals.
  *
+ * Round 53b — the **average-mood 4th-sentence path** now uses the
+ * same FNV-1a 32-bit hash as the Rust engine's
+ * `cocos4-rust/src/agi_minigame/narration.rs::fnv1a`. This way the
+ * WASM and TS paths produce byte-identical sentences for the same
+ * `(blueprint_id, branch)` — no more "WASM-fallback divergence" the
+ * player could observe across a reload. The **individual-NPC
+ * 4th-sentence path** (round 33, most-extreme-NPC wins) stays on
+ * `djb2` because the WASM helper doesn't model the individual
+ * context yet; that unification is a round-54 follow-up.
+ *
+ * **Constraint**: `blueprint_id` must be ASCII (the standard
+ * `dim_<digits>` or `r<N>-<tag>-<n>` format from `Date.now()` /
+ * `stableSeedFromSnapshot`). Non-ASCII ids produce different hash
+ * values in TS (`charCodeAt` returns UTF-16 code units) vs Rust
+ * (`as_bytes` returns UTF-8 bytes) and the WASM/TS paths would
+ * pick different pool entries.
+ *
  * The class is engine-agnostic: it returns a `Narration` object
  * which the App logs to the HUD or pipes to the audio service.
  */
@@ -193,10 +210,11 @@ export class NarrationEngine {
      * extreme individual NPC (round 33) — a single terrified or
      * hostile NPC dominates the chorus.
      *
-     * Round 51 — WASM-aware 4th-sentence pick. The TS fallback uses
-     * `djb2` while the WASM helper uses `fnv1a`. Both produce valid
-     * pool entries; the divergence is a known round-52 follow-up
-     * (unify hash). `main.ts` reads `lastSentenceSource` to log
+     * Round 51 — WASM-aware 4th-sentence pick. Round 53b — the
+     * TS fallback uses the same FNV-1a hash as the WASM helper
+     * for the average-mood path; the individual-NPC path stays
+     * on `djb2` (WASM helper doesn't model individual contexts
+     * yet). `main.ts` reads `lastSentenceSource` to log
      * `[4th] WASM 真出` vs `[4th] WASM 兜底→ TS 镜像`.
      */
     narrate(blueprint: DimensionBlueprint, mood?: NpcDisposition, npcRegistry?: NpcRegistry): Narration {
@@ -215,6 +233,13 @@ export class NarrationEngine {
         // djb2 (the WASM `mood_4th_sentence_for` doesn't model
         // individual-NPC contexts); only the average-mood path
         // goes through the WASM bridge.
+        //
+        // TODO round-54: align with WASM fnv1a once
+        // `most_extreme_npc(reg)` is mirrored in Rust so the WASM
+        // helper can take an `(extreme_npc_id, branch)` context.
+        // Until then the individual path stays on `djb2` —
+        // the 3/3/3 individual pool is small enough that the
+        // cross-language hash divergence is a known trade-off.
         const extreme = npcRegistry ? mostExtremeNpc(npcRegistry) : null;
         let branch: Narration['moodBranch'];
         let speakerId: string | undefined;
@@ -230,7 +255,17 @@ export class NarrationEngine {
             if (branch !== 'neutral') {
                 // Round 51 — try WASM first; on null result (no
                 // module, error JSON, or unexpected shape), fall
-                // back to the existing TS djb2-based pick.
+                // back to the existing TS-based pick.
+                //
+                // Round 53b — the TS fallback path now uses the
+                // same FNV-1a 32-bit hash as the Rust
+                // `mood_4th_sentence_for` helper, so the WASM
+                // and TS paths produce byte-identical sentences
+                // for the same `(blueprint_id, branch)`. The
+                // pool size (4 / 5 / 4 for fear / friendly /
+                // hostile) is what the mod is taken against;
+                // the branch tag itself goes into the pool
+                // lookup, not the hash key.
                 const branchNumeric = branch === 'fear' ? 0 : branch === 'friendly' ? 1 : 2;
                 const wasmSentence = callMood4thSentenceFor(this.wasmMod, branchNumeric, blueprint.id);
                 if (wasmSentence !== null) {
@@ -238,7 +273,7 @@ export class NarrationEngine {
                     this.lastSentenceSource = 'wasm';
                 } else {
                     const pool = MOOD_4TH[branch];
-                    const branchRng = this.makeRng(this.djb2(blueprint.id + '|' + branch));
+                    const branchRng = this.makeRng(this.fnv1a(blueprint.id));
                     sentences.push(this.pick(pool, branchRng));
                     this.lastSentenceSource = 'ts-fallback';
                 }
@@ -263,6 +298,30 @@ export class NarrationEngine {
     private djb2(s: string): number {
         let h = 5381;
         for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+        return h >>> 0;
+    }
+
+    /**
+     * Round 53b — FNV-1a 32-bit hash. Byte-for-byte equivalent to
+     * the Rust implementation in
+     * `cocos4-rust/src/agi_minigame/narration.rs::fnv1a` for ASCII
+     * inputs (the standard `dim_<digits>` or `r<N>-<tag>-<n>`
+     * format). The constants 2166136261 (offset basis) and
+     * 16777619 (prime) are the canonical FNV-1a 32-bit values
+     * (RFC 9923 / FNV reference implementation).
+     *
+     * Used by the **average-mood 4th-sentence path** so the WASM
+     * bridge and the TS fallback produce identical sentences for
+     * the same `(blueprint_id, branch)`. The individual-NPC path
+     * (round 33) still uses `djb2` because the WASM helper
+     * doesn't model the individual context yet (round-54 follow-up).
+     */
+    private fnv1a(s: string): number {
+        let h = 2166136261;
+        for (let i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = Math.imul(h, 16777619);
+        }
         return h >>> 0;
     }
 
