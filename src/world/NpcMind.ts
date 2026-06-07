@@ -171,6 +171,36 @@ export function makeEntry(
 }
 
 /**
+ * Round 48 — per-NPC memory + disposition snapshot. Captures the
+ * canonical "what the world remembers about each NPC" state for
+ * cross-save persistence and rehydration. The Rust-side
+ * `NpcMindSnapshot` struct (in `cocos4-rust/src/agi_minigame/
+ * npc.rs`) is the mirror of this interface; field names + types
+ * match 1:1 so the round-40 serialized payload can be rehydrated
+ * into a live `NpcMind` via `NpcMind.rehydrate` without
+ * translation.
+ *
+ * The archetype field is `string | null` (not `string | undefined`)
+ * to match the round-40 save shape — `JSON.stringify` would
+ * otherwise drop undefined fields, but null round-trips as
+ * `null` so the load side can detect "explicitly empty" vs
+ * "field missing."
+ */
+export interface NpcMindSnapshot {
+    id: string;
+    archetype: string | null;
+    disposition: NpcDisposition;
+    entries: NpcMemorySnapshotEntry[];
+}
+
+export interface NpcMemorySnapshotEntry {
+    kind: NpcMemoryKind;
+    summary: string;
+    turn: number;
+    weight: number;
+}
+
+/**
  * Per-NPC memory + disposition. Mirror of the Rust NpcMind.
  */
 export class NpcMind {
@@ -201,6 +231,63 @@ export class NpcMind {
             const init = applyArchetypeDefault(archetype);
             this._disposition = init;
         }
+    }
+
+    /**
+     * Round 48 — build a NpcMind from a persisted
+     * NpcMindSnapshot. Capacity adapts to the snapshot's
+     * entry count (clamped to a minimum of DEFAULT_CAPACITY)
+     * so the rehydrated ring never wraps entries the snapshot
+     * had room for.
+     *
+     * Critically, the rehydrated `disposition` is taken
+     * VERBATIM from the snapshot — we do NOT call
+     * `applyArchetypeDefault` here, because the snapshot's
+     * disposition is the "last-known live state" (e.g. the
+     * round-27 "high-difficulty clear → +0.6 trust"
+     * broadcasts) and overwriting it with the archetype
+     * baseline would discard that history. The round-21/29
+     * constructor path stays the canonical "fresh boot"
+     * path; this factory is the canonical "rehydrate from
+     * save" path.
+     *
+     * Mirrors the Rust `NpcMind::rehydrate` 1:1; the engine
+     * round-trip test
+     * (`snapshot_to_mind_round_trip_is_byte_identical`) pins
+     * the cross-layer invariant.
+     */
+    static rehydrate(snap: NpcMindSnapshot): NpcMind {
+        const cap = Math.max(snap.entries.length, NpcMind.DEFAULT_CAPACITY);
+        // Round 48 — bypass the constructor's archetype-init
+        // path by setting the private fields directly via a
+        // minimal shape. We don't have a "no-archetype-init"
+        // constructor flag, so we use a sentinel: build with
+        // no archetype, then patch in the disposition +
+        // archetype from the snapshot.
+        const m = new NpcMind(snap.id, cap);
+        // Cast: the constructor's `if (archetype)` branch was
+        // skipped because we passed no archetype, so
+        // _archetype is undefined. We need to set it to
+        // either the snapshot's string or undefined to match
+        // the snapshot's "null → undefined" convention.
+        (m as any)._archetype = snap.archetype ?? undefined;
+        (m as any)._disposition = { ...snap.disposition };
+        // Push entries in the snapshot's order (oldest first,
+        // newest last — matches `recent(n)`'s return order).
+        for (const e of snap.entries) {
+            // The snapshot's `weight` was already clamped at
+            // construction time (round-21), so we trust the
+            // stored value. Defensive clamp in case a hand-
+            // crafted save slipped an out-of-range weight
+            // through.
+            m._entries.push({
+                kind: e.kind,
+                summary: e.summary,
+                turn: e.turn,
+                weight: clamp1(e.weight),
+            });
+        }
+        return m;
     }
 
     id(): NpcId { return this._id; }
@@ -362,5 +449,32 @@ export class NpcRegistry {
         }
         const n = this._minds.length;
         return { friendly: f / n, fear: fr / n, trust: t / n };
+    }
+
+    /**
+     * Round 48 — replace the registry's contents with minds
+     * rehydrated from a list of `NpcMindSnapshot`s. Each
+     * snapshot is rebuilt via `NpcMind.rehydrate` and inserted
+     * in order.
+     *
+     * The replace is FULL — any minds present in `this` are
+     * dropped. This matches the round-48 semantic "snapshot is
+     * the new source of truth at app boot, not a delta" and
+     * is the right behavior for save→reload (the snapshot
+     * reflects the last live state).
+     *
+     * Idempotent: running twice with the same input produces
+     * the same registry state.
+     *
+     * Mirrors the Rust `NpcRegistry::load_from_snapshots_into`
+     * 1:1; the engine test
+     * (`registry_load_from_snapshots_into_is_idempotent`) pins
+     * the cross-layer invariant.
+     */
+    loadFromSnapshots(snapshots: NpcMindSnapshot[]): void {
+        this._minds.length = 0;
+        for (const snap of snapshots) {
+            this._minds.push(NpcMind.rehydrate(snap));
+        }
     }
 }

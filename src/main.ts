@@ -199,13 +199,31 @@ class App {
         // Round 21 — per-NPC memory + disposition. Mirrors the engine's
         // NpcRegistry. One mind per generated NPC profile.
         this.npcMinds = new NpcRegistry();
-        for (const profile of this.npcs) {
+        // Round 48 — rehydrate from the round-40 persisted
+        // snapshot when one is present (i.e. the player
+        // saved, closed the tab, and re-opened the app on
+        // a fresh load). Otherwise, generate a fresh roster
+        // from the NpcFactory output the way round-21
+        // did. The fresh-boot path is the same code as
+        // before; the rehydrate path lets the world's NPC
+        // memory (entries + disposition + archetype) carry
+        // across reloads.
+        if (this.worldState.npcMindsSnapshot.length > 0) {
+            this.npcMinds.loadFromSnapshots(this.worldState.npcMindsSnapshot);
+            const totalEntries = this.worldState.npcMindsSnapshot
+                .reduce((n, s) => n + s.entries.length, 0);
+            this.hud.log(
+                `[narr+mind] 还原 ${this.npcMinds.len()} 个 NPC, ${totalEntries} 段记忆`,
+            );
+        } else {
+            for (const profile of this.npcs) {
             // Round 29 — pass the profile's archetype so the
             // new NpcMind seeds its initial disposition from
             // the round-27 archetype table. (No-op when the
             // profile has no archetype, e.g. vanilla
             // generateRoster() output.)
             this.npcMinds.insert(new NpcMind(profile.id, NpcMind.DEFAULT_CAPACITY, profile.archetype));
+            }
         }
         // NpcCombat wired to the scene's NPC dialog methods.
         this.npcCombat = new NpcCombat({
@@ -750,6 +768,28 @@ class App {
             // "🧠 N 个 NPC 记住了 K 段记忆" tally
             // becomes visible.
             this.hud.setNpcMindsSnapshot(this.worldState.npcMindsSnapshot);
+            // Round 48 — actually rehydrate the live
+            // NpcRegistry from the snapshot (round 40
+            // was informational only; the registry was
+            // rebuilt fresh at construction time). The
+            // rehydrate is the headline of this round:
+            // the world's NPC memory now truly carries
+            // across save → reload instead of resetting
+            // to archetype baseline. The constructor
+            // already built a fresh roster for the
+            // boot scenario; this call replaces it
+            // with the persisted one when a save
+            // exists.
+            if (this.worldState.npcMindsSnapshot.length > 0) {
+                this.npcMinds.loadFromSnapshots(this.worldState.npcMindsSnapshot);
+                const totalEntries = this.worldState.npcMindsSnapshot
+                    .reduce((n, s) => n + s.entries.length, 0);
+                this.hud.log(
+                    `[narr+mind] 还原 ${this.npcMinds.len()} 个 NPC, ${totalEntries} 段记忆`,
+                );
+                this.npcMindHandle?.refresh();
+                this.syncNpcDisposition();
+            }
             // Round 46 — push the round-22/35
             // lastNpcDisposition (the average mood
             // snapshot) into the HUD so the

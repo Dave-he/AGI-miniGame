@@ -12,6 +12,9 @@ import {
     defaultDisposition,
     makeEntry,
     NpcMemoryEntry,
+    NpcDisposition,
+    NpcMemoryKind,
+    NpcMindSnapshot,
 } from './NpcMind';
 
 const entry = (
@@ -665,5 +668,291 @@ describe('NpcMind — round 39 event-chain broadcast primitive', () => {
         for (let i = 1; i < recent.length; i++) {
             expect(recent[i].turn).toBeGreaterThan(recent[i - 1].turn);
         }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 48 — NpcMind.rehydrate + NpcRegistry.loadFromSnapshots.
+//
+// Round 40 added a TS-only `NpcMindSnapshot` interface (see
+// `src/world/WorldState.ts`) and persisted per-NPC entries
+// across save → reload. Round 48 closes the loop: the live
+// `NpcRegistry` is now rebuilt from the snapshot at app
+// startup, so the world's NPC memory is truly continuous
+// across reloads.
+//
+// The test suite below mirrors the engine side's
+// `round48_tests` module 1:1 (see
+// cocos4-rust/src/agi_minigame/npc.rs). The headline
+// invariants — (a) rehydrate preserves fields verbatim, (b)
+// rehydrate does NOT call applyArchetypeDefault, (c)
+// loadFromSnapshots is full-replace, (d) loadFromSnapshots
+// is idempotent — are pinned here so the game-side wiring
+// (App constructor + App.loadGame) can rely on them.
+// ---------------------------------------------------------------------------
+
+describe('NpcMind rehydration (round 48)', () => {
+    function snap(
+        id: string,
+        archetype: string | null,
+        disp: NpcDisposition,
+        entries: Array<{ kind: NpcMemoryKind; summary: string; turn: number; weight: number }>,
+    ): NpcMindSnapshot {
+        return {
+            id,
+            archetype,
+            disposition: { ...disp },
+            entries: entries.map((e) => ({ ...e })),
+        };
+    }
+
+    test('rehydrate_preserves_fields_verbatim', () => {
+        // Same fields in → same fields out.
+        const entries = [
+            { kind: 'dialogue'          as NpcMemoryKind, summary: 'hi',  turn: 1, weight: 0.5 },
+            { kind: 'received_gift'     as NpcMemoryKind, summary: 'gem', turn: 2, weight: 1.0 },
+            { kind: 'witnessed_event'   as NpcMemoryKind, summary: 'boom',turn: 3, weight: 0.2 },
+        ];
+        const s = snap('mage_1', 'mage',
+                       { friendly: 0.5, fear: 0.1, trust: 0.7 },
+                       entries);
+        const m = NpcMind.rehydrate(s);
+        expect(m.id()).toBe('mage_1');
+        expect(m.archetype()).toBe('mage');
+        expect(m.len()).toBe(3);
+        expect(m.disposition().friendly).toBeCloseTo(0.5, 5);
+        expect(m.disposition().fear).toBeCloseTo(0.1, 5);
+        expect(m.disposition().trust).toBeCloseTo(0.7, 5);
+        // Order preserved.
+        const r = m.recent(3);
+        expect(r[0].summary).toBe('hi');
+        expect(r[1].summary).toBe('gem');
+        expect(r[2].summary).toBe('boom');
+    });
+
+    test('rehydrate_does_not_apply_archetype_default', () => {
+        // Headline invariant: a saved `mage` whose disposition is
+        // {0,0,0} stays at {0,0,0}. The fresh-boot path would
+        // seed +0.1 trust via applyArchetypeDefault('mage');
+        // rehydrate must take the snapshot's value verbatim.
+        const s = snap('mage_x', 'mage',
+                       { friendly: 0, fear: 0, trust: 0 },
+                       []);
+        const m = NpcMind.rehydrate(s);
+        expect(m.disposition().trust).toBeCloseTo(0, 5);
+        // Same for Lich (which has a non-zero baseline).
+        const s2 = snap('lich_x', 'lich',
+                        { friendly: 0, fear: 0, trust: 0 },
+                        []);
+        const m2 = NpcMind.rehydrate(s2);
+        // Lich baseline is { -0.5, 0.7, -0.5 } (round 27),
+        // but only for the round-37 typed-archetype path; the
+        // local `applyArchetypeDefault` for 'lich' falls into
+        // the default branch (the table only covers 6 legacy
+        // archetypes + 11 canonical; 'lich' is canonical, so
+        // it's in the canonical table at friendly:0/fear:0/
+        // trust:0). The point is the snapshot's value wins.
+        expect(m2.disposition().friendly).toBeCloseTo(0, 5);
+        expect(m2.disposition().fear).toBeCloseTo(0, 5);
+        expect(m2.disposition().trust).toBeCloseTo(0, 5);
+    });
+
+    test('rehydrate_capacity_adapts_to_entries_len', () => {
+        // 5 entries → capacity ≥ 5.
+        const entries5 = Array.from({ length: 5 }, (_, i) => ({
+            kind: 'dialogue' as NpcMemoryKind,
+            summary: `d${i}`,
+            turn: i,
+            weight: 0.1,
+        }));
+        const m = NpcMind.rehydrate(snap('n', null, defaultDisposition(), entries5));
+        expect(m.capacity()).toBeGreaterThanOrEqual(5);
+        expect(m.len()).toBe(5);
+
+        // 50 entries → capacity ≥ 50 (no wraparound).
+        const entries50 = Array.from({ length: 50 }, (_, i) => ({
+            kind: 'dialogue' as NpcMemoryKind,
+            summary: `d${i}`,
+            turn: i,
+            weight: 0.1,
+        }));
+        const m50 = NpcMind.rehydrate(snap('n', null, defaultDisposition(), entries50));
+        expect(m50.capacity()).toBeGreaterThanOrEqual(50);
+        expect(m50.len()).toBe(50);
+        // First entry should be index 0 (oldest) — proves no wraparound.
+        expect(m50.recent(50)[0].summary).toBe('d0');
+    });
+
+    test('rehydrate_capacity_floor_is_default', () => {
+        // 0 entries → capacity = DEFAULT_CAPACITY (32).
+        const m = NpcMind.rehydrate(snap('n', null, defaultDisposition(), []));
+        expect(m.capacity()).toBe(NpcMind.DEFAULT_CAPACITY);
+        expect(m.len()).toBe(0);
+    });
+
+    test('rehydrate_preserves_unknown_archetype_string', () => {
+        // An archetype string the local table doesn't recognize
+        // must survive the round-trip verbatim.
+        const s = snap('n', 'this-archetype-does-not-exist',
+                       defaultDisposition(), []);
+        const m = NpcMind.rehydrate(s);
+        expect(m.archetype()).toBe('this-archetype-does-not-exist');
+    });
+
+    test('rehydrate_null_archetype_yields_undefined', () => {
+        // The TS interface's `archetype: string | null` maps to
+        // `undefined` on the NpcMind getter (the canonical
+        // "no archetype" sentinel). `null → undefined` so the
+        // `archetype()` getter and the constructor's
+        // `if (archetype)` branch stay consistent.
+        const s = snap('n', null, defaultDisposition(), []);
+        const m = NpcMind.rehydrate(s);
+        expect(m.archetype()).toBeUndefined();
+    });
+
+    test('rehydrate_clamps_out_of_range_weight', () => {
+        // Defensive: a hand-crafted save that slipped an
+        // out-of-range weight through (e.g. weight: 5.0) must
+        // be clamped to [-1, 1] at rehydrate time, otherwise
+        // subsequent remember() calls could push disposition
+        // out of the unit interval before the clamp kicks in.
+        const s = snap('n', null, defaultDisposition(), [
+            { kind: 'dialogue' as NpcMemoryKind, summary: 'x', turn: 1, weight: 5.0 },
+            { kind: 'dialogue' as NpcMemoryKind, summary: 'y', turn: 2, weight: -5.0 },
+        ]);
+        const m = NpcMind.rehydrate(s);
+        const r = m.recent(2);
+        expect(r[0].weight).toBe(1.0);
+        expect(r[1].weight).toBe(-1.0);
+    });
+
+    test('registry_load_from_snapshots_fully_replaces', () => {
+        // Pre-existing mind "old_1" must be gone after load —
+        // replace semantics, not merge.
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('old_1'));
+        expect(reg.len()).toBe(1);
+        reg.loadFromSnapshots([
+            snap('a', null, defaultDisposition(), []),
+            snap('b', null, defaultDisposition(), []),
+        ]);
+        expect(reg.len()).toBe(2);
+        expect(reg.get('old_1')).toBeUndefined();
+        expect(reg.get('a')).toBeDefined();
+        expect(reg.get('b')).toBeDefined();
+    });
+
+    test('registry_load_from_snapshots_empty_input_yields_empty_registry', () => {
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('x'));
+        reg.loadFromSnapshots([]);
+        expect(reg.isEmpty()).toBe(true);
+        expect(reg.len()).toBe(0);
+    });
+
+    test('registry_load_from_snapshots_is_idempotent', () => {
+        // Running twice with the same input → same state.
+        const reg = new NpcRegistry();
+        const snapshots = [
+            snap('a', 'mage', { friendly: 0.4, fear: 0.0, trust: 0.3 },
+                 [{ kind: 'dialogue' as NpcMemoryKind, summary: 'hi', turn: 1, weight: 0.5 }]),
+            snap('b', 'merchant', { friendly: 0.0, fear: 0.2, trust: 0.1 }, []),
+        ];
+        reg.loadFromSnapshots(snapshots);
+        const len1 = reg.len();
+        const avg1 = reg.averageDisposition();
+        reg.loadFromSnapshots(snapshots);
+        const len2 = reg.len();
+        const avg2 = reg.averageDisposition();
+        expect(len2).toBe(len1);
+        expect(avg2.friendly).toBeCloseTo(avg1.friendly, 5);
+        expect(avg2.fear).toBeCloseTo(avg1.fear, 5);
+        expect(avg2.trust).toBeCloseTo(avg1.trust, 5);
+    });
+
+    test('registry_load_from_snapshots_preserves_disposition', () => {
+        // Headline: a snapshot's disposition survives intact
+        // through rehydrate → averageDisposition (the round-22
+        // BalanceTuner signal) reflects it byte-for-byte.
+        const reg = new NpcRegistry();
+        reg.loadFromSnapshots([
+            snap('a', null, { friendly: 0.6, fear: 0.2, trust: 0.4 }, []),
+            snap('b', null, { friendly: 0.2, fear: 0.4, trust: 0.0 }, []),
+        ]);
+        const avg = reg.averageDisposition();
+        expect(avg.friendly).toBeCloseTo(0.4, 5);
+        expect(avg.fear).toBeCloseTo(0.3, 5);
+        expect(avg.trust).toBeCloseTo(0.2, 5);
+    });
+
+    test('registry_load_from_snapshots_preserves_entries', () => {
+        // The round-40 snapshot's per-NPC entries must be
+        // readable from the rehydrated registry (so the
+        // NpcMindPanel can show "8 段记忆" after reload).
+        const reg = new NpcRegistry();
+        reg.loadFromSnapshots([
+            snap('a', 'merchant', { friendly: 0.4, fear: 0.0, trust: 0.0 },
+                 [
+                     { kind: 'dialogue' as NpcMemoryKind,      summary: 'haggled', turn: 1, weight: 0.2 },
+                     { kind: 'received_gift' as NpcMemoryKind, summary: 'gem',     turn: 2, weight: 1.0 },
+                 ]),
+        ]);
+        const a = reg.get('a');
+        expect(a).toBeDefined();
+        expect(a!.len()).toBe(2);
+        const r = a!.recent(2);
+        expect(r[0].summary).toBe('haggled');
+        expect(r[1].summary).toBe('gem');
+    });
+
+    test('snapshot_to_mind_round_trip_is_byte_identical', () => {
+        // The full round-trip invariant: build a NpcMind
+        // (fresh path), observe its disposition + recent
+        // entries, build a NpcMindSnapshot from those
+        // observations, rehydrate → the new mind has the
+        // same disposition + same entries (FIFO order).
+        const m = new NpcMind('rt', NpcMind.DEFAULT_CAPACITY, 'mage');
+        m.remember(makeEntry('dialogue',          'd0', 1, 0.3));
+        m.remember(makeEntry('received_gift',     'g0', 2, 1.0));
+        m.remember(makeEntry('witnessed_event',   'w0', 3, 0.5));
+        const s: NpcMindSnapshot = {
+            id: m.id(),
+            archetype: m.archetype() ?? null,
+            disposition: m.disposition(),
+            entries: m.recent(m.len()),
+        };
+        const m2 = NpcMind.rehydrate(s);
+        expect(m2.id()).toBe(m.id());
+        expect(m2.archetype()).toBe(m.archetype());
+        expect(m2.disposition().friendly).toBeCloseTo(m.disposition().friendly, 5);
+        expect(m2.disposition().fear).toBeCloseTo(m.disposition().fear, 5);
+        expect(m2.disposition().trust).toBeCloseTo(m.disposition().trust, 5);
+        const r1 = m.recent(m.len());
+        const r2 = m2.recent(m2.len());
+        expect(r2.length).toBe(r1.length);
+        for (let i = 0; i < r1.length; i++) {
+            expect(r2[i].kind).toBe(r1[i].kind);
+            expect(r2[i].summary).toBe(r1[i].summary);
+            expect(r2[i].turn).toBe(r1[i].turn);
+            expect(r2[i].weight).toBeCloseTo(r1[i].weight, 5);
+        }
+    });
+
+    test('cross_layer_snapshot_shape_is_consistent', () => {
+        // The TS `NpcMindSnapshot` interface and the Rust
+        // `NpcMindSnapshot` struct must have field names
+        // + nullability 1:1. This test pins the field
+        // names; the Rust side is pinned by the
+        // `snapshot_to_mind_round_trip_is_byte_identical`
+        // cargo test.
+        const s: NpcMindSnapshot = snap('a', null, defaultDisposition(), []);
+        expect(Object.keys(s).sort()).toEqual(
+            ['archetype', 'disposition', 'entries', 'id'],
+        );
+        // `archetype: string | null` — null is the canonical
+        // "no archetype" sentinel.
+        expect(s.archetype).toBeNull();
+        // `entries: NpcMemorySnapshotEntry[]` — not undefined.
+        expect(Array.isArray(s.entries)).toBe(true);
     });
 });
