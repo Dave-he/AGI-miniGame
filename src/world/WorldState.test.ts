@@ -906,3 +906,33 @@ describe('WorldState — round 53 lastFailedSnapshot backup', () => {
         expect(ws2.lastFailedSnapshot!.blueprint!.biomeId).toBe('cyberpunk');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 54 — hasFailedSnapshot() guard helper.
+//
+// Called by HUD's render path (via setBackupAvailable
+// signal in main.ts) to decide whether to render the
+// inline "🔙 回滚" button inside the recovery banner.
+// Cheap boolean guard — no snapshot copy.
+// ---------------------------------------------------------------------------
+
+describe('WorldState — round 54 hasFailedSnapshot()', () => {
+    test('returns_false_on_fresh_worldstate', () => {
+        const ws = new WorldState('acct-1');
+        expect(ws.hasFailedSnapshot()).toBe(false);
+    });
+
+    test('returns_true_after_backupFailedSnapshot', () => {
+        const ws = new WorldState('acct-1');
+        ws.backupFailedSnapshot();
+        expect(ws.hasFailedSnapshot()).toBe(true);
+    });
+
+    test('returns_false_after_clearFailedSnapshot', () => {
+        const ws = new WorldState('acct-1');
+        ws.backupFailedSnapshot();
+        expect(ws.hasFailedSnapshot()).toBe(true);
+        ws.clearFailedSnapshot();
+        expect(ws.hasFailedSnapshot()).toBe(false);
+    });
+});

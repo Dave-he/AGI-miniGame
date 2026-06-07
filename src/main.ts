@@ -315,6 +315,18 @@ class App {
         });
         this.economy = new EconomyPanel(refs.economyRoot, this.worldState);
         this.epochPanel = new EpochPanel(refs.epochRoot, this.epoch, () => this.triggerCollapse(), this.i18n);
+        // Round 54 — wire the rollback callback into the
+        // HUD so the recovery banner can render the
+        // inline "🔙 回滚" button. The callback is a
+        // closure over `this` (the App) so the HUD
+        // doesn't need to know about the App class —
+        // it just calls the closure when the player
+        // clicks. The HUD also receives a
+        // `setBackupAvailable(true|false)` signal
+        // in the same render cycle that calls
+        // `setLastBiome` etc. so the button visibility
+        // is gated on a real lastFailedSnapshot.
+        this.hud.setRollbackHandler(() => this.rollbackToLastGood());
     }
 
     /**
@@ -603,6 +615,14 @@ class App {
         // good" UI would otherwise offer the player a
         // pre-recovery state they no longer need).
         this.worldState.clearFailedSnapshot();
+        // Round 54 — sync HUD so the inline "🔙 回滚"
+        // button (rendered only when a recoverable
+        // backup exists) disappears. Without this,
+        // the banner would be hidden but the
+        // button's visibility flag would stay set
+        // and the next banner would re-show the
+        // button (stale backup pointer).
+        this.hud.setBackupAvailable(false);
     }
 
     /** Round 21 — record the current dimension as failed/abandoned. */
@@ -979,6 +999,202 @@ class App {
         }
     }
 
+    /**
+     * Round 54 — player-initiated rollback to the
+     * last-good pre-failure state. Called by the
+     * inline "🔙 回滚" button in the recovery
+     * banner (the button itself is wired via
+     * `hud.setRollbackHandler` in the App
+     * constructor). The flow is the inverse of
+     * `recoverFromRenderFailure`: instead of building
+     * a new dimension, we restore the 4 backup
+     * fields and re-invoke the round-50 real-render
+     * loadGame pipeline so the player returns to
+     * the literal last good world.
+     *
+     * Failure policy: final-answer, NOT recursive
+     * (round 53 research recommendation — WebGL
+     * failure is most likely hardware-permanent, so
+     * chaining into a second auto-recover would
+     * compound the problem). On rollback failure
+     * we surface a second banner and leave the
+     * current auto-recovered state intact, so the
+     * player can still see the world they have.
+     *
+     * One-deep invariant: after successful rollback,
+     * `lastFailedSnapshot` is cleared. The player
+     * cannot "rollback to rollback" because there
+     * is no longer a "last good" — the rolled-back
+     * state IS the new current state, and any new
+     * failure would create a fresh backup.
+     */
+    rollbackToLastGood(): void {
+        const backup = this.worldState.lastFailedSnapshot;
+        if (!backup) {
+            // Silent no-op: button shouldn't be
+            // clickable in this case (HUD gates
+            // render on hasFailedSnapshot), but
+            // defensive log if a test or future
+            // caller bypasses the gate.
+            this.hud.log('[scene] rollback 取消: 无 lastFailedSnapshot (no-op)');
+            return;
+        }
+        this.hud.log(`[scene] 玩家回滚 → #${backup.biome ?? '—'} (round 54)`);
+        try {
+            // Step 1 — restore the 4 backup fields
+            // into the active WorldState slots. These
+            // are direct field writes (no validation)
+            // because the backup is internally
+            // consistent (it was captured by
+            // `backupFailedSnapshot` after a successful
+            // round-49/50 pipeline).
+            if (backup.blueprint) {
+                this.worldState.lastSceneBlueprint = backup.blueprint;
+                // Also sync the round-47 scalars so
+                // the HUD's setLastSceneBlueprint path
+                // has values to display.
+                this.worldState.lastSceneNpcCount = backup.blueprint.npcCount;
+                this.worldState.lastSceneBpm = backup.blueprint.musicBpm;
+                this.worldState.lastSceneEventCount = backup.blueprint.eventChain.length;
+                this.worldState.lastSceneArchetypeHintCount = backup.blueprint.npcArchetypeHints.length;
+            }
+            this.worldState.setLastDimensionSeed(backup.seed);
+            this.worldState.lastBiome = backup.biome;
+            // updateNpcMindsSnapshot overwrites the
+            // full snapshot array (defensive clone
+            // happens inside the setter).
+            this.worldState.updateNpcMindsSnapshot(backup.npcSnapshot);
+
+            // Step 2 — NpcMind rehydration
+            // (defensive). The round-48
+            // loadFromSnapshots path can throw on a
+            // corrupted snapshot (the very snapshot
+            // we're restoring!). If it throws, we
+            // fall back to a clear registry — the
+            // scene blueprint is still valid, so the
+            // player gets a fresh NPC roster instead
+            // of the rolled-back one. This is the
+            // same fallback as round 53's NpcMind
+            // rehydrate catch.
+            try {
+                if (backup.npcSnapshot.length > 0) {
+                    this.npcMinds.loadFromSnapshots(backup.npcSnapshot);
+                } else {
+                    this.npcMinds.clear();
+                }
+            } catch (rehydrateErr) {
+                this.hud.log(`[narr+mind] rollback 还原失败 (${(rehydrateErr as Error).message}) → 走 fresh NpcFactory (round 54)`);
+                this.npcMinds.clear();
+            }
+
+            // Step 3 — re-invoke the round-50
+            // real-render pipeline. We inline the
+            // 3-segment catch logic here (duplicated
+            // from loadGame) so the rollback doesn't
+            // depend on loadGame's full save-restore
+            // cycle (which would overwrite our
+            // restored 4 fields). If the render
+            // pipeline itself fails AGAIN, we
+            // surface a second banner (final-answer,
+            // not recursive) and let the player
+            // dismiss it to accept the current state.
+            const snap = this.worldState.lastSceneBlueprint;
+            if (snap) {
+                const seed = backup.seed
+                    ?? stableSeedFromSnapshot(snap);
+                const weightsStr = snap.wfcTileWeights.join(',');
+                const partialState = { rendered: false, spawned: false, scheduled: false };
+                try {
+                    const dungeon = generateDungeonWithWeights(10, 10, seed, snap.wfcTileWeights);
+                    const biome = biomeForVisualStyle(snap.biomeId);
+                    this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
+                    partialState.rendered = true;
+                    const spawned = this.scene.spawnNpcWave(snap.npcCount, snap.npcArchetypeHints);
+                    partialState.spawned = true;
+                    this.hud.log(
+                        `[scene] rollback 真重渲染: seed=${seed} · weights=[${weightsStr}]`
+                        + ` · NPC×${spawned.length} · biome=${snap.biomeId}`
+                        + ` · events=${snap.eventChain.length} (round 54)`,
+                    );
+                    for (const evt of snap.eventChain) {
+                        const capture = evt;
+                        setTimeout(() => {
+                            try {
+                                this.hud.log(`[event] ⚡ replay (rollback) ${capture.kind} (${capture.payload})`);
+                                this.npcMinds.broadcast(makeEntry(
+                                    'witnessed_event',
+                                    `${capture.kind}: ${capture.payload}`,
+                                    ++this.npcTurn,
+                                    0.3,
+                                ));
+                                this.syncNpcDisposition();
+                                this.npcMindHandle?.refresh();
+                            } catch (evtErr) {
+                                this.hud.log(`[scene] event replay (rollback) failed: ${(evtErr as Error).message}`);
+                            }
+                        }, capture.delaySecs * 1000);
+                    }
+                    partialState.scheduled = true;
+                } catch (renderErr) {
+                    // Step 4 (failure path) — surface a
+                    // second banner. We do NOT chain
+                    // into another auto-recover (final
+                    // answer per round 53 research).
+                    // The current auto-recovered state
+                    // (whatever enterNewDimension
+                    // produced before the player
+                    // clicked rollback) remains
+                    // visible.
+                    this.hud.log(`[scene] rollback 自身 re-render 失败: code=ERR_ROLLBACK_FAILED err=${(renderErr as Error).message}`);
+                    this.hud.showRecoveryBanner('ERR_ROLLBACK_FAILED', null);
+                    return; // skip the success cleanup below
+                }
+            }
+
+            // Step 4 (success path) — sync the HUD
+            // with the restored state, then hide the
+            // recovery banner and clear the backup
+            // (one-deep invariant).
+            this.hud.setLastBiome(this.worldState.lastBiome);
+            this.hud.setNpcMindsSnapshot(this.worldState.npcMindsSnapshot);
+            this.syncNpcDisposition();
+            if (this.worldState.lastSceneNpcCount != null) {
+                this.hud.setLastSceneBlueprint({
+                    npcCount: this.worldState.lastSceneNpcCount,
+                    bpm: this.worldState.lastSceneBpm ?? 0,
+                    eventCount: this.worldState.lastSceneEventCount ?? 0,
+                    archetypeHintCount: this.worldState.lastSceneArchetypeHintCount ?? 0,
+                });
+            }
+            // If the backup had a speaker (it
+            // doesn't currently capture that, but
+            // keep the shape symmetric with
+            // loadGame's round-44 wiring), restore
+            // it.
+            // (No-op today: backup doesn't include
+            // lastSpeakerId; this is intentional —
+            // the player would have heard the
+            // narration in the original enterNewDimension
+            // and the rollback takes them back to
+            // that world; no need to re-narrate.)
+            this.worldState.clearFailedSnapshot();
+            this.hud.hideRecoveryBanner();
+            this.hud.setBackupAvailable(false);
+            this.hud.log('[scene] rollback 成功: 4 字段已恢复 + 真重渲染完成 + banner hide');
+        } catch (e) {
+            // Step 5 (catastrophic failure) —
+            // something in the restore path itself
+            // threw (e.g. a defensive clone in
+            // updateNpcMindsSnapshot). Surface a
+            // warning; the partial restore may have
+            // left the world in an inconsistent
+            // state, but the existing 7-field
+            // persistence is intact so the player
+            // can save and reload to recover.
+            this.hud.log(`[scene] rollback 灾难性失败: ${(e as Error).message} (建议手动 save + reload)`);
+        }
+    }
+
     loadGame(): void {
         const ok = this.save.restore();
         this.hud.log(ok ? '[读档] 已恢复' : '[读档] 没有可恢复的存档');
@@ -1111,6 +1327,12 @@ class App {
                     ?? stableSeedFromSnapshot(snap);
                 const partialState = { rendered: false, spawned: false, scheduled: false };
                 this.worldState.backupFailedSnapshot();
+                // Round 54 — tell the HUD that a
+                // recoverable snapshot is now
+                // available, so the inline "🔙 回滚"
+                // button can render in the recovery
+                // banner (when the banner is shown).
+                this.hud.setBackupAvailable(true);
                 try {
                     // Segment 1 — generate the WFC dungeon.
                     const dungeon = generateDungeonWithWeights(10, 10, seed, snap.wfcTileWeights);

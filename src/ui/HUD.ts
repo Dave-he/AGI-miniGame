@@ -259,6 +259,67 @@ export class HUD {
     }
 
     /**
+     * Round 54 — immediately hide the recovery banner.
+     * Called by `App.rollbackToLastGood()` after a
+     * successful rollback (the banner's purpose is to
+     * announce the auto-recovery, which is now void).
+     * Distinct from the dismiss ✕ button (which only
+     * hides) and from the 5s auto-hide (which is
+     * time-based, not action-based). The auto-hide
+     * timer is cleared so the banner stays hidden
+     * without re-firing.
+     */
+    hideRecoveryBanner(): void {
+        if (this.recoveryBannerTimer !== null) {
+            clearTimeout(this.recoveryBannerTimer);
+            this.recoveryBannerTimer = null;
+        }
+        this.state = {
+            ...this.state,
+            recoveryBanner: this.state.recoveryBanner
+                ? { ...this.state.recoveryBanner, visible: false }
+                : null,
+        };
+        this.render();
+    }
+
+    /**
+     * Round 54 — inject the App's rollback callback
+     * into the HUD so the recovery banner can render
+     * an inline "🔙 回滚" button. Passing `null` is
+     * the default (round 51-53 behavior — no button
+     * rendered). The HUD does not import the App
+     * class; the callback signature is `() => void` so
+     * the caller can wire any rollback behavior
+     * without HUD needing to know the implementation.
+     * The render() output gates on both the handler
+     * being non-null AND the worldState
+     * `hasFailedSnapshot()` check (passed via
+     * `setBackupAvailable(true|false)`) — without a
+     * recoverable backup, no button.
+     */
+    private rollbackHandler: (() => void) | null = null;
+    private backupAvailable: boolean = false;
+
+    setRollbackHandler(handler: (() => void) | null): void {
+        this.rollbackHandler = handler;
+    }
+
+    /**
+     * Round 54 — tell the HUD whether a recoverable
+     * `lastFailedSnapshot` exists. The HUD cannot
+     * query WorldState directly (would be a cycle —
+     * WorldState knows nothing about HUD; HUD knows
+     * nothing about WorldState), so App calls this in
+     * the same render cycle that calls setLastBiome
+     * / setLastSceneBlueprint etc. Cheap (one bool
+     * flag, no snapshot copy).
+     */
+    setBackupAvailable(available: boolean): void {
+        this.backupAvailable = available;
+    }
+
+    /**
      * Read-only snapshot of the current HUD state. Replaces the
      * `(this.hud as any).state` hack that callers used before round
      * 26 to peek at `dimension`, `worldEvent`, etc. without
@@ -292,9 +353,18 @@ export class HUD {
     private renderRecoveryBanner(): string {
         const banner = this.state.recoveryBanner;
         if (!banner || !banner.visible) return '';
+        // Round 54 — render the inline "🔙 回滚" button
+        // when the App has injected a rollback handler
+        // AND a recoverable lastFailedSnapshot exists.
+        // Without a backup, the button is omitted (no
+        // point offering rollback to nothing).
+        const rollbackBtn = (this.rollbackHandler !== null && this.backupAvailable)
+            ? `<button class="hud-recovery-rollback" type="button" aria-label="Rollback to last good state">🔙 回滚到上次</button>`
+            : '';
         return `
             <div class="hud-recovery-banner" role="status">
                 <span>[scene] 自动恢复: 旧渲染失败 (<b>${escapeHtml(banner.code)}</b>) → 进入新维度 <b>#${escapeHtml(banner.biome ?? '—')}</b></span>
+                ${rollbackBtn}
                 <button class="hud-recovery-dismiss" type="button" aria-label="Dismiss recovery banner">✕</button>
             </div>
         `;
@@ -367,6 +437,19 @@ export class HUD {
                     : null,
             };
             this.render();
+        });
+
+        // Round 54 — wire the inline "🔙 回滚" button.
+        // The button only renders when `setRollbackHandler`
+        // was called with a non-null handler AND a
+        // recoverable `lastFailedSnapshot` exists, so
+        // the querySelector may return null and that is
+        // a normal case (no rollback affordance needed).
+        const rollbackBtn = this.root.querySelector<HTMLButtonElement>('.hud-recovery-rollback');
+        rollbackBtn?.addEventListener('click', () => {
+            if (this.rollbackHandler) {
+                this.rollbackHandler();
+            }
         });
 
         // Round 51 — wire the persistent-memories <details> toggle to

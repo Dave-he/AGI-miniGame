@@ -546,3 +546,61 @@ describe('HUD — round 51 persistent-memories collapsible <details>', () => {
         expect(sessionStorage.getItem('hud-memories-open')).toBe('0');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 54 — HUD rollback button + hideRecoveryBanner.
+//
+// The inline "🔙 回滚" button inside the recovery
+// banner is gated on TWO conditions:
+//   1. setRollbackHandler(fn) was called (App wires
+//      this in constructor)
+//   2. setBackupAvailable(true) was called (App
+//      calls this after backupFailedSnapshot)
+// Without either, the button is omitted from the
+// render output (safe no-op fallback).
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 54 rollback button', () => {
+    test('hideRecoveryBanner_clears_visible_immediately', () => {
+        jest.useFakeTimers();
+        try {
+            const { hud, root } = makeHud();
+            hud.showRecoveryBanner('ERR_X', 'forest');
+            expect(root.innerHTML).toContain('hud-recovery-banner');
+            hud.hideRecoveryBanner();
+            // hideRecoveryBanner flips visible=false
+            // synchronously (no setTimeout involved).
+            expect(root.innerHTML).not.toContain('hud-recovery-banner');
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('rollback_button_only_renders_when_handler_and_backup_available', () => {
+        const { hud, root } = makeHud();
+        // No handler, no backup → no button.
+        hud.showRecoveryBanner('ERR_X', 'forest');
+        expect(root.innerHTML).not.toContain('hud-recovery-rollback');
+        // Handler set, no backup → still no button.
+        hud.setRollbackHandler(() => undefined);
+        hud.setBackupAvailable(false);
+        hud.showRecoveryBanner('ERR_X', 'forest');
+        expect(root.innerHTML).not.toContain('hud-recovery-rollback');
+        // Both set → button rendered.
+        hud.setBackupAvailable(true);
+        hud.showRecoveryBanner('ERR_X', 'forest');
+        expect(root.innerHTML).toContain('hud-recovery-rollback');
+    });
+
+    test('rollback_button_click_invokes_handler', () => {
+        const { hud, root } = makeHud();
+        const handler = jest.fn();
+        hud.setRollbackHandler(handler);
+        hud.setBackupAvailable(true);
+        hud.showRecoveryBanner('ERR_X', 'forest');
+        const rollbackBtn = root.querySelector<HTMLButtonElement>('.hud-recovery-rollback');
+        expect(rollbackBtn).toBeTruthy();
+        rollbackBtn!.click();
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+});

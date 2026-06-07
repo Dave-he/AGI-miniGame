@@ -349,6 +349,21 @@ export class WorldState {
     }
 
     /**
+     * Round 54 — guard helper for the rollback UI button
+     * visibility. Returns `true` when there is a
+     * recoverable last-good snapshot the player can
+     * restore. The HUD's `setRollbackHandler` path
+     * queries this to decide whether to render the
+     * inline "🔙 回滚" button inside the recovery
+     * banner. Cheaper than the alternative of passing
+     * the snapshot object up to the UI; we just need
+     * the boolean.
+     */
+    hasFailedSnapshot(): boolean {
+        return this.lastFailedSnapshot !== null;
+    }
+
+    /**
      * Round 49 — replace the full SceneBlueprint snapshot. Also
      * keeps the round-47 four scalars in sync so callers that
      * still read them (HUD setLastSceneBlueprint, panels) get the

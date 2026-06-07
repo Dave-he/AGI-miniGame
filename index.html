@@ -152,6 +152,49 @@
         border-left: 1px solid rgba(160, 108, 213, 0.25);
       }
 
+      /* round 53 — non-modal recovery banner */
+      .hud-recovery-banner {
+        background: rgba(255, 102, 204, 0.15);
+        border: 1px solid var(--neon-pink);
+        color: var(--neon-pink);
+        padding: 6px 10px;
+        border-radius: 4px;
+        margin: 0 0 6px 0;
+        font-size: 11px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .hud-recovery-banner b { color: var(--neon-pink); font-weight: 700; }
+      .hud-recovery-dismiss {
+        background: none;
+        border: none;
+        color: var(--neon-pink);
+        cursor: pointer;
+        font-size: 12px;
+        padding: 0 4px;
+        line-height: 1;
+      }
+      .hud-recovery-dismiss:hover { color: white; }
+      /* round 54 — inline rollback action inside the recovery banner */
+      .hud-recovery-rollback {
+        background: none;
+        border: 1px solid var(--neon-cyan);
+        color: var(--neon-cyan);
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 11px;
+        cursor: pointer;
+        margin-left: 8px;
+        font-family: inherit;
+        white-space: nowrap;
+      }
+      .hud-recovery-rollback:hover {
+        color: white;
+        background: var(--neon-cyan);
+      }
+
       /* controls */
       .controls {
         position: fixed;
