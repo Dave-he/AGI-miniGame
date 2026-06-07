@@ -2,6 +2,7 @@ import { PlayerProfile, PlayerProgression } from '../player/PlayerProfile';
 import { Wallet, CurrencyType } from '../economy/Wallet';
 import { Inventory, InventoryItem, Reward } from '../economy/Inventory';
 import type { BiomeId } from '../ai/SceneGen';
+import { defaultWfcWeights } from '../ai/SceneGen';
 import type { NpcDisposition, NpcMemoryKind } from './NpcMind';
 
 export interface DimensionInfo {
@@ -37,6 +38,35 @@ export interface NpcMemorySnapshotEntry {
     summary: string;
     turn: number;
     weight: number;
+}
+
+/**
+ * Round 49 — full SceneBlueprint snapshot, mirroring the canonical
+ * `SceneBlueprint` shape from `src/ai/SceneGen.ts`. Persisted across
+ * save/load (alongside the round-47 four scalars, which are still
+ * written for back-compat with code that reads them directly).
+ *
+ * Round 50 will use this snapshot to *re-render* the exact dungeon
+ * + spawn the exact NPC wave the player left behind, instead of
+ * rolling a fresh themeToScene on app boot. The wfcTileWeights and
+ * eventChain fields make that possible — the round-47 scalars
+ * alone don't.
+ */
+export interface SceneBlueprintSnapshot {
+    wfcTileWeights: [number, number, number, number, number, number, number, number];
+    biomeId: string;
+    baseNpcDensity: number;
+    npcDensity: number;
+    npcCount: number;
+    eventChain: EventStepSnapshot[];
+    musicBpm: number;
+    npcArchetypeHints: string[];
+}
+
+export interface EventStepSnapshot {
+    kind: string;
+    delaySecs: number;
+    payload: string;
 }
 
 export interface DimensionRecord {
@@ -215,6 +245,51 @@ export class WorldState {
         }
     }
 
+    /**
+     * Round 49 — full SceneBlueprint snapshot, persisted alongside
+     * the round-47 scalars. The scalars stay for back-compat (HUD
+     * `setLastSceneBlueprint(scalars)` path), but the full snapshot
+     * is the canonical source. Round 50 uses this snapshot to
+     * re-render the exact dungeon the player left behind, instead
+     * of rolling a fresh themeToScene.
+     */
+    public lastSceneBlueprint: SceneBlueprintSnapshot | null = null;
+
+    /**
+     * Round 49 — replace the full SceneBlueprint snapshot. Also
+     * keeps the round-47 four scalars in sync so callers that
+     * still read them (HUD setLastSceneBlueprint, panels) get the
+     * same values. Pass `null` to clear both.
+     */
+    updateLastSceneBlueprintFull(snap: SceneBlueprintSnapshot | null): void {
+        if (!snap) {
+            this.lastSceneBlueprint = null;
+            this.updateLastSceneBlueprint(null);
+            return;
+        }
+        // Defensive clone — callers may mutate the source object
+        // (e.g. eventChain array) without expecting the snapshot
+        // to reflect it.
+        this.lastSceneBlueprint = {
+            wfcTileWeights: [...snap.wfcTileWeights] as [number, number, number, number, number, number, number, number],
+            biomeId: snap.biomeId,
+            baseNpcDensity: snap.baseNpcDensity,
+            npcDensity: snap.npcDensity,
+            npcCount: snap.npcCount,
+            eventChain: snap.eventChain.map(e => ({ ...e })),
+            musicBpm: snap.musicBpm,
+            npcArchetypeHints: [...snap.npcArchetypeHints],
+        };
+        // Sync the round-47 scalars so the HUD prompt and any
+        // direct readers get the same numbers.
+        this.updateLastSceneBlueprint({
+            npcCount: snap.npcCount,
+            bpm: snap.musicBpm,
+            eventCount: snap.eventChain.length,
+            archetypeHintCount: snap.npcArchetypeHints.length,
+        });
+    }
+
     clearActiveDimension(): DimensionInfo | null {
         const dim = this.activeDimension;
         this.activeDimension = null;
@@ -383,6 +458,14 @@ export class WorldState {
             lastSceneBpm: this.lastSceneBpm ?? undefined,
             lastSceneEventCount: this.lastSceneEventCount ?? undefined,
             lastSceneArchetypeHintCount: this.lastSceneArchetypeHintCount ?? undefined,
+            // Round 49 — persist the full SceneBlueprint
+            // snapshot (wfcTileWeights + biomeId + densities
+            // + eventChain + npcArchetypeHints). Round 50
+            // will use this snapshot to re-render the exact
+            // dungeon the player left behind on reload.
+            // Omitted when null so back-compat readers don't
+            // see a noisy `null` field.
+            lastSceneBlueprint: this.lastSceneBlueprint ?? undefined,
         });
     }
 
@@ -461,6 +544,24 @@ export class WorldState {
                     ? data.lastSceneArchetypeHintCount
                     : null;
 
+            // Round 49 — restore the full SceneBlueprint snapshot.
+            // Order matters: validate structure first, then either
+            // (1) restore the round-49 full snapshot when present,
+            // or (2) synthesize a minimal one from the round-47
+            // scalars so reload from a pre-round-49 save still
+            // gives loadGame's `[scene] 还原` log something to
+            // show ("partial: from round-47 scalars only").
+            this.lastSceneBlueprint = parseSceneBlueprintSnapshot(data.lastSceneBlueprint);
+            if (this.lastSceneBlueprint === null && this.lastSceneNpcCount !== null) {
+                this.lastSceneBlueprint = synthesizeMinimalBlueprintFromScalars({
+                    npcCount: this.lastSceneNpcCount,
+                    bpm: this.lastSceneBpm,
+                    eventCount: this.lastSceneEventCount,
+                    archetypeHintCount: this.lastSceneArchetypeHintCount,
+                    biomeId: this.lastBiome,
+                });
+            }
+
             return true;
         } catch (e) {
             console.error('Failed to load WorldState from JSON:', e);
@@ -488,4 +589,89 @@ export class WorldState {
             return false;
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Round 49 — module-scoped helpers for SceneBlueprint snapshot parsing.
+//
+// Kept outside the WorldState class so they remain pure functions (easy
+// to test, no implicit `this` state) and so the back-compat synthesizer
+// has an obvious single-call-site.
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate the shape of a value JSON-deserialized from
+ * `lastSceneBlueprint`. Returns the snapshot when the shape is correct,
+ * null when missing, malformed, or partially corrupted. The validation
+ * is structural — types must match exactly because the round-50
+ * re-render path will index into `wfcTileWeights[6]` etc and a
+ * 7-element array would crash.
+ */
+function parseSceneBlueprintSnapshot(raw: unknown): SceneBlueprintSnapshot | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+    if (
+        !Array.isArray(r.wfcTileWeights)
+        || r.wfcTileWeights.length !== 8
+        || !r.wfcTileWeights.every(w => typeof w === 'number')
+    ) {
+        return null;
+    }
+    if (typeof r.biomeId !== 'string') return null;
+    if (typeof r.baseNpcDensity !== 'number') return null;
+    if (typeof r.npcDensity !== 'number') return null;
+    if (typeof r.npcCount !== 'number') return null;
+    if (typeof r.musicBpm !== 'number') return null;
+    if (!Array.isArray(r.eventChain)) return null;
+    if (!Array.isArray(r.npcArchetypeHints) || !r.npcArchetypeHints.every(s => typeof s === 'string')) {
+        return null;
+    }
+    const eventChain: EventStepSnapshot[] = [];
+    for (const e of r.eventChain) {
+        if (!e || typeof e !== 'object') return null;
+        const es = e as Record<string, unknown>;
+        if (typeof es.kind !== 'string' || typeof es.delaySecs !== 'number' || typeof es.payload !== 'string') {
+            return null;
+        }
+        eventChain.push({ kind: es.kind, delaySecs: es.delaySecs, payload: es.payload });
+    }
+    return {
+        wfcTileWeights: r.wfcTileWeights as [number, number, number, number, number, number, number, number],
+        biomeId: r.biomeId,
+        baseNpcDensity: r.baseNpcDensity,
+        npcDensity: r.npcDensity,
+        npcCount: r.npcCount,
+        eventChain,
+        musicBpm: r.musicBpm,
+        npcArchetypeHints: r.npcArchetypeHints as string[],
+    };
+}
+
+/**
+ * Round 49 back-compat — when loading a save written by round 47/48
+ * (only the four scalars + maybe lastBiome present), synthesize the
+ * smallest valid snapshot we can. The wfcTileWeights fall back to the
+ * canonical `defaultWfcWeights()`; the eventChain is empty (the
+ * original payload strings are not recoverable from scalars alone);
+ * the npcArchetypeHints array is empty. This gives the round-50
+ * re-render path *something* to work with — at the cost of a slightly
+ * less faithful first-load scene.
+ */
+function synthesizeMinimalBlueprintFromScalars(scalars: {
+    npcCount: number;
+    bpm: number | null;
+    eventCount: number | null;
+    archetypeHintCount: number | null;
+    biomeId: string | null;
+}): SceneBlueprintSnapshot {
+    return {
+        wfcTileWeights: defaultWfcWeights(),
+        biomeId: scalars.biomeId ?? 'forest',
+        baseNpcDensity: 0.5,
+        npcDensity: 0.5,
+        npcCount: scalars.npcCount,
+        eventChain: [],
+        musicBpm: scalars.bpm ?? 90,
+        npcArchetypeHints: [],
+    };
 }

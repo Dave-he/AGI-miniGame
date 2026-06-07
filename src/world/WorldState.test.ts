@@ -581,3 +581,176 @@ describe('WorldState — round 47 SceneBlueprint scalars persistence', () => {
         expect(fresh.lastSceneArchetypeHintCount).toBe(1);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 49 — Full SceneBlueprint snapshot persistence.
+//
+// Round 47 persisted only four user-visible scalars. Round 49 persists
+// the full SceneBlueprint shape (wfcTileWeights[8] + biomeId +
+// densities + eventChain + npcArchetypeHints) so round 50 can
+// re-render the exact dungeon the player left behind. The round-47
+// scalars stay synced for back-compat with code that reads them
+// directly.
+// ---------------------------------------------------------------------------
+
+const SAMPLE_SNAPSHOT = {
+    wfcTileWeights: [4, 4, 2, 2, 0, 0, 3, 1] as [number, number, number, number, number, number, number, number],
+    biomeId: 'cyberpunk',
+    baseNpcDensity: 0.9,
+    npcDensity: 0.765,
+    npcCount: 9,
+    eventChain: [
+        { kind: 'spawn_wave',   delaySecs: 5,  payload: '0_0' },
+        { kind: 'echo_lore',    delaySecs: 13, payload: '0_1' },
+        { kind: 'fog_pulse',    delaySecs: 22, payload: '0_2' },
+        { kind: 'treasure_drop', delaySecs: 30, payload: '0_3' },
+    ],
+    musicBpm: 130,
+    npcArchetypeHints: ['robot'],
+};
+
+describe('WorldState — round 49 full SceneBlueprint snapshot persistence', () => {
+    test('lastSceneBlueprint_defaults_to_null', () => {
+        const ws = new WorldState('p', 'P');
+        expect(ws.lastSceneBlueprint).toBeNull();
+    });
+
+    test('updateLastSceneBlueprintFull_sets_full_snapshot', () => {
+        const ws = new WorldState('p', 'P');
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        const snap = ws.lastSceneBlueprint;
+        expect(snap).not.toBeNull();
+        expect(snap!.wfcTileWeights).toEqual([4, 4, 2, 2, 0, 0, 3, 1]);
+        expect(snap!.biomeId).toBe('cyberpunk');
+        expect(snap!.eventChain).toHaveLength(4);
+        expect(snap!.eventChain[0].kind).toBe('spawn_wave');
+        expect(snap!.npcArchetypeHints).toEqual(['robot']);
+        // Defensive clone: mutating the source eventChain
+        // doesn't leak into the stored snapshot.
+        SAMPLE_SNAPSHOT.eventChain[0].kind = 'mutated';
+        expect(snap!.eventChain[0].kind).toBe('spawn_wave');
+        SAMPLE_SNAPSHOT.eventChain[0].kind = 'spawn_wave'; // reset
+    });
+
+    test('updateLastSceneBlueprintFull_null_resets_snapshot_and_scalars', () => {
+        const ws = new WorldState('p', 'P');
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        expect(ws.lastSceneNpcCount).toBe(9);
+        ws.updateLastSceneBlueprintFull(null);
+        expect(ws.lastSceneBlueprint).toBeNull();
+        expect(ws.lastSceneNpcCount).toBeNull();
+        expect(ws.lastSceneBpm).toBeNull();
+        expect(ws.lastSceneEventCount).toBeNull();
+        expect(ws.lastSceneArchetypeHintCount).toBeNull();
+    });
+
+    test('updateLastSceneBlueprintFull_syncs_round_47_scalars', () => {
+        // Calling the round-49 full setter MUST keep the round-47
+        // four scalars in sync — HUD.setLastSceneBlueprint(scalars)
+        // and any direct readers depend on them.
+        const ws = new WorldState('p', 'P');
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        expect(ws.lastSceneNpcCount).toBe(9);
+        expect(ws.lastSceneBpm).toBe(130);
+        expect(ws.lastSceneEventCount).toBe(4);
+        expect(ws.lastSceneArchetypeHintCount).toBe(1);
+    });
+
+    test('lastSceneBlueprint_round_trips_through_saveToJSON_loadFromJSON', () => {
+        const ws = new WorldState('p', 'P');
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        const json = ws.saveToJSON();
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        const snap = fresh.lastSceneBlueprint;
+        expect(snap).not.toBeNull();
+        expect(snap!.wfcTileWeights).toEqual([4, 4, 2, 2, 0, 0, 3, 1]);
+        expect(snap!.biomeId).toBe('cyberpunk');
+        expect(snap!.npcDensity).toBeCloseTo(0.765, 5);
+        expect(snap!.eventChain).toHaveLength(4);
+        expect(snap!.eventChain[3].payload).toBe('0_3');
+        expect(snap!.npcArchetypeHints).toEqual(['robot']);
+    });
+
+    test('back_compat_save_with_only_round_47_scalars_synthesizes_minimal_snapshot', () => {
+        // A round 47/48 save has the four scalars but no full
+        // snapshot. Round 49 synthesizes a minimal one from the
+        // scalars + lastBiome so the round-50 re-render path has
+        // something to work with.
+        const oldJson = JSON.stringify({
+            player: { accountId: 'p' },
+            progression: { level: 1, xp: 0, talentPoints: 0 },
+            wallet: {},
+            inventory: [],
+            dimensionHistory: [],
+            lastBiome: 'forest',
+            lastSceneNpcCount: 5,
+            lastSceneBpm: 95,
+            lastSceneEventCount: 3,
+            lastSceneArchetypeHintCount: 2,
+        });
+        const fresh = new WorldState('p', 'P');
+        const ok = fresh.loadFromJSON(oldJson);
+        expect(ok).toBe(true);
+        // Synthesized snapshot uses defaultWfcWeights and empty
+        // eventChain — but preserves the user-visible npcCount/bpm.
+        const snap = fresh.lastSceneBlueprint;
+        expect(snap).not.toBeNull();
+        expect(snap!.npcCount).toBe(5);
+        expect(snap!.musicBpm).toBe(95);
+        expect(snap!.biomeId).toBe('forest');
+        expect(snap!.eventChain).toEqual([]);  // can't be recovered from scalars
+        expect(snap!.npcArchetypeHints).toEqual([]);  // can't be recovered from scalars
+        // Canonical default WFC weights.
+        expect(snap!.wfcTileWeights).toEqual([6, 3, 1, 1, 0, 0, 1, 1]);
+    });
+
+    test('back_compat_save_without_any_scene_fields_loads_as_null', () => {
+        // Pre-round-47 save — no scalars and no full snapshot.
+        // Both round-47 scalars AND round-49 full snapshot stay null.
+        const oldJson = JSON.stringify({
+            player: { accountId: 'p' },
+            progression: { level: 1, xp: 0, talentPoints: 0 },
+            wallet: {},
+            inventory: [],
+            dimensionHistory: [],
+        });
+        const fresh = new WorldState('p', 'P');
+        const ok = fresh.loadFromJSON(oldJson);
+        expect(ok).toBe(true);
+        expect(fresh.lastSceneBlueprint).toBeNull();
+        expect(fresh.lastSceneNpcCount).toBeNull();
+    });
+
+    test('headline_six_fields_coexist_across_save_load', () => {
+        // Headline cross-round scenario for round 49: one save
+        // round-trips the round-32 lastBiome, the round-35
+        // lastNpcDisposition, the round-36 lastSpeakerId, the
+        // round-40 npcMindsSnapshot, the round-47 scalars (still
+        // present), AND the round-49 full snapshot. Six
+        // persistence layers in one save, none clobber each other.
+        const ws = new WorldState('p', 'P');
+        ws.setActiveDimension('d1', ['match3'], 'cyberpunk');
+        ws.lastNpcDisposition = { friendly: 0.4, fear: 0, trust: 0.2 };
+        ws.lastSpeakerId = 'robot_1';
+        ws.lastSpeakerDisposition = { friendly: 0.5, fear: 0, trust: 0.6 };
+        ws.updateNpcMindsSnapshot([
+            { id: 'robot_1', archetype: 'robot', disposition: { friendly: 0.5, fear: 0, trust: 0.6 }, entries: [] },
+        ]);
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        const json = ws.saveToJSON();
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastBiome).toBe('cyberpunk');
+        expect(fresh.lastNpcDisposition).toEqual({ friendly: 0.4, fear: 0, trust: 0.2 });
+        expect(fresh.lastSpeakerId).toBe('robot_1');
+        expect(fresh.npcMindsSnapshot).toHaveLength(1);
+        // Round 47 scalars still present.
+        expect(fresh.lastSceneNpcCount).toBe(9);
+        expect(fresh.lastSceneBpm).toBe(130);
+        // Round 49 full snapshot also round-trips.
+        expect(fresh.lastSceneBlueprint).not.toBeNull();
+        expect(fresh.lastSceneBlueprint!.wfcTileWeights).toEqual([4, 4, 2, 2, 0, 0, 3, 1]);
+        expect(fresh.lastSceneBlueprint!.eventChain).toHaveLength(4);
+    });
+});

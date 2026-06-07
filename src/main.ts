@@ -417,13 +417,21 @@ class App {
                 // sees "🎬 上次维度: NPC×N · BPM T · M 事件
                 // · K archetype" immediately on entering, not
                 // just on reload.
+                // Round 49 — switch to the full snapshot
+                // helper: it writes the round-49 full
+                // `lastSceneBlueprint` (wfcTileWeights +
+                // eventChain + densities) AND keeps the
+                // round-47 four scalars in sync internally.
+                // The HUD still reads the scalars; round 50
+                // will read the full snapshot for re-rendering
+                // the exact dungeon on reload.
                 const sceneScalars = {
                     npcCount: sceneBp.npcCount,
                     bpm: sceneBp.musicBpm,
                     eventCount: sceneBp.eventChain.length,
                     archetypeHintCount: sceneBp.npcArchetypeHints.length,
                 };
-                this.worldState.updateLastSceneBlueprint(sceneScalars);
+                this.worldState.updateLastSceneBlueprintFull(sceneBp);
                 this.hud.setLastSceneBlueprint(sceneScalars);
                 // Push the event chain into the world for downstream
                 // consumers (SmartWorldAI / God console). Round 39 —
@@ -812,6 +820,22 @@ class App {
                     eventCount: this.worldState.lastSceneEventCount ?? 0,
                     archetypeHintCount: this.worldState.lastSceneArchetypeHintCount ?? 0,
                 });
+            }
+            // Round 49 — when a full SceneBlueprint snapshot
+            // was persisted (or synthesized from round-47
+            // scalars), log the full structure so the player
+            // sees scene-level continuity, not just the four
+            // top-level numbers. Round 50 will turn this log
+            // into an actual re-render of the dungeon +
+            // archetype-tagged NPC wave.
+            const snap = this.worldState.lastSceneBlueprint;
+            if (snap) {
+                const weightsStr = snap.wfcTileWeights.join(',');
+                this.hud.log(
+                    `[scene] 还原: NPC×${snap.npcCount} · BPM ${snap.musicBpm}`
+                    + ` · biome=${snap.biomeId} · events=${snap.eventChain.length}`
+                    + ` · weights=[${weightsStr}] (来自 save)`,
+                );
             }
             // Round 44 — push the round-36 lastSpeaker
             // snapshot into the HUD so the "你刚才听见了
