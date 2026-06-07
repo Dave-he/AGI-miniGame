@@ -594,6 +594,15 @@ class App {
         this.audio.fire('dimension.entered');
         this.analytics.track('dimension.entered', { id: r.blueprint.id });
         this.tutorial?.notify('dimension-entered');
+        // Round 53 — clear the round-53 lastFailedSnapshot
+        // backup now that this dimension is successfully
+        // established. The backup was a one-deep copy of
+        // the pre-failure state; once we have a healthy
+        // new dimension in place, the backup is stale and
+        // should not linger (a future "rollback to last
+        // good" UI would otherwise offer the player a
+        // pre-recovery state they no longer need).
+        this.worldState.clearFailedSnapshot();
     }
 
     /** Round 21 — record the current dimension as failed/abandoned. */
@@ -839,6 +848,137 @@ class App {
         this.tutorial?.notify('save-persisted');
     }
 
+    /**
+     * Round 53 — recovery orchestrator for the loadGame
+     * rehydrate pipeline. Called from the catch block at
+     * `loadGame` after `backupFailedSnapshot` has captured
+     * the 4-field pre-failure state. The orchestrator
+     * dispatches on the error code emitted by the round-53
+     * graded catch:
+     *
+     *   ERR_SCENE_RENDER  → full rebuild via
+     *                       enterNewDimension (the WFC
+     *                       dungeon is unrecoverable)
+     *   ERR_NPC_SPAWN     → only re-spawn NPCs (the
+     *                       dungeon is already on-screen,
+     *                       just empty)
+     *   ERR_EVENT_CHAIN   → only schedule the event chain
+     *                       (dungeon + NPCs already done,
+     *                       just the timed dispatch failed)
+     *   ERR_UNKNOWN       → full rebuild via
+     *                       enterNewDimension as the
+     *                       conservative default
+     *
+     * The function is `async` even though the recovery
+     * path is mostly synchronous — `enterNewDimension`
+     * is async (calls `bridge.planAndLoad`), so the
+     * orchestrator awaits it. Returns when the recovery
+     * completes (or fails gracefully). The non-modal
+     * HUD banner is shown via `hud.showRecoveryBanner`
+     * with the new biome id after the first successful
+     * `enterNewDimension` (the orchestrator queries
+     * `worldState.lastBiome` post-call because
+     * `enterNewDimension` updates that field via
+     * `setActiveDimension`).
+     */
+    private async recoverFromRenderFailure(
+        code: 'ERR_SCENE_RENDER' | 'ERR_NPC_SPAWN' | 'ERR_EVENT_CHAIN' | 'ERR_UNKNOWN',
+        partialState: { rendered: boolean; spawned: boolean; scheduled: boolean },
+    ): Promise<void> {
+        try {
+            switch (code) {
+                case 'ERR_SCENE_RENDER':
+                case 'ERR_UNKNOWN': {
+                    // Full rebuild — the scene is broken,
+                    // so we replace it with a fresh
+                    // dimension. The single BEB retry (1
+                    // attempt) is implicit: if this
+                    // enterNewDimension throws, the outer
+                    // try/catch in recoverFromRenderFailure
+                    // catches it and logs without re-throwing.
+                    await this.enterNewDimension();
+                    this.hud.showRecoveryBanner(code, this.worldState.lastBiome);
+                    this.hud.log(`[scene] 自动恢复完成: 进入新维度 #${this.worldState.lastBiome} (code=${code})`);
+                    break;
+                }
+                case 'ERR_NPC_SPAWN': {
+                    // Re-spawn the NPC wave without
+                    // rebuilding the dungeon. The scene
+                    // already has tiles; we only need to
+                    // re-invoke spawnNpcWave with the
+                    // snapshot's count + hints.
+                    const snap = this.worldState.lastSceneBlueprint;
+                    if (snap) {
+                        try {
+                            const spawned = this.scene.spawnNpcWave(snap.npcCount, snap.npcArchetypeHints);
+                            partialState.spawned = true;
+                            this.hud.showRecoveryBanner(code, snap.biomeId);
+                            this.hud.log(`[scene] 自动恢复完成: 仅 re-spawn NPC×${spawned.length} (biome=${snap.biomeId})`);
+                        } catch (retryErr) {
+                            // The retry itself failed —
+                            // escalate to full rebuild.
+                            this.hud.log(`[scene] ERR_NPC_SPAWN retry 失败, 升级到 enterNewDimension: ${(retryErr as Error).message}`);
+                            await this.enterNewDimension();
+                            this.hud.showRecoveryBanner('ERR_NPC_SPAWN_RETRY_FAILED', this.worldState.lastBiome);
+                            this.hud.log(`[scene] 自动恢复完成: 升级路径 → 新维度 #${this.worldState.lastBiome}`);
+                        }
+                    } else {
+                        // No snapshot to spawn from
+                        // (shouldn't happen — backupFailedSnapshot
+                        // ran first). Fall through to full
+                        // rebuild.
+                        await this.enterNewDimension();
+                        this.hud.showRecoveryBanner('ERR_NPC_SPAWN_NO_SNAP', this.worldState.lastBiome);
+                    }
+                    break;
+                }
+                case 'ERR_EVENT_CHAIN': {
+                    // The dungeon + NPCs are already in
+                    // place; only the timed event chain
+                    // failed. Re-schedule it from the
+                    // snapshot's eventChain.
+                    const snap = this.worldState.lastSceneBlueprint;
+                    if (snap) {
+                        for (const evt of snap.eventChain) {
+                            const capture = evt;
+                            setTimeout(() => {
+                                try {
+                                    this.hud.log(`[event] ⚡ replay ${capture.kind} (${capture.payload})`);
+                                    this.npcMinds.broadcast(makeEntry(
+                                        'witnessed_event',
+                                        `${capture.kind}: ${capture.payload}`,
+                                        ++this.npcTurn,
+                                        0.3,
+                                    ));
+                                    this.syncNpcDisposition();
+                                    this.npcMindHandle?.refresh();
+                                } catch (e) {
+                                    this.hud.log(`[scene] event replay retry failed: ${(e as Error).message}`);
+                                }
+                            }, capture.delaySecs * 1000);
+                        }
+                        partialState.scheduled = true;
+                        this.hud.showRecoveryBanner(code, snap.biomeId);
+                        this.hud.log(`[scene] 自动恢复完成: 仅 re-schedule ${snap.eventChain.length} 个事件`);
+                    } else {
+                        // No snapshot — give up the
+                        // event chain silently; the
+                        // dungeon is still on-screen.
+                        this.hud.showRecoveryBanner('ERR_EVENT_CHAIN_NO_SNAP', null);
+                    }
+                    break;
+                }
+            }
+        } catch (e) {
+            // Last-resort: even the recovery path
+            // threw. Don't bubble — the player still
+            // has the HUD with round-50's snapshot
+            // log; the 3D scene may be empty, but
+            // the app is not crashed.
+            this.hud.log(`[scene] 自动恢复失败: ${(e as Error).message} (需要手动 enterNewDimension)`);
+        }
+    }
+
     loadGame(): void {
         const ok = this.save.restore();
         this.hud.log(ok ? '[读档] 已恢复' : '[读档] 没有可恢复的存档');
@@ -866,14 +1006,37 @@ class App {
             // with the persisted one when a save
             // exists.
             if (this.worldState.npcMindsSnapshot.length > 0) {
-                this.npcMinds.loadFromSnapshots(this.worldState.npcMindsSnapshot);
-                const totalEntries = this.worldState.npcMindsSnapshot
-                    .reduce((n, s) => n + s.entries.length, 0);
-                this.hud.log(
-                    `[narr+mind] 还原 ${this.npcMinds.len()} 个 NPC, ${totalEntries} 段记忆`,
-                );
-                this.npcMindHandle?.refresh();
-                this.syncNpcDisposition();
+                // Round 53 — wrap the round-48 rehydration
+                // in try/catch. A throw here (corrupted
+                // snapshot, unknown archetype, kind-string
+                // mismatch) does NOT trigger a full
+                // enterNewDimension — the scene blueprint
+                // may still be valid, so we just clear the
+                // NPC roster and let the player continue
+                // with an empty registry (fresh NpcFactory
+                // will repopulate on next enterNewDimension).
+                try {
+                    this.npcMinds.loadFromSnapshots(this.worldState.npcMindsSnapshot);
+                    const totalEntries = this.worldState.npcMindsSnapshot
+                        .reduce((n, s) => n + s.entries.length, 0);
+                    this.hud.log(
+                        `[narr+mind] 还原 ${this.npcMinds.len()} 个 NPC, ${totalEntries} 段记忆`,
+                    );
+                    this.npcMindHandle?.refresh();
+                    this.syncNpcDisposition();
+                } catch (rehydrateErr) {
+                    this.hud.log(
+                        `[narr+mind] 还原失败 (${(rehydrateErr as Error).message})`
+                        + ` → 走 fresh NpcFactory (round 53)`,
+                    );
+                    this.npcMinds.clear();
+                    // The scene re-render below can still
+                    // proceed with an empty NpcRegistry;
+                    // the round-50 snapshot pipeline only
+                    // needs the WFC weights + biome + NPC
+                    // archetype hints (not the live
+                    // registry).
+                }
             }
             // Round 46 — push the round-22/35
             // lastNpcDisposition (the average mood
@@ -924,41 +1087,109 @@ class App {
                 // weights.length validation), loadGame still
                 // succeeds; the player just sees the snapshot log
                 // without the visual replay.
+                //
+                // Round 53 — split the round-50 catch-all into
+                // three targeted catches with per-segment error
+                // codes. The orchestrator (`recoverFromRenderFailure`)
+                // picks the right recovery path per segment:
+                //   ERR_DUNGEON_GEN  → full re-render via
+                //                      enterNewDimension
+                //   ERR_SCENE_RENDER → full re-render via
+                //                      enterNewDimension
+                //   ERR_NPC_SPAWN    → only re-spawn NPCs
+                //                      (dungeon already rendered)
+                //   ERR_EVENT_CHAIN  → only schedule the event
+                //                      chain (dungeon + NPCs
+                //                      already done)
+                // The 5-second auto-hide banner informs the player
+                // when the recovery actually ran. Defensive
+                // `backupFailedSnapshot` is called once at the
+                // top so any recovery path preserves the failed
+                // state for a future round-54 "rollback to last
+                // good" UI.
+                const seed = this.worldState.lastDimensionSeed
+                    ?? stableSeedFromSnapshot(snap);
+                const partialState = { rendered: false, spawned: false, scheduled: false };
+                this.worldState.backupFailedSnapshot();
                 try {
-                    const seed = this.worldState.lastDimensionSeed
-                        ?? stableSeedFromSnapshot(snap);
+                    // Segment 1 — generate the WFC dungeon.
                     const dungeon = generateDungeonWithWeights(10, 10, seed, snap.wfcTileWeights);
+                    // Segment 2 — push the tiles into the Three.js
+                    // scene. This is the most likely failure
+                    // point in jsdom (no WebGL) and on devices
+                    // with a broken renderer context.
                     const biome = biomeForVisualStyle(snap.biomeId);
                     this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
+                    partialState.rendered = true;
+                    // Segment 3 — bulk-spawn the NPC wave. A
+                    // throw here means the dungeon is on-screen
+                    // but empty; the recovery path is "re-spawn
+                    // NPCs only", not "rebuild the world".
                     const spawned = this.scene.spawnNpcWave(snap.npcCount, snap.npcArchetypeHints);
+                    partialState.spawned = true;
                     this.hud.log(
                         `[scene] 真重渲染: seed=${seed} · weights=[${weightsStr}]`
                         + ` · NPC×${spawned.length} · biome=${snap.biomeId}`
                         + ` · events=${snap.eventChain.length} (round 50)`,
                     );
+                    // Segment 4 (async tail-catch) — schedule the
+                    // timed event chain. Each setTimeout is its
+                    // own microtask boundary, so we wrap the
+                    // dispatch logic in a try/catch per-iteration
+                    // to keep the round-50 safety net ("never
+                    // throw out of a setTimeout") while still
+                    // bubbling the failure to the orchestrator.
                     for (const evt of snap.eventChain) {
                         // Capture loop-local ref so the closure
                         // sees the right `evt` even if the
                         // iteration variable is re-assigned.
                         const capture = evt;
                         setTimeout(() => {
-                            this.hud.log(`[event] ⚡ replay ${capture.kind} (${capture.payload})`);
-                            this.npcMinds.broadcast(makeEntry(
-                                'witnessed_event',
-                                `${capture.kind}: ${capture.payload}`,
-                                ++this.npcTurn,
-                                0.3,
-                            ));
-                            this.syncNpcDisposition();
-                            this.npcMindHandle?.refresh();
+                            try {
+                                this.hud.log(`[event] ⚡ replay ${capture.kind} (${capture.payload})`);
+                                this.npcMinds.broadcast(makeEntry(
+                                    'witnessed_event',
+                                    `${capture.kind}: ${capture.payload}`,
+                                    ++this.npcTurn,
+                                    0.3,
+                                ));
+                                this.syncNpcDisposition();
+                                this.npcMindHandle?.refresh();
+                            } catch (evtErr) {
+                                // Per-iteration tail catch — async
+                                // errors are surfaced but do not
+                                // break the rest of the chain.
+                                this.hud.log(
+                                    `[scene] event replay failed: ${(evtErr as Error).message}`
+                                    + ` (event=${capture.kind})`,
+                                );
+                            }
                         }, capture.delaySecs * 1000);
                     }
+                    partialState.scheduled = true;
                 } catch (e) {
-                    // Defensive — never let a rehydrate failure
-                    // break loadGame. The snapshot log above
-                    // already informed the player what *would*
-                    // have rendered.
-                    this.hud.log(`[scene] 真重渲染失败: ${(e as Error).message} (fallback: 仅 HUD 还原)`);
+                    // Graded catch — figure out which segment
+                    // threw and dispatch to the right recovery
+                    // path. We infer from `partialState` which
+                    // was the last successful step (since the
+                    // throw propagates past the try-block
+                    // boundary, a per-segment try would be
+                    // redundant nesting).
+                    let code: 'ERR_SCENE_RENDER' | 'ERR_NPC_SPAWN' | 'ERR_EVENT_CHAIN' | 'ERR_UNKNOWN';
+                    if (!partialState.rendered) {
+                        code = 'ERR_SCENE_RENDER';
+                    } else if (!partialState.spawned) {
+                        code = 'ERR_NPC_SPAWN';
+                    } else if (!partialState.scheduled) {
+                        code = 'ERR_EVENT_CHAIN';
+                    } else {
+                        code = 'ERR_UNKNOWN';
+                    }
+                    this.hud.log(
+                        `[scene] 真重渲染失败: code=${code} err=${(e as Error).message}`
+                        + ` → 启动自动恢复 (round 53)`,
+                    );
+                    this.recoverFromRenderFailure(code, partialState);
                 }
             }
             // Round 44 — push the round-36 lastSpeaker

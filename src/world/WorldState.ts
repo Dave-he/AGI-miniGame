@@ -279,6 +279,76 @@ export class WorldState {
     }
 
     /**
+     * Round 53 — one-deep backup of the 4 fields most likely
+     * to be unrecoverable after a failed re-render. The
+     * round-50 `loadGame` try/catch now calls
+     * `backupFailedSnapshot()` BEFORE invoking the recovery
+     * orchestrator (which may overwrite `lastSceneBlueprint`,
+     * `lastDimensionSeed`, `lastBiome`, and indirectly
+     * `npcMindsSnapshot` via fresh `enterNewDimension`).
+     *
+     * Deep copy is defensive — the caller
+     * (`App.recoverFromRenderFailure`) may immediately
+     * re-use the source fields, and we don't want the
+     * backup to drift. The 4 fields are the canonical
+     * "what the world looked like when re-render failed".
+     *
+     * `null` (default) means no failed re-render has
+     * happened since the last successful
+     * `enterNewDimension`. The `clearFailedSnapshot()`
+     * helper is called at the end of a successful
+     * `enterNewDimension` to drop the backup.
+     */
+    public lastFailedSnapshot: {
+        blueprint: SceneBlueprintSnapshot | null;
+        seed: number | null;
+        biome: BiomeId | null;
+        npcSnapshot: NpcMindSnapshot[];
+    } | null = null;
+
+    /**
+     * Round 53 — capture the 4 fields above as a
+     * deep-copy backup on `this.lastFailedSnapshot`.
+     */
+    backupFailedSnapshot(): void {
+        this.lastFailedSnapshot = {
+            blueprint: this.lastSceneBlueprint
+                ? {
+                    wfcTileWeights: [...this.lastSceneBlueprint.wfcTileWeights] as [
+                        number, number, number, number,
+                        number, number, number, number,
+                    ],
+                    biomeId: this.lastSceneBlueprint.biomeId,
+                    baseNpcDensity: this.lastSceneBlueprint.baseNpcDensity,
+                    npcDensity: this.lastSceneBlueprint.npcDensity,
+                    musicBpm: this.lastSceneBlueprint.musicBpm,
+                    npcCount: this.lastSceneBlueprint.npcCount,
+                    npcArchetypeHints: [...this.lastSceneBlueprint.npcArchetypeHints],
+                    eventChain: this.lastSceneBlueprint.eventChain.map(e => ({ ...e })),
+                }
+                : null,
+            seed: this.lastDimensionSeed,
+            biome: this.lastBiome,
+            npcSnapshot: this.npcMindsSnapshot.map(s => ({
+                id: s.id,
+                archetype: s.archetype,
+                disposition: { ...s.disposition },
+                entries: s.entries.map(e => ({ ...e })),
+            })),
+        };
+    }
+
+    /**
+     * Round 53 — drop the `lastFailedSnapshot` backup.
+     * Called by `App.enterNewDimension()` after a
+     * successful dimension transition so the backup
+     * doesn't linger as stale state for future loads.
+     */
+    clearFailedSnapshot(): void {
+        this.lastFailedSnapshot = null;
+    }
+
+    /**
      * Round 49 — replace the full SceneBlueprint snapshot. Also
      * keeps the round-47 four scalars in sync so callers that
      * still read them (HUD setLastSceneBlueprint, panels) get the
@@ -496,6 +566,13 @@ export class WorldState {
             // the loadGame path falls back to a stable hash
             // of the snapshot.
             lastDimensionSeed: this.lastDimensionSeed ?? undefined,
+            // Round 53 — persist the 4-field backup of the
+            // most recent failed re-render. `null` (no
+            // failure since last successful
+            // enterNewDimension) is omitted (undefined) so
+            // back-compat readers don't see a noisy `null`
+            // field.
+            lastFailedSnapshot: this.lastFailedSnapshot ?? undefined,
         });
     }
 
@@ -598,6 +675,30 @@ export class WorldState {
             // snapshot when null.
             this.lastDimensionSeed =
                 typeof data.lastDimensionSeed === 'number' ? data.lastDimensionSeed : null;
+
+            // Round 53 — restore the failed-snapshot backup.
+            // Older saves (pre round 53) don't carry the
+            // field; `null` default is the "no failure"
+            // sentinel so the recovery banner is suppressed
+            // on reload.
+            if (data.lastFailedSnapshot && typeof data.lastFailedSnapshot === 'object') {
+                const raw = data.lastFailedSnapshot as {
+                    blueprint: unknown;
+                    seed: unknown;
+                    biome: unknown;
+                    npcSnapshot: unknown;
+                };
+                this.lastFailedSnapshot = {
+                    blueprint: parseSceneBlueprintSnapshot(raw.blueprint),
+                    seed: typeof raw.seed === 'number' ? raw.seed : null,
+                    biome: (raw.biome as BiomeId | null) ?? null,
+                    npcSnapshot: Array.isArray(raw.npcSnapshot)
+                        ? (raw.npcSnapshot as NpcMindSnapshot[])
+                        : [],
+                };
+            } else {
+                this.lastFailedSnapshot = null;
+            }
 
             return true;
         } catch (e) {

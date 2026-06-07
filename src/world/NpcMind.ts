@@ -423,6 +423,25 @@ export class NpcRegistry {
         else this._minds.push(mind);
     }
 
+    /**
+     * Round 53 — empty the registry of all minds. Called
+     * by `App.loadGame` when the round-48 NpcMind
+     * rehydration path throws (a corrupted snapshot or a
+     * kind-string mismatch). The recovery policy is:
+     * reset the live NPC roster so the next `broadcast` /
+     * `averageDisposition` is well-defined, and continue
+     * rendering the round-49/50 scene snapshot from the
+     * same biome/seed (the scene blueprint is still
+     * valid; only the NPC identity layer is corrupted).
+     * Unlike `loadFromSnapshots`, this method does NOT
+     * deep-copy or rehydrate anything — it is a hard
+     * reset to empty state. Does not throw on an
+     * already-empty registry.
+     */
+    clear(): void {
+        this._minds.length = 0;
+    }
+
     get(id: string): NpcMind | undefined {
         return this._minds.find(m => m.id() === id);
     }

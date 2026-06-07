@@ -374,6 +374,65 @@ describe('HUD — round 47 SceneBlueprint scalars HUD prompt', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Round 53 — HUD recovery banner (showRecoveryBanner + auto-hide).
+//
+// Called by `App.recoverFromRenderFailure` after a
+// successful recovery (e.g. enterNewDimension completed
+// after a rehydrate failure). The banner shows the error
+// code and new biome, auto-hides after 5s, and has a
+// dismiss button for instant close.
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 53 recovery banner', () => {
+    test('showRecoveryBanner_pushes_into_state_and_renders_div', () => {
+        jest.useFakeTimers();
+        try {
+            const { hud, root } = makeHud();
+            hud.showRecoveryBanner('ERR_SCENE_RENDER', 'forest');
+            expect(root.innerHTML).toContain('hud-recovery-banner');
+            expect(root.innerHTML).toContain('ERR_SCENE_RENDER');
+            expect(root.innerHTML).toContain('#forest');
+            expect(root.innerHTML).toContain('hud-recovery-dismiss');
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('banner_hidden_after_5s_via_setTimeout', () => {
+        jest.useFakeTimers();
+        try {
+            const { hud, root } = makeHud();
+            hud.showRecoveryBanner('ERR_NPC_SPAWN', 'dungeon');
+            expect(root.innerHTML).toContain('hud-recovery-banner');
+            jest.advanceTimersByTime(5000);
+            // After 5s, the auto-hide timer has flipped
+            // `visible` to false. We trigger render() via
+            // setLastBiome as a canonical HUD write path
+            // so the new state reaches the DOM.
+            hud.setLastBiome('dungeon');
+            expect(root.innerHTML).not.toContain('hud-recovery-banner');
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('dismiss_button_hides_banner_immediately', () => {
+        jest.useFakeTimers();
+        try {
+            const { hud, root } = makeHud();
+            hud.showRecoveryBanner('ERR_EVENT_CHAIN', 'space');
+            expect(root.innerHTML).toContain('hud-recovery-banner');
+            const dismissBtn = root.querySelector<HTMLButtonElement>('.hud-recovery-dismiss');
+            expect(dismissBtn).toBeTruthy();
+            dismissBtn!.click();
+            expect(root.innerHTML).not.toContain('hud-recovery-banner');
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Round 51 — HUD 顶部持久化提示分组重构 (5 行折叠到 <details>)。
 //
 // Rounds 43/44/45/46/47 each added a HUD prompt line at the top

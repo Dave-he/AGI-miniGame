@@ -846,3 +846,63 @@ describe('WorldState — round 50 lastDimensionSeed persistence', () => {
         expect(fresh.lastDimensionSeed).toBe(0xDEADBEEF);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 53 — lastFailedSnapshot (one-deep backup of the 4
+// fields most likely to be unrecoverable after a failed
+// re-render). Called by `App.recoverFromRenderFailure`
+// before the recovery orchestrator takes over. Cleared at
+// the end of a successful `enterNewDimension`.
+// ---------------------------------------------------------------------------
+
+describe('WorldState — round 53 lastFailedSnapshot backup', () => {
+    test('backupFailedSnapshot_deep_copies_4_fields', () => {
+        const ws = new WorldState('acct-1');
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        ws.setLastDimensionSeed(0xCAFEBABE);
+        ws.setActiveDimension('d1', ['match3'], 'cyberpunk');
+        ws.npcMindsSnapshot = [{
+            id: 'a', archetype: 'mage',
+            disposition: { friendly: 0, fear: 0, trust: 0 },
+            entries: [],
+        }];
+        ws.backupFailedSnapshot();
+        expect(ws.lastFailedSnapshot).not.toBeNull();
+        const f = ws.lastFailedSnapshot!;
+        expect(f.blueprint).not.toBeNull();
+        expect(f.seed).toBe(0xCAFEBABE);
+        expect(f.biome).toBe('cyberpunk');
+        expect(f.npcSnapshot.length).toBe(1);
+        // Defensive clone: mutating the source after
+        // backup must NOT leak into the backup.
+        ws.lastSceneBlueprint!.biomeId = 'space';
+        ws.npcMindsSnapshot[0].id = 'MUTATED';
+        expect(f.blueprint!.biomeId).toBe('cyberpunk');
+        expect(f.npcSnapshot[0].id).toBe('a');
+    });
+
+    test('clearFailedSnapshot_resets_to_null', () => {
+        const ws = new WorldState('acct-1');
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        ws.backupFailedSnapshot();
+        expect(ws.lastFailedSnapshot).not.toBeNull();
+        ws.clearFailedSnapshot();
+        expect(ws.lastFailedSnapshot).toBeNull();
+    });
+
+    test('round_trip_save_load_with_lastFailedSnapshot', () => {
+        const ws = new WorldState('acct-1');
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        ws.setLastDimensionSeed(0xBABE);
+        ws.setActiveDimension('d1', ['match3'], 'cyberpunk');
+        ws.backupFailedSnapshot();
+        const json = ws.saveToJSON();
+        const ws2 = new WorldState('acct-2');
+        const ok = ws2.loadFromJSON(json);
+        expect(ok).toBe(true);
+        expect(ws2.lastFailedSnapshot).not.toBeNull();
+        expect(ws2.lastFailedSnapshot!.seed).toBe(0xBABE);
+        expect(ws2.lastFailedSnapshot!.biome).toBe('cyberpunk');
+        expect(ws2.lastFailedSnapshot!.blueprint!.biomeId).toBe('cyberpunk');
+    });
+});

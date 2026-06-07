@@ -68,6 +68,19 @@ export interface HUDState {
     lastSceneBpm?: number | null;
     lastSceneEventCount?: number | null;
     lastSceneArchetypeHintCount?: number | null;
+    /**
+     * Round 53 — non-modal recovery banner. Set by
+     * `showRecoveryBanner(code, biome)` when the
+     * rehydrate pipeline fails. Auto-hides after 5s
+     * (or via the dismiss button). Renders above the
+     * round-51 `<details class="hud-memories">` block
+     * with neon-pink styling.
+     */
+    recoveryBanner?: {
+        code: string;
+        biome: string | null;
+        visible: boolean;
+    } | null;
 }
 
 export class HUD {
@@ -75,6 +88,15 @@ export class HUD {
     private i18n: I18n;
     private state: HUDState;
     private langBtn: HTMLButtonElement | null = null;
+    /**
+     * Round 53 — handle to the auto-hide timer for
+     * the recovery banner. Stored on the instance
+     * (not state) so render() — which clones the
+     * state object — does not interfere with the
+     * timeout. `null` means no banner is currently
+     * active.
+     */
+    private recoveryBannerTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(root: HTMLElement, i18n: I18n) {
         this.root = root;
@@ -197,6 +219,46 @@ export class HUD {
     }
 
     /**
+     * Round 53 — push a non-modal recovery banner into
+     * the HUD. Called by `App.recoverFromRenderFailure`
+     * when loadGame's rehydrate pipeline failed and the
+     * recovery orchestrator took over (typically by
+     * calling `enterNewDimension` to replace the broken
+     * scene). The banner shows the error code (e.g.
+     * `ERR_SCENE_RENDER`) and the new biome id, and
+     * auto-hides after 5 seconds. A dismiss button lets
+     * the player hide it sooner. Subsequent calls during
+     * the 5s window replace the active banner (the most
+     * recent recovery is the one that matters).
+     */
+    showRecoveryBanner(code: string, biome: string | null): void {
+        if (this.recoveryBannerTimer !== null) {
+            clearTimeout(this.recoveryBannerTimer);
+        }
+        this.state = {
+            ...this.state,
+            recoveryBanner: { code, biome: biome ?? null, visible: true },
+        };
+        this.render();
+        // Auto-hide after 5 seconds. The timer is
+        // stored on the instance (not the state) so
+        // render() — which clones the state object —
+        // does not interfere with the timeout. In
+        // jsdom tests we use jest.useFakeTimers() to
+        // control this.
+        this.recoveryBannerTimer = setTimeout(() => {
+            this.state = {
+                ...this.state,
+                recoveryBanner: this.state.recoveryBanner
+                    ? { ...this.state.recoveryBanner, visible: false }
+                    : null,
+            };
+            this.recoveryBannerTimer = null;
+            this.render();
+        }, 5000);
+    }
+
+    /**
      * Read-only snapshot of the current HUD state. Replaces the
      * `(this.hud as any).state` hack that callers used before round
      * 26 to peek at `dimension`, `worldEvent`, etc. without
@@ -211,6 +273,31 @@ export class HUD {
         this.state.logLines.push(`[${ts}] ${line}`);
         if (this.state.logLines.length > 40) this.state.logLines.shift();
         this.render();
+    }
+
+    /**
+     * Round 53 — render the optional recovery banner
+     * above the persistent-memories `<details>` block.
+     * Returns an empty string when no banner is active,
+     * so the round-51 `<details>` block stays the first
+     * visual element when the player is not in recovery
+     * state. The banner shows the error code (e.g.
+     * `ERR_SCENE_RENDER`) and the new biome id (e.g.
+     * `#forest`) so the player can see "I just got
+     * moved to a different world". A dismiss button
+     * hides it immediately. The auto-hide timer is set
+     * in `showRecoveryBanner`, not here — this helper
+     * is read-only.
+     */
+    private renderRecoveryBanner(): string {
+        const banner = this.state.recoveryBanner;
+        if (!banner || !banner.visible) return '';
+        return `
+            <div class="hud-recovery-banner" role="status">
+                <span>[scene] 自动恢复: 旧渲染失败 (<b>${escapeHtml(banner.code)}</b>) → 进入新维度 <b>#${escapeHtml(banner.biome ?? '—')}</b></span>
+                <button class="hud-recovery-dismiss" type="button" aria-label="Dismiss recovery banner">✕</button>
+            </div>
+        `;
     }
 
     private render(): void {
@@ -234,6 +321,7 @@ export class HUD {
                     <span class="hud-title">${escapeHtml(this.i18n.t('hud.stats'))}</span>
                     <button class="hud-lang" type="button" data-locale="${otherLocale}">${langLabel}</button>
                 </div>
+                ${this.renderRecoveryBanner()}
                 ${this.renderPersistentMemories(s)}
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.level'))}</span><b>${s.playerLevel}</b></div>
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gold'))}</span><b>${s.gold}</b></div>
@@ -259,6 +347,26 @@ export class HUD {
             if (target === 'zh-CN' || target === 'en-US') {
                 this.i18n.setLocale(target);
             }
+        });
+
+        // Round 53 — wire the recovery banner dismiss
+        // button. The banner auto-hides after 5s (timer
+        // in showRecoveryBanner), but the player can
+        // hide it sooner. The click handler clears the
+        // timer and flips the `visible` flag.
+        const dismissBtn = this.root.querySelector<HTMLButtonElement>('.hud-recovery-dismiss');
+        dismissBtn?.addEventListener('click', () => {
+            if (this.recoveryBannerTimer !== null) {
+                clearTimeout(this.recoveryBannerTimer);
+                this.recoveryBannerTimer = null;
+            }
+            this.state = {
+                ...this.state,
+                recoveryBanner: this.state.recoveryBanner
+                    ? { ...this.state.recoveryBanner, visible: false }
+                    : null,
+            };
+            this.render();
         });
 
         // Round 51 — wire the persistent-memories <details> toggle to

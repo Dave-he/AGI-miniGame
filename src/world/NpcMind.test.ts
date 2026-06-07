@@ -956,3 +956,32 @@ describe('NpcMind rehydration (round 48)', () => {
         expect(Array.isArray(s.entries)).toBe(true);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 53 — NpcRegistry.clear() (post-failure recovery helper).
+//
+// Called by `App.loadGame` when the round-48 NpcMind
+// rehydration path throws. The recovery policy is: reset
+// the live NPC roster so the next `broadcast` /
+// `averageDisposition` is well-defined, and continue
+// rendering the round-49/50 scene snapshot from the same
+// biome/seed.
+// ---------------------------------------------------------------------------
+
+describe('NpcRegistry — round 53 clear()', () => {
+    test('clear_resets_registry_to_empty', () => {
+        const reg = new NpcRegistry();
+        reg.insert(new NpcMind('a'));
+        reg.insert(new NpcMind('b'));
+        expect(reg.len()).toBe(2);
+        reg.clear();
+        expect(reg.len()).toBe(0);
+        expect(reg.isEmpty()).toBe(true);
+    });
+
+    test('clear_does_not_throw_on_empty_registry', () => {
+        const reg = new NpcRegistry();
+        expect(() => reg.clear()).not.toThrow();
+        expect(reg.len()).toBe(0);
+    });
+});
