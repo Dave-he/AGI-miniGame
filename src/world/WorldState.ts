@@ -175,6 +175,46 @@ export class WorldState {
         this.npcMindsSnapshot = snapshot;
     }
 
+    /**
+     * Round 47 — last SceneBlueprint's user-visible
+     * scalars (npcCount, bpm, eventCount, archetypeHintCount).
+     * The full `SceneBlueprint` includes WFC tile weights
+     * (a `[u8; 8]` array) which are not user-facing, so
+     * we persist only the fields the HUD prompt needs.
+     * The live SceneBlueprint is rebuilt on the next
+     * `enterNewDimension`, so this is *informational* —
+     * the HUD prompt reads it for "上次在 #forest 里有
+     * N 个 NPC, BPM T, M 个事件" continuity.
+     */
+    public lastSceneNpcCount: number | null = null;
+    public lastSceneBpm: number | null = null;
+    public lastSceneEventCount: number | null = null;
+    public lastSceneArchetypeHintCount: number | null = null;
+
+    /**
+     * Round 47 — replace the SceneBlueprint scalars.
+     * Called from `App.enterNewDimension()` after every
+     * successful `themeToScene` call.
+     */
+    updateLastSceneBlueprint(scalars: {
+        npcCount: number;
+        bpm: number;
+        eventCount: number;
+        archetypeHintCount: number;
+    } | null): void {
+        if (!scalars) {
+            this.lastSceneNpcCount = null;
+            this.lastSceneBpm = null;
+            this.lastSceneEventCount = null;
+            this.lastSceneArchetypeHintCount = null;
+        } else {
+            this.lastSceneNpcCount = scalars.npcCount;
+            this.lastSceneBpm = scalars.bpm;
+            this.lastSceneEventCount = scalars.eventCount;
+            this.lastSceneArchetypeHintCount = scalars.archetypeHintCount;
+        }
+    }
+
     clearActiveDimension(): DimensionInfo | null {
         const dim = this.activeDimension;
         this.activeDimension = null;
@@ -335,6 +375,14 @@ export class WorldState {
             // (not undefined) so a save that never saw a
             // broadcast is still a valid input to load.
             npcMindsSnapshot: this.npcMindsSnapshot,
+            // Round 47 — persist the SceneBlueprint
+            // scalars. Null fields are omitted (undefined)
+            // so a save that never entered a dimension
+            // stays compact.
+            lastSceneNpcCount: this.lastSceneNpcCount ?? undefined,
+            lastSceneBpm: this.lastSceneBpm ?? undefined,
+            lastSceneEventCount: this.lastSceneEventCount ?? undefined,
+            lastSceneArchetypeHintCount: this.lastSceneArchetypeHintCount ?? undefined,
         });
     }
 
@@ -399,6 +447,19 @@ export class WorldState {
             this.npcMindsSnapshot = Array.isArray(data.npcMindsSnapshot)
                 ? data.npcMindsSnapshot as NpcMindSnapshot[]
                 : [];
+            // Round 47 — restore the SceneBlueprint scalars.
+            // Older saves (pre round 47) don't carry the
+            // fields; null is the back-compat default.
+            this.lastSceneNpcCount =
+                typeof data.lastSceneNpcCount === 'number' ? data.lastSceneNpcCount : null;
+            this.lastSceneBpm =
+                typeof data.lastSceneBpm === 'number' ? data.lastSceneBpm : null;
+            this.lastSceneEventCount =
+                typeof data.lastSceneEventCount === 'number' ? data.lastSceneEventCount : null;
+            this.lastSceneArchetypeHintCount =
+                typeof data.lastSceneArchetypeHintCount === 'number'
+                    ? data.lastSceneArchetypeHintCount
+                    : null;
 
             return true;
         } catch (e) {

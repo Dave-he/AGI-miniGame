@@ -348,6 +348,21 @@ class App {
             if (spawned.length > 0) {
                 this.hud.log(`[scene] 主题=${visualStyle} · 陷阱×${sceneBp.wfcTileWeights[6]} · 神龛×${sceneBp.wfcTileWeights[7]} · NPC×${sceneBp.npcCount} · BPM ${sceneBp.musicBpm}`);
                 this.hud.log(`[scene] biome=${sceneBp.biomeId} · density=${sceneBp.npcDensity.toFixed(2)} · events=${sceneBp.eventChain.length}`);
+                // Round 47 — persist the four user-visible
+                // SceneBlueprint scalars on the WorldState so
+                // they survive `save → reload`, and push the
+                // same scalars into the HUD so the player
+                // sees "🎬 上次维度: NPC×N · BPM T · M 事件
+                // · K archetype" immediately on entering, not
+                // just on reload.
+                const sceneScalars = {
+                    npcCount: sceneBp.npcCount,
+                    bpm: sceneBp.musicBpm,
+                    eventCount: sceneBp.eventChain.length,
+                    archetypeHintCount: sceneBp.npcArchetypeHints.length,
+                };
+                this.worldState.updateLastSceneBlueprint(sceneScalars);
+                this.hud.setLastSceneBlueprint(sceneScalars);
                 // Push the event chain into the world for downstream
                 // consumers (SmartWorldAI / God console). Round 39 —
                 // the chain is now actually *scheduled* (delays in
@@ -697,6 +712,23 @@ class App {
             // "🎭 集体情绪: friendly X / fear Y / trust Z"
             // prompt becomes visible.
             this.hud.setLastNpcDisposition(this.worldState.lastNpcDisposition);
+            // Round 47 — push the round-24 themeToScene
+            // scalars snapshot (npcCount / bpm /
+            // eventCount / archetypeHintCount) into the
+            // HUD so the "🎬 上次维度" prompt becomes
+            // visible after a reload. Only push when at
+            // least one scalar is set — otherwise the
+            // HUD is left in its default (no prompt)
+            // state, matching the WorldState back-compat
+            // path for older saves.
+            if (this.worldState.lastSceneNpcCount != null) {
+                this.hud.setLastSceneBlueprint({
+                    npcCount: this.worldState.lastSceneNpcCount,
+                    bpm: this.worldState.lastSceneBpm ?? 0,
+                    eventCount: this.worldState.lastSceneEventCount ?? 0,
+                    archetypeHintCount: this.worldState.lastSceneArchetypeHintCount ?? 0,
+                });
+            }
             // Round 44 — push the round-36 lastSpeaker
             // snapshot into the HUD so the "你刚才听见了
             // <id> 说：…" prompt becomes visible after

@@ -306,3 +306,68 @@ describe('HUD — round 46 lastNpcDisposition HUD prompt', () => {
         expect(root.innerHTML).not.toContain('hud-npc-mood');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 47 — SceneBlueprint scalars HUD prompt.
+//
+// Round 24's `themeToScene` produces four user-visible
+// scalars (npcCount, musicBpm, eventChain.length,
+// npcArchetypeHints.length). Round 47 persists them on
+// WorldState across save/load and exposes them in the
+// HUD as a "🎬 上次维度: NPC×N · BPM T · M 事件 · K
+// archetype" line so the player sees the scene structure
+// the same way they saw mood (round 46) and biome
+// (round 43) — without opening any panel and across
+// reloads.
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 47 SceneBlueprint scalars HUD prompt', () => {
+    test('setLastSceneBlueprint_stores_all_four_scalars_and_null_resets', () => {
+        const { hud } = makeHud();
+        expect(hud.getState().lastSceneNpcCount).toBeUndefined();
+        hud.setLastSceneBlueprint({
+            npcCount: 6,
+            bpm: 130,
+            eventCount: 4,
+            archetypeHintCount: 1,
+        });
+        const s1 = hud.getState();
+        expect(s1.lastSceneNpcCount).toBe(6);
+        expect(s1.lastSceneBpm).toBe(130);
+        expect(s1.lastSceneEventCount).toBe(4);
+        expect(s1.lastSceneArchetypeHintCount).toBe(1);
+        // null resets all four at once — callers don't
+        // need to enumerate.
+        hud.setLastSceneBlueprint(null);
+        const s2 = hud.getState();
+        expect(s2.lastSceneNpcCount).toBeNull();
+        expect(s2.lastSceneBpm).toBeNull();
+        expect(s2.lastSceneEventCount).toBeNull();
+        expect(s2.lastSceneArchetypeHintCount).toBeNull();
+    });
+
+    test('renders_scene_blueprint_line_when_any_scalar_is_set', () => {
+        const { hud, root } = makeHud();
+        hud.setLastSceneBlueprint({
+            npcCount: 6,
+            bpm: 130,
+            eventCount: 4,
+            archetypeHintCount: 1,
+        });
+        expect(root.innerHTML).toContain('hud-scene-blueprint');
+        expect(root.innerHTML).toContain('🎬 上次维度');
+        expect(root.innerHTML).toContain('NPC×<b>6</b>');
+        expect(root.innerHTML).toContain('BPM <b>130</b>');
+        expect(root.innerHTML).toContain('<b>4</b> 事件');
+        expect(root.innerHTML).toContain('<b>1</b> archetype');
+    });
+
+    test('does_not_render_scene_blueprint_line_when_all_scalars_are_null', () => {
+        const { hud, root } = makeHud();
+        // Default state has all undefined → no line.
+        expect(root.innerHTML).not.toContain('hud-scene-blueprint');
+        // Explicit null clear: still no line.
+        hud.setLastSceneBlueprint(null);
+        expect(root.innerHTML).not.toContain('hud-scene-blueprint');
+    });
+});

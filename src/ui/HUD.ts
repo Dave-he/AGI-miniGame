@@ -54,6 +54,20 @@ export interface HUDState {
      * in the stats panel.
      */
     lastNpcDisposition?: NpcDisposition | null;
+    /**
+     * Round 47 — the round-24 `themeToScene` output's
+     * four user-visible scalars, persisted by
+     * `WorldState.updateLastSceneBlueprint`. Optional;
+     * when any one is set, the HUD renders a
+     * "🎬 上次维度: NPC×N · BPM T · M 事件 · K archetype"
+     * line in the stats panel so the player sees the
+     * scene structure carried across `enterNewDimension`
+     * and `save → reload`.
+     */
+    lastSceneNpcCount?: number | null;
+    lastSceneBpm?: number | null;
+    lastSceneEventCount?: number | null;
+    lastSceneArchetypeHintCount?: number | null;
 }
 
 export class HUD {
@@ -145,6 +159,44 @@ export class HUD {
     }
 
     /**
+     * Round 47 — push the round-24 `themeToScene` output's
+     * four user-visible scalars (npcCount, bpm, eventCount,
+     * archetypeHintCount) into the HUD. The stats panel
+     * renders a "🎬 上次维度: NPC×N · BPM T · M 事件 · K
+     * archetype" line so the player sees the scene
+     * structure carried across `enterNewDimension` and
+     * `save → reload`. Passing `null` clears all four
+     * fields at once (callers don't have to enumerate).
+     */
+    setLastSceneBlueprint(
+        scalars: {
+            npcCount: number;
+            bpm: number;
+            eventCount: number;
+            archetypeHintCount: number;
+        } | null,
+    ): void {
+        if (!scalars) {
+            this.state = {
+                ...this.state,
+                lastSceneNpcCount: null,
+                lastSceneBpm: null,
+                lastSceneEventCount: null,
+                lastSceneArchetypeHintCount: null,
+            };
+        } else {
+            this.state = {
+                ...this.state,
+                lastSceneNpcCount: scalars.npcCount,
+                lastSceneBpm: scalars.bpm,
+                lastSceneEventCount: scalars.eventCount,
+                lastSceneArchetypeHintCount: scalars.archetypeHintCount,
+            };
+        }
+        this.render();
+    }
+
+    /**
      * Read-only snapshot of the current HUD state. Replaces the
      * `(this.hud as any).state` hack that callers used before round
      * 26 to peek at `dimension`, `worldEvent`, etc. without
@@ -193,6 +245,12 @@ export class HUD {
                     : ''}
                 ${s.lastNpcDisposition
                     ? `<div class="hud-npc-mood">🎭 集体情绪: friendly <b>${s.lastNpcDisposition.friendly.toFixed(2)}</b> / fear <b>${s.lastNpcDisposition.fear.toFixed(2)}</b> / trust <b>${s.lastNpcDisposition.trust.toFixed(2)}</b></div>`
+                    : ''}
+                ${(s.lastSceneNpcCount != null
+                    || s.lastSceneBpm != null
+                    || s.lastSceneEventCount != null
+                    || s.lastSceneArchetypeHintCount != null)
+                    ? `<div class="hud-scene-blueprint">🎬 上次维度: NPC×<b>${s.lastSceneNpcCount ?? '—'}</b> · BPM <b>${s.lastSceneBpm ?? '—'}</b> · <b>${s.lastSceneEventCount ?? '—'}</b> 事件 · <b>${s.lastSceneArchetypeHintCount ?? '—'}</b> archetype</div>`
                     : ''}
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.level'))}</span><b>${s.playerLevel}</b></div>
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gold'))}</span><b>${s.gold}</b></div>

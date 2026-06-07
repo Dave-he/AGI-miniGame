@@ -439,3 +439,145 @@ describe('WorldState — round 40 npcMindsSnapshot persistence', () => {
         expect(fresh.npcMindsSnapshot[0].id).toBe('mage_1');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 47 — SceneBlueprint scalars persistence.
+//
+// Round 24's themeToScene produces four user-visible
+// scalars: npcCount, musicBpm, eventChain.length,
+// npcArchetypeHints.length. Round 47 persists them on
+// WorldState (this file) so the HUD can read "🎬 上次维度:
+// NPC×N · BPM T · M 事件 · K archetype" across
+// save/load — matching the round-32/35/36/40 pattern.
+// ---------------------------------------------------------------------------
+
+describe('WorldState — round 47 SceneBlueprint scalars persistence', () => {
+    test('all_four_scene_scalars_default_to_null', () => {
+        const ws = new WorldState('p', 'P');
+        expect(ws.lastSceneNpcCount).toBeNull();
+        expect(ws.lastSceneBpm).toBeNull();
+        expect(ws.lastSceneEventCount).toBeNull();
+        expect(ws.lastSceneArchetypeHintCount).toBeNull();
+    });
+
+    test('updateLastSceneBlueprint_sets_all_four_fields', () => {
+        const ws = new WorldState('p', 'P');
+        ws.updateLastSceneBlueprint({
+            npcCount: 6,
+            bpm: 130,
+            eventCount: 4,
+            archetypeHintCount: 1,
+        });
+        expect(ws.lastSceneNpcCount).toBe(6);
+        expect(ws.lastSceneBpm).toBe(130);
+        expect(ws.lastSceneEventCount).toBe(4);
+        expect(ws.lastSceneArchetypeHintCount).toBe(1);
+    });
+
+    test('updateLastSceneBlueprint_null_resets_all_four_fields', () => {
+        const ws = new WorldState('p', 'P');
+        ws.updateLastSceneBlueprint({
+            npcCount: 6,
+            bpm: 130,
+            eventCount: 4,
+            archetypeHintCount: 1,
+        });
+        ws.updateLastSceneBlueprint(null);
+        expect(ws.lastSceneNpcCount).toBeNull();
+        expect(ws.lastSceneBpm).toBeNull();
+        expect(ws.lastSceneEventCount).toBeNull();
+        expect(ws.lastSceneArchetypeHintCount).toBeNull();
+    });
+
+    test('scene_scalars_round_trip_through_saveToJSON_loadFromJSON', () => {
+        const ws = new WorldState('p', 'P');
+        ws.updateLastSceneBlueprint({
+            npcCount: 8,
+            bpm: 95,
+            eventCount: 5,
+            archetypeHintCount: 2,
+        });
+        const json = ws.saveToJSON();
+        const parsed = JSON.parse(json);
+        // JSON keeps the four fields verbatim (non-null
+        // values → not omitted by the `?? undefined`
+        // compactness guard).
+        expect(parsed.lastSceneNpcCount).toBe(8);
+        expect(parsed.lastSceneBpm).toBe(95);
+        expect(parsed.lastSceneEventCount).toBe(5);
+        expect(parsed.lastSceneArchetypeHintCount).toBe(2);
+        // Round-trip: a fresh WorldState recovers them.
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastSceneNpcCount).toBe(8);
+        expect(fresh.lastSceneBpm).toBe(95);
+        expect(fresh.lastSceneEventCount).toBe(5);
+        expect(fresh.lastSceneArchetypeHintCount).toBe(2);
+    });
+
+    test('back_compat_save_without_scene_scalars_loads_as_null', () => {
+        // Pre-round-47 saves don't carry the fields.
+        // loadFromJSON must not crash and must leave the
+        // four fields as their null default (the
+        // App's next enterNewDimension will refresh).
+        const oldJson = JSON.stringify({
+            player: { accountId: 'p' },
+            progression: { level: 1, xp: 0, talentPoints: 0 },
+            wallet: {},
+            inventory: [],
+            dimensionHistory: [],
+        });
+        const fresh = new WorldState('p', 'P');
+        const ok = fresh.loadFromJSON(oldJson);
+        expect(ok).toBe(true);
+        expect(fresh.lastSceneNpcCount).toBeNull();
+        expect(fresh.lastSceneBpm).toBeNull();
+        expect(fresh.lastSceneEventCount).toBeNull();
+        expect(fresh.lastSceneArchetypeHintCount).toBeNull();
+        // Default (never-updated) save also omits the
+        // fields, so JSON.stringify keeps the payload
+        // compact.
+        const freshSave = JSON.parse(new WorldState('p', 'P').saveToJSON());
+        expect(freshSave.lastSceneNpcCount).toBeUndefined();
+        expect(freshSave.lastSceneBpm).toBeUndefined();
+        expect(freshSave.lastSceneEventCount).toBeUndefined();
+        expect(freshSave.lastSceneArchetypeHintCount).toBeUndefined();
+    });
+
+    test('all_five_persisted_signals_coexist_through_save_load', () => {
+        // Headline cross-round scenario for round 47:
+        // a single save round-trips the round-32 lastBiome,
+        // round-35 lastNpcDisposition, round-36 lastSpeakerId,
+        // round-40 npcMindsSnapshot, AND the round-47
+        // SceneBlueprint scalars — five persistence layers
+        // co-exist in one save, none clobber each other.
+        const ws = new WorldState('p', 'P');
+        ws.setActiveDimension('d1', ['match3'], 'cyberpunk');
+        ws.lastNpcDisposition = { friendly: 0.4, fear: 0, trust: 0.2 };
+        ws.lastSpeakerId = 'robot_1';
+        ws.lastSpeakerDisposition = { friendly: 0.5, fear: 0, trust: 0.6 };
+        ws.updateNpcMindsSnapshot([
+            { id: 'robot_1', archetype: 'robot', disposition: { friendly: 0.5, fear: 0, trust: 0.6 }, entries: [] },
+        ]);
+        ws.updateLastSceneBlueprint({
+            npcCount: 11,
+            bpm: 130,
+            eventCount: 4,
+            archetypeHintCount: 1,
+        });
+        const json = ws.saveToJSON();
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastBiome).toBe('cyberpunk');
+        expect(fresh.lastNpcDisposition).toEqual({ friendly: 0.4, fear: 0, trust: 0.2 });
+        expect(fresh.lastSpeakerId).toBe('robot_1');
+        expect(fresh.npcMindsSnapshot).toHaveLength(1);
+        expect(fresh.npcMindsSnapshot[0].archetype).toBe('robot');
+        // Round 47 — the four scene scalars round-trip
+        // alongside the other four persistence layers.
+        expect(fresh.lastSceneNpcCount).toBe(11);
+        expect(fresh.lastSceneBpm).toBe(130);
+        expect(fresh.lastSceneEventCount).toBe(4);
+        expect(fresh.lastSceneArchetypeHintCount).toBe(1);
+    });
+});
