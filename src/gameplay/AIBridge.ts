@@ -22,6 +22,7 @@ import { AIEngine, GameplayCombinerAI } from '../ai/AIEngine';
 import { WorldState } from '../world/WorldState';
 import type { NpcDisposition } from '../world/NpcMind';
 import { buildGenerationConfigWithMood, DEFAULT_GENERATION_HINT } from '../ai/SceneGen';
+import { buildGenerationConfigWithMoodWithFallback, type SceneGenWasmModule } from '../ai/SceneGenWasm';
 
 export interface AtomManifestEntry {
     id: string;
@@ -78,18 +79,44 @@ export interface BridgeResult {
      * not supply one.
      */
     seed: number;
+    /**
+     * Round 51 — `'wasm'` when the `buildGenerationConfigWithMood`
+     * call went through the WASM bridge, `'ts-fallback'` when it
+     * went through the in-process TS mirror (WASM unavailable /
+     * errored / no mood provided). The HUD log line in `main.ts`
+     * reads this to print `[gen-config] WASM 真出` vs
+     * `[gen-config] WASM 兜底→ TS 镜像`. `'n/a'` when `cfg.mood`
+     * was not supplied (the original `toGenerationConfig` path was
+     * taken, no WASM/TS split).
+     */
+    configSource: 'wasm' | 'ts-fallback' | 'n/a';
 }
 
 export class AIBridge {
     private ai: AIEngine;
     private gameplay: GameplayManager;
     private worldState: WorldState;
+    /**
+     * Round 51 — WASM bridge for `buildGenerationConfigWithMood`. Null
+     * means the loader failed and the TS mirror takes over (the same
+     * fallback shape used by `themeToScene` in round 48).
+     */
+    private wasmMod: SceneGenWasmModule | null = null;
 
     constructor(ai: AIEngine, gameplay: GameplayManager, worldState: WorldState) {
         this.ai = ai;
         this.gameplay = gameplay;
         this.worldState = worldState;
         this.installDefaultModules();
+    }
+
+    /**
+     * Round 51 — inject the loaded WASM bridge. Called by
+     * `App.setSceneGenWasm` after `loadSceneGenWasm` resolves. Passing
+     * `null` is valid (loader failed → TS mirror).
+     */
+    setSceneGenWasm(mod: SceneGenWasmModule | null): void {
+        this.wasmMod = mod;
     }
 
     /** Register TS-side factories for the atoms that have a TS implementation. */
@@ -122,9 +149,16 @@ export class AIBridge {
         //    nudges the difficulty range and the preferredTypes
         //    ordering. When absent, fall back to the hardcoded hint
         //    — same numbers as before.
-        let generationCfg;
+        let generationCfg: ReturnType<GameplayCombinerAI['toGenerationConfig']>;
+        let configSource: BridgeResult['configSource'];
         if (cfg.mood) {
-            generationCfg = buildGenerationConfigWithMood(
+            // Round 51 — try WASM first; on null result, fall back to
+            // the TS mirror. The fallback is always safe (the TS mirror
+            // never fails for well-formed input). The `source` is
+            // surfaced in the `BridgeResult` so `main.ts` can log
+            // `[gen-config] WASM 真出` vs `[gen-config] WASM 兜底→ TS 镜像`.
+            const outcome = buildGenerationConfigWithMoodWithFallback(
+                this.wasmMod,
                 cfg.playerLevel,
                 cfg.recentLossCount ?? 0,
                 cfg.mood,
@@ -136,6 +170,8 @@ export class AIBridge {
                 },
                 cfg.seed ?? 0,
             );
+            generationCfg = outcome.config;
+            configSource = outcome.source;
         } else {
             generationCfg = this.ai.gameplayAI.toGenerationConfig(
                 cfg.playerLevel,
@@ -147,6 +183,7 @@ export class AIBridge {
                     difficultyRange: [0.3, 0.8],
                 },
             );
+            configSource = 'n/a';
         }
 
         // 3. Constrain preferredTypes to what the engine actually provides.
@@ -174,7 +211,14 @@ export class AIBridge {
             .map(id => this.gameplay.getModule(id))
             .filter((m): m is GameplayModule => !!m);
 
-        return { suggestion, atomIds: chosenAtoms, blueprint, modules, seed: cfg.seed ?? Date.now() };
+        return {
+            suggestion,
+            atomIds: chosenAtoms,
+            blueprint,
+            modules,
+            seed: cfg.seed ?? Date.now(),
+            configSource,
+        };
     }
 
     /** Sync the WorldState (player + economy + dimension history) after a run. */

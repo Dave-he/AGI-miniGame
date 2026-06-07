@@ -318,12 +318,22 @@ class App {
     }
 
     /**
-     * Round 48 — inject the loaded WASM bridge for `themeToScene`.
-     * Called by `bootstrap()` after `App.start()` returns. Passing
-     * `null` (loader failed) is valid — the TS mirror takes over.
+     * Round 48 → 51 — inject the loaded WASM bridge for `themeToScene`,
+     * `buildGenerationConfigWithMood`, `moodPalette`, and
+     * `mood_4th_sentence_for`. Called by `bootstrap()` after
+     * `App.start()` returns. Passing `null` (loader failed) is valid —
+     * the TS mirror takes over for all 4 functions.
+     *
+     * Round 51 — the bridge is propagated to AIBridge (for
+     * buildGenerationConfigWithMood), AIEngine (for moodPalette), and
+     * NarrationEngine (for the 4th-sentence pick). All three expose
+     * source tags that the HUD log reads after each call.
      */
     setSceneGenWasm(mod: SceneGenWasmModule | null): void {
         this.sceneGenWasm = mod;
+        this.bridge.setSceneGenWasm(mod);
+        this.ai.setSceneGenWasm(mod);
+        this.narration.setSceneGenWasm(mod);
         if (mod) {
             this.hud.log(`[wasm] scene_gen 桥已装载 (${mod.wasm_module_version()})`);
         } else {
@@ -376,6 +386,26 @@ class App {
             mood: avgMood,
             seed: Date.now(),
         });
+        // Round 51 — log which source fed the
+        // `buildGenerationConfigWithMood` call. The `r.configSource`
+        // is `'wasm'` when the WASM bridge ran, `'ts-fallback'`
+        // when the TS mirror took over, `'n/a'` when no mood was
+        // supplied (the original `toGenerationConfig` path).
+        if (r.configSource === 'wasm') {
+            this.hud.log('[gen-config] WASM 真出 (round 51)');
+        } else if (r.configSource === 'ts-fallback') {
+            this.hud.log('[gen-config] WASM 兜底→ TS 镜像 (round 51)');
+        }
+        // Round 51 — log which source fed the `moodPalette` call.
+        // The AIEngine stamps the source tag inside `generateDimension`,
+        // which is invoked from inside `bridge.planAndLoad`. We read
+        // it after the call returns.
+        const paletteSrc = this.ai.getLastPaletteSource();
+        if (paletteSrc === 'wasm') {
+            this.hud.log('[palette] WASM 真出 (round 51)');
+        } else if (paletteSrc === 'ts-fallback') {
+            this.hud.log('[palette] WASM 兜底→ TS 镜像 (round 51)');
+        }
         // Round 23 — log the applied difficulty range when the mood
         // actually moved it (i.e. away from the base 0.3–0.8 hint).
         // Round 42 — `difficulty` and `difficultyRange` are
@@ -510,6 +540,17 @@ class App {
         for (const s of intro.sentences) this.hud.log(`[narr] ${s}`);
         if (intro.moodBranch && intro.moodBranch !== 'neutral') {
             this.hud.log(`[narr+mind] mood=${intro.moodBranch} → 4th 句已加入 (NPC 集体情绪驱动)`);
+        }
+        // Round 51 — log which source fed the 4th-sentence pick. The
+        // narration engine stamps the source tag inside `narrate`; we
+        // read it after the call returns. `null` means no 4th was
+        // picked (neutral branch or the individual-NPC path took the
+        // slot — which is a round-52 follow-up to also wire).
+        const sentenceSrc = this.narration.getLastSentenceSource();
+        if (sentenceSrc === 'wasm') {
+            this.hud.log('[4th] WASM 真出 (round 51)');
+        } else if (sentenceSrc === 'ts-fallback') {
+            this.hud.log('[4th] WASM 兜底→ TS 镜像 (round 51)');
         }
         // Round 36 — persist the round-33 individual speaker
         // so the HUD can read "你刚才听见了 X 说：…" after

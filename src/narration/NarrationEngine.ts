@@ -18,6 +18,7 @@
  */
 
 import type { DimensionBlueprint } from '../ai/AIEngine';
+import { callMood4thSentenceFor, type SceneGenWasmModule } from '../ai/SceneGenWasm';
 import type { NpcDisposition, NpcRegistry } from '../world/NpcMind';
 
 export interface Narration {
@@ -151,12 +152,52 @@ export function mostExtremeNpc(reg: NpcRegistry): {
 
 export class NarrationEngine {
     /**
+     * Round 51 — WASM bridge for the 4th-sentence pick. Null means
+     * the loader failed and the TS djb2-based pick takes over.
+     * Wired by `App.setSceneGenWasm` after `loadSceneGenWasm`
+     * resolves.
+     */
+    private wasmMod: SceneGenWasmModule | null = null;
+
+    /**
+     * Round 51 — source tag for the most recent 4th-sentence pick,
+     * surfaced via `getLastSentenceSource()`. `main.ts` reads it
+     * after `narrate` returns and logs `[4th] WASM 真出` vs
+     * `[4th] WASM 兜底→ TS 镜像`. `null` when no 4th-sentence was
+     * picked (no mood, neutral branch, or the individual-NPC path
+     * took the slot).
+     */
+    private lastSentenceSource: 'wasm' | 'ts-fallback' | null = null;
+
+    /**
+     * Round 51 — inject the loaded WASM bridge. Called by
+     * `App.setSceneGenWasm` after `loadSceneGenWasm` resolves.
+     */
+    setSceneGenWasm(mod: SceneGenWasmModule | null): void {
+        this.wasmMod = mod;
+    }
+
+    /**
+     * Round 51 — read the source tag from the most recent
+     * 4th-sentence pick, used by `main.ts` for the HUD log line.
+     */
+    getLastSentenceSource(): 'wasm' | 'ts-fallback' | null {
+        return this.lastSentenceSource;
+    }
+
+    /**
      * Generate a 3-sentence intro for a dimension. When `mood` is
      * supplied, an optional 4th sentence is appended from the
      * mood-keyed pool (round 25). When `npcRegistry` is also
      * supplied, the 4th sentence is sourced from the most
      * extreme individual NPC (round 33) — a single terrified or
      * hostile NPC dominates the chorus.
+     *
+     * Round 51 — WASM-aware 4th-sentence pick. The TS fallback uses
+     * `djb2` while the WASM helper uses `fnv1a`. Both produce valid
+     * pool entries; the divergence is a known round-52 follow-up
+     * (unify hash). `main.ts` reads `lastSentenceSource` to log
+     * `[4th] WASM 真出` vs `[4th] WASM 兜底→ TS 镜像`.
      */
     narrate(blueprint: DimensionBlueprint, mood?: NpcDisposition, npcRegistry?: NpcRegistry): Narration {
         const rng = this.makeRng(this.djb2(blueprint.id));
@@ -170,7 +211,10 @@ export class NarrationEngine {
         // individual NPC takes the 4th-sentence slot. Its branch
         // wins over the average's. We require a non-neutral
         // branch (so the silent majority doesn't get a fake
-        // speaker).
+        // speaker). Round 51 — the individual path stays on TS
+        // djb2 (the WASM `mood_4th_sentence_for` doesn't model
+        // individual-NPC contexts); only the average-mood path
+        // goes through the WASM bridge.
         const extreme = npcRegistry ? mostExtremeNpc(npcRegistry) : null;
         let branch: Narration['moodBranch'];
         let speakerId: string | undefined;
@@ -180,13 +224,29 @@ export class NarrationEngine {
             const pool = MOOD_4TH_INDIVIDUAL[branch];
             const rng2 = this.makeRng(this.djb2(blueprint.id + '|ind|' + branch));
             sentences.push(this.pick(pool, rng2));
+            this.lastSentenceSource = null;
         } else if (mood) {
             branch = moodBranch(mood);
             if (branch !== 'neutral') {
-                const pool = MOOD_4TH[branch];
-                const branchRng = this.makeRng(this.djb2(blueprint.id + '|' + branch));
-                sentences.push(this.pick(pool, branchRng));
+                // Round 51 — try WASM first; on null result (no
+                // module, error JSON, or unexpected shape), fall
+                // back to the existing TS djb2-based pick.
+                const branchNumeric = branch === 'fear' ? 0 : branch === 'friendly' ? 1 : 2;
+                const wasmSentence = callMood4thSentenceFor(this.wasmMod, branchNumeric, blueprint.id);
+                if (wasmSentence !== null) {
+                    sentences.push(wasmSentence);
+                    this.lastSentenceSource = 'wasm';
+                } else {
+                    const pool = MOOD_4TH[branch];
+                    const branchRng = this.makeRng(this.djb2(blueprint.id + '|' + branch));
+                    sentences.push(this.pick(pool, branchRng));
+                    this.lastSentenceSource = 'ts-fallback';
+                }
+            } else {
+                this.lastSentenceSource = null;
             }
+        } else {
+            this.lastSentenceSource = null;
         }
         return { dimensionId: blueprint.id, sentences, moodBranch: branch, speakerId };
     }

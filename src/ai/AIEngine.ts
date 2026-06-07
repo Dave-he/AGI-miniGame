@@ -1,5 +1,6 @@
 import type { NpcDisposition } from '../world/NpcMind';
 import { moodPalette } from './SceneGen';
+import { moodPaletteWithFallback, type SceneGenWasmModule } from './SceneGenWasm';
 
 export interface GenerationConfig {
     minAtoms: number;
@@ -335,8 +336,42 @@ export class AIEngine {
     /** D — 智能 NPC / 世界 AI: roll transient world events and NPC dialogue. */
     public worldAI: SmartWorldAI;
 
+    /**
+     * Round 51 — WASM bridge for `moodPalette`. Null means the loader
+     * failed and the TS mirror takes over. Used inside `generateDimension`
+     * to read the mood → palette mapping from the Rust canonical when
+     * the .wasm module is loaded successfully.
+     */
+    private wasmMod: SceneGenWasmModule | null = null;
+
+    /**
+     * Round 51 — the source of the last `moodPalette` lookup, surfaced
+     * via `getLastPaletteSource()`. `main.ts` reads it after
+     * `generateDimension` returns and logs `[palette] WASM 真出` vs
+     * `[palette] WASM 兜底→ TS 镜像`. Reset to `null` when no mood
+     * was provided (the original `theme.colorPalette` path).
+     */
+    private lastPaletteSource: 'wasm' | 'ts-fallback' | null = null;
+
     /** Internal generator of dimension blueprints (combines the 4 AIs' output). */
     private generator: DimensionGenerator;
+
+    /**
+     * Round 51 — inject the loaded WASM bridge. Called by
+     * `App.setSceneGenWasm` after `loadSceneGenWasm` resolves.
+     */
+    setSceneGenWasm(mod: SceneGenWasmModule | null): void {
+        this.wasmMod = mod;
+    }
+
+    /**
+     * Round 51 — read the source tag from the last `moodPalette`
+     * lookup, used by `main.ts` for the HUD log line. Returns `null`
+     * when no mood was provided.
+     */
+    getLastPaletteSource(): 'wasm' | 'ts-fallback' | null {
+        return this.lastPaletteSource;
+    }
 
     constructor(seed: number) {
         this.gameplayAI = new GameplayCombinerAI();
@@ -365,14 +400,21 @@ export class AIEngine {
         const theme = this.contentAI.generate(stage, blueprint.atomIds, blueprint.difficulty);
         blueprint.name = theme.themeName;
         blueprint.description = theme.introLore;
-        // Round 24 — when the caller passes a collective NPC mood,
+        // Round 24 → 51 — when the caller passes a collective NPC mood,
         // override the colorPalette with the mood-tagged one so the
         // 3D scene renders in colors that reflect the world's mood.
-        // Without a mood (or with the default neutral), the
-        // contentAI's randomly-picked palette is used.
-        const finalPalette = mood
-            ? Array.from(moodPalette(mood))
-            : theme.colorPalette;
+        // Round 51 — try WASM first; on null result, fall back to the
+        // TS mirror. The `lastPaletteSource` tag is read by `main.ts`
+        // for the HUD log line.
+        let finalPalette: string[];
+        if (mood) {
+            const outcome = moodPaletteWithFallback(this.wasmMod, mood);
+            this.lastPaletteSource = outcome.source;
+            finalPalette = Array.from(outcome.palette);
+        } else {
+            this.lastPaletteSource = null;
+            finalPalette = theme.colorPalette;
+        }
         blueprint.theme = {
             name: theme.themeName,
             visualStyle: theme.visualStyle,
