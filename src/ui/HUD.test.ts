@@ -16,6 +16,7 @@ function makeHud() {
 describe('HUD (I18n integration)', () => {
     beforeEach(() => {
         try { localStorage.removeItem('agi_locale'); } catch { /* noop */ }
+        try { sessionStorage.clear(); } catch { /* noop */ }
     });
 
     test('renders with the active locale by default', () => {
@@ -369,5 +370,120 @@ describe('HUD — round 47 SceneBlueprint scalars HUD prompt', () => {
         // Explicit null clear: still no line.
         hud.setLastSceneBlueprint(null);
         expect(root.innerHTML).not.toContain('hud-scene-blueprint');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 51 — HUD 顶部持久化提示分组重构 (5 行折叠到 <details>)。
+//
+// Rounds 43/44/45/46/47 each added a HUD prompt line at the top
+// of the stats panel. After 5 rounds the top of the panel was
+// visually overloaded. Round 51 collapses those 5 lines into a
+// single <details>/<summary> block: the summary shows a compact
+// emoji + count (`↩🗣🧠🎭🎬 5 条记忆 · 点击展开`); the body
+// preserves the original 5 divs verbatim so the round 43-47 HUD
+// contract is unchanged. sessionStorage (`hud-memories-open`)
+// persists the open/closed state across intra-tab reloads but
+// resets on a fresh tab (sessionStorage is per-tab by spec).
+//
+// Test surface (5 jest, round-51 describe block):
+//   1. details block absent when no fields set
+//   2. summary count reflects number of set fields
+//   3. summary emoji only includes set fields
+//   4. collapsed by default, open when sessionStorage says so
+//   5. toggle event writes sessionStorage
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 51 persistent-memories collapsible <details>', () => {
+    test('details_block_absent_when_no_persistent_memory_field_is_set', () => {
+        const { root } = makeHud();
+        // Default state: all 5 persistent-memory fields are
+        // undefined/null, so the entire <details> block is
+        // omitted from the DOM (no orphan empty <details>).
+        expect(root.querySelector('.hud-memories')).toBeNull();
+    });
+
+    test('summary_count_reflects_number_of_set_fields', () => {
+        const { hud, root } = makeHud();
+        // Set 2 of 5 fields: lastBiome + lastSpeaker.
+        hud.setLastBiome('forest');
+        hud.setLastSpeaker({ id: 'mage_1', branch: 'fear', disposition: { friendly: 0, fear: 0.6, trust: 0 } });
+        const details = root.querySelector<HTMLDetailsElement>('.hud-memories');
+        expect(details).not.toBeNull();
+        const summary = details!.querySelector('summary');
+        expect(summary).not.toBeNull();
+        expect(summary!.textContent).toContain('2');
+        expect(summary!.textContent).toContain('条记忆');
+
+        // Now set all 5 → count should be 5.
+        hud.setNpcMindsSnapshot([{ entries: [{ kind: 'a' }] }]);
+        hud.setLastNpcDisposition({ friendly: 0.4, fear: 0, trust: 0.2 });
+        hud.setLastSceneBlueprint({ npcCount: 6, bpm: 130, eventCount: 4, archetypeHintCount: 1 });
+        const details2 = root.querySelector<HTMLDetailsElement>('.hud-memories')!;
+        expect(details2.querySelector('summary')!.textContent).toContain('5');
+    });
+
+    test('summary_emoji_includes_only_set_fields', () => {
+        const { hud, root } = makeHud();
+        // Only lastBiome set: summary should contain ↩ but NOT
+        // any of the other 4 emoji. Each emoji is also followed
+        // by a space (they're joined with '' so we look for the
+        // emoji as a discrete codepoint run).
+        hud.setLastBiome('forest');
+        const summaryText = root.querySelector<HTMLDetailsElement>('.hud-memories')!.querySelector('summary')!.textContent ?? '';
+        expect(summaryText).toContain('↩');
+        expect(summaryText).not.toContain('🗣');
+        expect(summaryText).not.toContain('🧠');
+        expect(summaryText).not.toContain('🎭');
+        expect(summaryText).not.toContain('🎬');
+    });
+
+    test('details_collapsed_by_default_unless_sessionStorage_says_open', () => {
+        // First: no sessionStorage value → no `open` attribute.
+        const { hud, root } = makeHud();
+        hud.setLastBiome('forest');
+        const details1 = root.querySelector<HTMLDetailsElement>('.hud-memories');
+        expect(details1).not.toBeNull();
+        expect(details1!.hasAttribute('open')).toBe(false);
+
+        // Second: set sessionStorage to '1', then construct a
+        // new HUD — the new render should produce <details open>.
+        sessionStorage.setItem('hud-memories-open', '1');
+        document.body.innerHTML = '<div id="hud"></div>';
+        const root2 = document.getElementById('hud')!;
+        const hud2 = new HUD(root2, new I18n());
+        hud2.setLastBiome('forest');
+        const details2 = root2.querySelector<HTMLDetailsElement>('.hud-memories');
+        expect(details2).not.toBeNull();
+        expect(details2!.hasAttribute('open')).toBe(true);
+    });
+
+    test('toggle_event_writes_sessionStorage_via_newState_string', () => {
+        // The handler reads e.newState ('open' | 'closed')
+        // per the ToggleEvent spec; we dispatch a synthetic
+        // toggle with a typed payload (newState='open') and
+        // verify sessionStorage is updated to '1'. A second
+        // dispatch with newState='closed' should write '0'.
+        const { hud, root } = makeHud();
+        hud.setLastBiome('forest');
+        const details = root.querySelector<HTMLDetailsElement>('.hud-memories')!;
+
+        // Open the details programmatically AND dispatch a
+        // synthetic toggle (jsdom's dispatchEvent on details
+        // is the supported way to drive the handler in tests;
+        // a real click on <summary> in jsdom does not always
+        // fire toggle on every version, so we use dispatch).
+        details.open = true;
+        const openEvent = new Event('toggle') as Event & { newState?: string };
+        openEvent.newState = 'open';
+        details.dispatchEvent(openEvent);
+        expect(sessionStorage.getItem('hud-memories-open')).toBe('1');
+
+        // Now close + dispatch.
+        details.open = false;
+        const closeEvent = new Event('toggle') as Event & { newState?: string };
+        closeEvent.newState = 'closed';
+        details.dispatchEvent(closeEvent);
+        expect(sessionStorage.getItem('hud-memories-open')).toBe('0');
     });
 });

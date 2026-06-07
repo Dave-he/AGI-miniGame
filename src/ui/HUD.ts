@@ -234,24 +234,7 @@ export class HUD {
                     <span class="hud-title">${escapeHtml(this.i18n.t('hud.stats'))}</span>
                     <button class="hud-lang" type="button" data-locale="${otherLocale}">${langLabel}</button>
                 </div>
-                ${s.lastBiome
-                    ? `<div class="hud-biome-remembered">↩ 上次离开 <b>#${escapeHtml(s.lastBiome)}</b></div>`
-                    : ''}
-                ${s.lastSpeakerId
-                    ? `<div class="hud-speaker-remembered">🗣 你刚才听见了 <b>${escapeHtml(s.lastSpeakerId)}</b> 说${s.lastSpeakerBranch ? ` <span class="hud-speaker-branch hud-speaker-${escapeHtml(String(s.lastSpeakerBranch))}">[${escapeHtml(String(s.lastSpeakerBranch))}]</span>` : ''}</div>`
-                    : ''}
-                ${(s.npcMindsSnapshotCount ?? 0) > 0
-                    ? `<div class="hud-npc-snapshot">🧠 <b>${s.npcMindsSnapshotCount}</b> 个 NPC 记住了 <b>${s.npcMindsSnapshotMemories}</b> 段记忆</div>`
-                    : ''}
-                ${s.lastNpcDisposition
-                    ? `<div class="hud-npc-mood">🎭 集体情绪: friendly <b>${s.lastNpcDisposition.friendly.toFixed(2)}</b> / fear <b>${s.lastNpcDisposition.fear.toFixed(2)}</b> / trust <b>${s.lastNpcDisposition.trust.toFixed(2)}</b></div>`
-                    : ''}
-                ${(s.lastSceneNpcCount != null
-                    || s.lastSceneBpm != null
-                    || s.lastSceneEventCount != null
-                    || s.lastSceneArchetypeHintCount != null)
-                    ? `<div class="hud-scene-blueprint">🎬 上次维度: NPC×<b>${s.lastSceneNpcCount ?? '—'}</b> · BPM <b>${s.lastSceneBpm ?? '—'}</b> · <b>${s.lastSceneEventCount ?? '—'}</b> 事件 · <b>${s.lastSceneArchetypeHintCount ?? '—'}</b> archetype</div>`
-                    : ''}
+                ${this.renderPersistentMemories(s)}
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.level'))}</span><b>${s.playerLevel}</b></div>
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gold'))}</span><b>${s.gold}</b></div>
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gem'))}</span><b>${s.gem}</b></div>
@@ -275,6 +258,102 @@ export class HUD {
             const target = this.langBtn?.getAttribute('data-locale');
             if (target === 'zh-CN' || target === 'en-US') {
                 this.i18n.setLocale(target);
+            }
+        });
+
+        // Round 51 — wire the persistent-memories <details> toggle to
+        // sessionStorage so the expanded/collapsed state survives
+        // intra-tab reloads but resets on a fresh tab (sessionStorage
+        // is per-tab by spec).
+        const detailsEl = this.root.querySelector<HTMLDetailsElement>('.hud-memories');
+        if (detailsEl) {
+            this.setupMemoriesToggle(detailsEl);
+        }
+    }
+
+    /**
+     * Round 51 — render the five persistent prompt lines
+     * (lastBiome ↩ / lastSpeaker 🗣 / npcSnapshot 🧠 /
+     * lastNpcDisposition 🎭 / lastSceneBlueprint 🎬) inside a
+     * single `<details>`/`<summary>` block. The summary shows a
+     * compact emoji+count of how many fields are currently set;
+     * the body preserves the original five divs verbatim so the
+     * round-43/44/45/46/47 HUD contract is unchanged.
+     *
+     * Returns an empty string when no fields are set (the
+     * `<details>` block is then absent from the DOM, matching
+     * the pre-round-51 behavior where each line was an
+     * independent guard).
+     */
+    private renderPersistentMemories(s: HUDState): string {
+        // Per-field vote: a field "counts" if it has a non-null
+        // value (or, for npcMindsSnapshotCount, a non-zero count).
+        const biomeOn = s.lastBiome != null;
+        const speakerOn = s.lastSpeakerId != null;
+        const snapshotOn = (s.npcMindsSnapshotCount ?? 0) > 0;
+        const moodOn = s.lastNpcDisposition != null;
+        const sceneOn = s.lastSceneNpcCount != null
+            || s.lastSceneBpm != null
+            || s.lastSceneEventCount != null
+            || s.lastSceneArchetypeHintCount != null;
+
+        const count = (biomeOn ? 1 : 0) + (speakerOn ? 1 : 0) + (snapshotOn ? 1 : 0) + (moodOn ? 1 : 0) + (sceneOn ? 1 : 0);
+        if (count === 0) return '';
+
+        const emojiOrder: string[] = [];
+        if (biomeOn) emojiOrder.push('↩');
+        if (speakerOn) emojiOrder.push('🗣');
+        if (snapshotOn) emojiOrder.push('🧠');
+        if (moodOn) emojiOrder.push('🎭');
+        if (sceneOn) emojiOrder.push('🎬');
+
+        // sessionStorage may be absent in non-browser test envs;
+        // guard with a typeof check before reading. The key
+        // 'hud-memories-open' is intentionally short — there is
+        // only one collapsible surface in the HUD.
+        const persistedOpen = (typeof sessionStorage !== 'undefined')
+            ? sessionStorage.getItem('hud-memories-open') === '1'
+            : false;
+        const openAttr = persistedOpen ? ' open' : '';
+
+        return `
+            <details class="hud-memories"${openAttr}>
+                <summary>${emojiOrder.join('')} <b>${count}</b> 条记忆 · 点击展开</summary>
+                ${biomeOn
+                    ? `<div class="hud-biome-remembered">↩ 上次离开 <b>#${escapeHtml(s.lastBiome!)}</b></div>`
+                    : ''}
+                ${speakerOn
+                    ? `<div class="hud-speaker-remembered">🗣 你刚才听见了 <b>${escapeHtml(s.lastSpeakerId!)}</b> 说${s.lastSpeakerBranch ? ` <span class="hud-speaker-branch hud-speaker-${escapeHtml(String(s.lastSpeakerBranch))}">[${escapeHtml(String(s.lastSpeakerBranch))}]</span>` : ''}</div>`
+                    : ''}
+                ${snapshotOn
+                    ? `<div class="hud-npc-snapshot">🧠 <b>${s.npcMindsSnapshotCount}</b> 个 NPC 记住了 <b>${s.npcMindsSnapshotMemories}</b> 段记忆</div>`
+                    : ''}
+                ${moodOn
+                    ? `<div class="hud-npc-mood">🎭 集体情绪: friendly <b>${s.lastNpcDisposition!.friendly.toFixed(2)}</b> / fear <b>${s.lastNpcDisposition!.fear.toFixed(2)}</b> / trust <b>${s.lastNpcDisposition!.trust.toFixed(2)}</b></div>`
+                    : ''}
+                ${sceneOn
+                    ? `<div class="hud-scene-blueprint">🎬 上次维度: NPC×<b>${s.lastSceneNpcCount ?? '—'}</b> · BPM <b>${s.lastSceneBpm ?? '—'}</b> · <b>${s.lastSceneEventCount ?? '—'}</b> 事件 · <b>${s.lastSceneArchetypeHintCount ?? '—'}</b> archetype</div>`
+                    : ''}
+            </details>
+        `;
+    }
+
+    /**
+     * Round 51 — wire the persistent-memories `<details>` element
+     * to a `toggle` event listener that persists its open/closed
+     * state in sessionStorage. We rely on the spec-defined
+     * `ToggleEvent.newState` string ('open' | 'closed') rather
+     * than reading `detailsEl.open` so the handler is decoupled
+     * from DOM state and works the same way in jest (where
+     * dispatchEvent does fire toggle but click on <summary> may
+     * not auto-fire).
+     */
+    private setupMemoriesToggle(detailsEl: HTMLDetailsElement): void {
+        if (typeof sessionStorage === 'undefined') return;
+        detailsEl.addEventListener('toggle', (e) => {
+            const newState = (e as ToggleEvent).newState;
+            if (newState === 'open' || newState === 'closed') {
+                sessionStorage.setItem('hud-memories-open', newState === 'open' ? '1' : '0');
             }
         });
     }
