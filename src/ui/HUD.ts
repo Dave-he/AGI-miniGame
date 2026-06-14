@@ -649,13 +649,18 @@ export class HUD {
         // One `<div>` per active fn, in insertion order. The
         // number format is "median Xms · p95 Yms · max Zms
         // (×N samples)" so the player can spot a regression
-        // (p95 climbing) at a glance.
+        // (p95 climbing) at a glance. Round 74: the
+        // dimmed count suffix and the compact per-fn list
+        // moved from inline `style="..."` to the
+        // `.hud-memories-row-count` and
+        // `.hud-memories-row-detail` classes (see
+        // style.css).
         let wasmRows = '';
         if (wasmOn && s.wasmLatencyStats) {
             const lines = Object.entries(s.wasmLatencyStats.perFn).map(
                 ([name, stat]) => `· <b>${escapeHtml(name)}</b>: median <b>${stat.medianMs}</b>ms · p95 <b>${stat.p95Ms}</b>ms · max <b>${stat.maxMs}</b>ms (×${stat.count})`,
             );
-            wasmRows = `<div class="hud-wasm-latency">⚡ WASM 延迟 <span style="opacity:0.7">(${s.wasmLatencyStats.totalSamples} 样本)</span><br><span style="font-size:0.85em">${lines.join('<br>')}</span></div>`;
+            wasmRows = `<div class="hud-wasm-latency">⚡ WASM 延迟 <span class="hud-memories-row-count">(${s.wasmLatencyStats.totalSamples} 样本)</span><br><span class="hud-memories-row-detail">${lines.join('<br>')}</span></div>`;
         }
 
         // Round 73 — build the event-chain row. The chain
@@ -663,7 +668,10 @@ export class HUD {
         // `synthesizeDmEventChain` guarantee this), so the
         // first entry is the next event. We show "next:
         // <kind> in <delaySecs>s" as the headline and a
-        // compact list of all events underneath.
+        // compact list of all events underneath. Round 74:
+        // the dimmed count suffix and the compact list use
+        // the same `.hud-memories-row-*` classes as the
+        // `⚡` row above.
         let chainRows = '';
         if (chainOn && s.lastSceneEventChain) {
             const chain = s.lastSceneEventChain as EventStep[];
@@ -671,7 +679,7 @@ export class HUD {
             const allLines = chain.map((e) =>
                 `· t+<b>${e.delaySecs}</b>s <b>${escapeHtml(e.kind)}</b>`,
             );
-            chainRows = `<div class="hud-event-chain">⏰ next: <b>${escapeHtml(next.kind)}</b> in <b>${next.delaySecs}</b>s <span style="opacity:0.7">(${chain.length} 事件)</span><br><span style="font-size:0.85em">${allLines.join('<br>')}</span></div>`;
+            chainRows = `<div class="hud-event-chain">⏰ next: <b>${escapeHtml(next.kind)}</b> in <b>${next.delaySecs}</b>s <span class="hud-memories-row-count">(${chain.length} 事件)</span><br><span class="hud-memories-row-detail">${allLines.join('<br>')}</span></div>`;
         }
 
         return `

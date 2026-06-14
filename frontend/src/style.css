@@ -295,3 +295,33 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 }
+
+  .control-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Round 74 — `hud-memories-row-*` classes.
+ *
+ * Before round 74, the round-69 `⚡` WASM-latency row and the
+ * round-73 `⏰` event-chain row each carried two inline
+ * `style="..."` attributes (an opacity 0.7 suffix and a 0.85em
+ * detail span). Inline styles bypass the stylesheet cascade,
+ * so a future theme-switch or per-biome tint adjustment would
+ * need a code change, not a CSS edit. This block moves both
+ * styles into proper rules so they can be themed from
+ * stylesheet land.
+ *
+ * Naming: `-row-count` is the dimmed "N 样本" / "N 事件"
+ * suffix on the row headline; `-row-detail` is the smaller
+ * compact list of per-fn / per-event lines underneath.
+ * ------------------------------------------------------------------------- */
+
+.hud-memories-row-count {
+  opacity: 0.7;
+}
+
+.hud-memories-row-detail {
+  font-size: 0.85em;
+}

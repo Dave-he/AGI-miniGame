@@ -884,3 +884,129 @@ describe('HUD — round 73 setLastSceneEventChain', () => {
         expect(row.textContent).not.toContain('evil');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 74 — `hud-memories-row-*` class-based styling.
+//
+// Before round 74, the round-69 `⚡` row and the round-73 `⏰`
+// row each carried two inline `style="..."` attributes
+// (opacity 0.7 for the count suffix, font-size 0.85em for
+// the compact detail list). Inline styles bypass the
+// stylesheet cascade, so any future theme-switch or
+// per-biome tint adjustment would need a code change, not a
+// CSS edit. This round moves both styles into the
+// `.hud-memories-row-count` and `.hud-memories-row-detail`
+// classes in frontend/src/style.css.
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 74 hud-memories-row-* class-based styling', () => {
+    // Sample fixtures for both rows. We construct a
+    // non-empty chain and a non-empty WASM stats blob so
+    // both rows render side-by-side in the test DOM.
+    const SAMPLE_CHAIN: EventStep[] = [
+        { kind: 'spawn_wave',    delaySecs: 5,  payload: 'forest_spawn_wave_2' },
+        { kind: 'treasure_drop', delaySecs: 13, payload: 'forest_treasure_drop_0' },
+    ];
+    const SAMPLE_WASM = {
+        perFn: {
+            themeToScene:         { count: 5, medianMs: 1.5, p95Ms: 2.0, maxMs: 2.5 },
+            mood4thSentenceFor:   { count: 3, medianMs: 0.8, p95Ms: 0.9, maxMs: 1.0 },
+        },
+        totalSamples: 8,
+    };
+
+    test('⚡_row_uses_class_for_dimmed_count_suffix', () => {
+        // The headline "⚡ WASM 延迟 (N 样本)" had its
+        // count suffix at `style="opacity:0.7"`; round 74
+        // moved it to `class="hud-memories-row-count"`.
+        const { hud, root } = makeHud();
+        hud.setWasmLatencyStats(SAMPLE_WASM);
+        const row = root.querySelector('.hud-wasm-latency')!;
+        const countSpan = row.querySelector('.hud-memories-row-count');
+        expect(countSpan).not.toBeNull();
+        expect(countSpan!.textContent).toContain('8 样本');
+        // No inline style should remain on this span.
+        expect(countSpan!.getAttribute('style')).toBeNull();
+    });
+
+    test('⚡_row_uses_class_for_compact_per_fn_list', () => {
+        // The compact "· <fn>: median ... p95 ... max ..."
+        // list was at `style="font-size:0.85em"`; round 74
+        // moved it to `class="hud-memories-row-detail"`.
+        const { hud, root } = makeHud();
+        hud.setWasmLatencyStats(SAMPLE_WASM);
+        const row = root.querySelector('.hud-wasm-latency')!;
+        const detailSpan = row.querySelector('.hud-memories-row-detail');
+        expect(detailSpan).not.toBeNull();
+        expect(detailSpan!.textContent).toContain('themeToScene');
+        expect(detailSpan!.textContent).toContain('mood4thSentenceFor');
+        // No inline style should remain on this span.
+        expect(detailSpan!.getAttribute('style')).toBeNull();
+    });
+
+    test('⏰_row_uses_class_for_dimmed_count_suffix', () => {
+        // Mirror check for the round-73 chain row. The
+        // "(N 事件)" suffix had the same inline
+        // `style="opacity:0.7"` problem.
+        const { hud, root } = makeHud();
+        hud.setLastSceneEventChain(SAMPLE_CHAIN);
+        const row = root.querySelector('.hud-event-chain')!;
+        const countSpan = row.querySelector('.hud-memories-row-count');
+        expect(countSpan).not.toBeNull();
+        expect(countSpan!.textContent).toContain('2 事件');
+        expect(countSpan!.getAttribute('style')).toBeNull();
+    });
+
+    test('⏰_row_uses_class_for_compact_event_list', () => {
+        // Mirror check for the round-73 chain row. The
+        // "· t+<b>...</b>s <b>...</b>" list was at
+        // `style="font-size:0.85em"`.
+        const { hud, root } = makeHud();
+        hud.setLastSceneEventChain(SAMPLE_CHAIN);
+        const row = root.querySelector('.hud-event-chain')!;
+        const detailSpan = row.querySelector('.hud-memories-row-detail');
+        expect(detailSpan).not.toBeNull();
+        expect(detailSpan!.textContent).toContain('t+5s');
+        expect(detailSpan!.textContent).toContain('t+13s');
+        expect(detailSpan!.textContent).toContain('spawn_wave');
+        expect(detailSpan!.textContent).toContain('treasure_drop');
+        expect(detailSpan!.getAttribute('style')).toBeNull();
+    });
+
+    test('no_inline_opacity_or_font_size_styles_on_rows', () => {
+        // Belt-and-suspenders: even when both rows are
+        // rendered at the same time, the rendered HTML
+        // must not contain any inline `style="opacity:..."`
+        // or `style="font-size:..."` attributes inside
+        // the row containers. A future contributor adding
+        // a new row should follow the same class-based
+        // pattern.
+        const { hud, root } = makeHud();
+        hud.setWasmLatencyStats(SAMPLE_WASM);
+        hud.setLastSceneEventChain(SAMPLE_CHAIN);
+        const wasmRow = root.querySelector('.hud-wasm-latency')!;
+        const chainRow = root.querySelector('.hud-event-chain')!;
+        for (const row of [wasmRow, chainRow]) {
+            const inlineStyled = row.querySelectorAll('[style*="opacity"], [style*="font-size"]');
+            expect(inlineStyled.length).toBe(0);
+        }
+    });
+
+    test('stylesheet_contains_both_new_rules', () => {
+        // The CSS file must carry the rules we're now
+        // referencing. We read the file directly (jest
+        // doesn't apply the stylesheet, but the class
+        // contract is "the rule exists at the source").
+        // If the file is moved or renamed, this test
+        // will fail loudly — better than a silent
+        // dead-class.
+        const fs = require('fs');
+        const path = require('path');
+        const cssPath = path.resolve(__dirname, '../../frontend/src/style.css');
+        const css = fs.readFileSync(cssPath, 'utf8');
+        // The two rules. Match the property + class
+        // selector with a permissive regex.
+        expect(css).toMatch(/\.hud-memories-row-count\s*\{\s*opacity:\s*0\.7\s*;?\s*\}/);
+        expect(css).toMatch(/\.hud-memories-row-detail\s*\{\s*font-size:\s*0\.85em\s*;?\s*\}/);
+    });
+});
