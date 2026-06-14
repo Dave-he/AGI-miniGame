@@ -1840,6 +1840,264 @@ describe('App — round 80 e2e: bridge → themeToScene → WorldState + HUD', (
 });
 
 // ---------------------------------------------------------------------------
+// Round 84 — WASM bridge mid-stream failure e2e.
+//
+// The round-80 e2e block covered the **module-not-loaded** case
+// (`sceneGenWasm = null` → TS mirror takes over). The
+// `SceneGenWasm.test.ts` unit tests cover the failure modes at
+// the function level (`callThemeToScene` returns null on error
+// JSON, throw, invalid shape, etc.). But no App-level e2e
+// test proved the round-48 "progressive enhancement" promise
+// for the **module-loaded-but-call-failed** case:
+//
+//   1. WASM module loads fine (version stamp OK).
+//   2. `theme_to_scene_json` returns `{"error":"..."}` for a
+//      specific call (e.g. seed out of range, malformed
+//      theme).
+//   3. App should still produce a valid WorldState + HUD
+//      state via the TS mirror.
+//
+// This block closes that gap. The 4 tests below inject a
+// custom-failing stub via the round-82 `makeWasmStub` helper
+// (just override `theme_to_scene_json`) and assert the
+// App's end state is byte-identical to the
+// `sceneGenWasm = null` case.
+//
+// **Why this matters**: the round-48 docstring promises
+// WASM is a "progressive enhancement" — the page should
+// play even when the .wasm returns unexpected shapes.
+// Without these tests, a future contributor could refactor
+// `callThemeToScene`'s error handling (e.g. delete the
+// try/catch, change the error JSON shape, swap the
+// `parsed.error` check for `parsed.success`) and no e2e
+// test would catch the regression — the unit tests would,
+// but a unit test of "the call returns null" doesn't prove
+// the App's WorldState still gets a valid blueprint.
+// ---------------------------------------------------------------------------
+
+describe('App — round 84 e2e: WASM mid-stream failure → TS mirror fallback', () => {
+    function makeBridgeBlueprint(seed: number, visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon', musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse') {
+        return {
+            id: `dim_${visualStyle}_${seed}_r84`,
+            name: `e2e r84 ${visualStyle}`,
+            description: 'round 84 e2e fixture',
+            atomIds: ['tower_defense'],
+            atomWeights: { tower_defense: 1 },
+            difficulty: 0.5,
+            rules: [],
+            rewards: [],
+            theme: { name: 'e2e_r84', visualStyle, musicMood, colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1'] },
+            timeLimitSecs: 60,
+            objectives: [],
+        };
+    }
+
+    /**
+     * Run `enterNewDimension` with a custom-failing WASM stub.
+     * Returns a reference to the App + the `stubSideEffects`
+     * spy bag (so the test can assert on the WorldState +
+     * HUD side effects). Mirrors the round-80 `stubSideEffects`
+     * pattern but inlines the spy setup (this block is small
+     * enough that lifting to a shared helper would be
+     * premature).
+     */
+    async function enterDimensionWithFailingWasm(
+        app: App,
+        seed: number,
+        failingThemeToScene: () => string,
+    ) {
+        jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async () => ({
+                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e r84' },
+                atomIds: ['tower_defense'],
+                blueprint: makeBridgeBlueprint(seed, 'fantasy', 'cheerful'),
+                modules: [],
+                seed,
+                configSource: 'wasm',
+            }));
+        // The failing stub: the round-82 `makeWasmStub`
+        // provides the version stamp + the 4 other
+        // functions, but `theme_to_scene_json` is
+        // overridden with a custom failure.
+        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = {
+            ...makeWasmStub(),
+            theme_to_scene_json: failingThemeToScene,
+        };
+        // Side-effect surface stubs.
+        jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
+            .mockReturnValue(['mock_npc_a']);
+        jest
+            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn(app as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition')
+            .mockImplementation(() => undefined);
+        // The round-72 event chain write is needed
+        // for `lastSceneEventChain` to be populated
+        // by the TS mirror. Don't stub it.
+        jest
+            .spyOn((app as unknown as { worldState: { clearFailedSnapshot: () => void } }).worldState, 'clearFailedSnapshot')
+            .mockImplementation(() => undefined);
+        // HUD setters — silent no-ops.
+        jest
+            .spyOn((app as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setMinimap: (m: string | null) => void } }).hud, 'setMinimap')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setLastSceneEventChain: (c: unknown) => void } }).hud, 'setLastSceneEventChain')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setNpcMindsSnapshot: (s: unknown) => void } }).hud, 'setNpcMindsSnapshot')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { hideRecoveryBanner: () => void } }).hud, 'hideRecoveryBanner')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setBackupAvailable: (b: boolean) => void } }).hud, 'setBackupAvailable')
+            .mockImplementation(() => undefined);
+        const spyBag = {
+            updateLastSceneBlueprintFull: jest
+                .spyOn((app as unknown as { worldState: { updateLastSceneBlueprintFull: (s: unknown) => void } }).worldState, 'updateLastSceneBlueprintFull')
+                .mockImplementation(() => undefined),
+        };
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+        return spyBag;
+    }
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('enterNewDimension_uses_TS_mirror_when_WASM_theme_to_scene_returns_error_json', async () => {
+        // The WASM shim wraps any unknown-enum /
+        // serialize failure into `{"error":"..."}` JSON.
+        // The TS-side `callThemeToScene` checks for this
+        // shape and returns `null` so the fallback runs.
+        // This test verifies the App actually falls back
+        // (not silently passes through to a corrupted
+        // WorldState).
+        const app = makeApp();
+        const spies = await enterDimensionWithFailingWasm(
+            app,
+            0xCAFE0001,
+            () => JSON.stringify({ error: 'r84-malformed-enum' }),
+        );
+
+        // The blueprint is still written exactly once
+        // (the TS-mirror's output, not the WASM error).
+        expect(spies.updateLastSceneBlueprintFull).toHaveBeenCalledTimes(1);
+        const snap = spies.updateLastSceneBlueprintFull.mock.calls[0][0] as {
+            wfcTileWeights: number[];
+            biomeId: string;
+            npcCount: number;
+            eventChain: unknown[];
+        };
+        // The TS-mirror's output has the expected
+        // shape — wfc weights is an 8-tuple, biomeId
+        // is a non-empty string, npcCount is a
+        // positive number, eventChain is a non-empty
+        // array.
+        expect(Array.isArray(snap.wfcTileWeights)).toBe(true);
+        expect(snap.wfcTileWeights).toHaveLength(8);
+        expect(snap.biomeId).toBeTruthy();
+        expect(snap.npcCount).toBeGreaterThan(0);
+        expect(Array.isArray(snap.eventChain)).toBe(true);
+        expect(snap.eventChain.length).toBeGreaterThan(0);
+    });
+
+    test('enterNewDimension_uses_TS_mirror_when_WASM_theme_to_scene_throws', async () => {
+        // The WASM module can throw (e.g. trap, OOM,
+        // panic-on-bad-seed). The TS-side `callThemeToScene`
+        // catches the throw and returns `null`. This
+        // test verifies the App falls back rather than
+        // crashing the entire `enterNewDimension` flow.
+        const app = makeApp();
+        const spies = await enterDimensionWithFailingWasm(
+            app,
+            0xCAFE0002,
+            () => { throw new Error('r84-wasm-trap'); },
+        );
+
+        expect(spies.updateLastSceneBlueprintFull).toHaveBeenCalledTimes(1);
+        const snap = spies.updateLastSceneBlueprintFull.mock.calls[0][0] as {
+            biomeId: string;
+            npcCount: number;
+        };
+        expect(snap.biomeId).toBeTruthy();
+        expect(snap.npcCount).toBeGreaterThan(0);
+    });
+
+    test('enterNewDimension_uses_TS_mirror_when_WASM_theme_to_scene_returns_invalid_shape', async () => {
+        // The WASM module can return syntactically
+        // valid JSON that doesn't have the required
+        // fields (e.g. a new schema version where
+        // `wfc_tile_weights` is now `wfc_weights_v2`).
+        // The TS-side `callThemeToScene` checks the
+        // shape and returns `null`.
+        const app = makeApp();
+        const spies = await enterDimensionWithFailingWasm(
+            app,
+            0xCAFE0003,
+            () => JSON.stringify({ wfc_weights_v2: [1, 2, 3], biome_id: 'forest' }),
+        );
+
+        expect(spies.updateLastSceneBlueprintFull).toHaveBeenCalledTimes(1);
+        const snap = spies.updateLastSceneBlueprintFull.mock.calls[0][0] as {
+            wfcTileWeights: number[];
+            biomeId: string;
+        };
+        expect(snap.wfcTileWeights).toHaveLength(8);
+        expect(snap.biomeId).toBeTruthy();
+    });
+
+    test('enterNewDimension_uses_TS_mirror_when_WASM_theme_to_scene_returns_non_json', async () => {
+        // Edge case: the WASM module returns a
+        // non-JSON string (the shim crashed, returned
+        // a plain error message). The TS-side
+        // `callThemeToScene` catches the JSON parse
+        // failure and returns `null`.
+        const app = makeApp();
+        const spies = await enterDimensionWithFailingWasm(
+            app,
+            0xCAFE0004,
+            () => 'r84-not-json',
+        );
+
+        expect(spies.updateLastSceneBlueprintFull).toHaveBeenCalledTimes(1);
+        const snap = spies.updateLastSceneBlueprintFull.mock.calls[0][0] as {
+            biomeId: string;
+            npcCount: number;
+            eventChain: unknown[];
+        };
+        expect(snap.biomeId).toBeTruthy();
+        expect(snap.npcCount).toBeGreaterThan(0);
+        expect(Array.isArray(snap.eventChain)).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Round 83 — rollback rehydrate e2e (round-79 telemetry gate).
 //
 // The round-80 block above proved the WASM `theme_to_scene_json`
