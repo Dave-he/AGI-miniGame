@@ -77,6 +77,21 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
 ];
 
 /**
+ * Round 59 — mouse / pointer bindings, rendered as a second
+ * section in the help overlay (separated from the keyboard list
+ * by a visual divider). These are not routed by `routeKey` —
+ * they're a documentation-only surface so the player knows the
+ * pointer can do more than the visible HUD buttons suggest.
+ */
+export const MOUSE_BINDINGS: ReadonlyArray<{ key: string; action: string }> = [
+    { key: '左键点击 portal', action: '进入该 portal 对应 atom' },
+    { key: '左键点击 NPC',    action: '与 NPC 对话 / 触发 NPC 事件' },
+    { key: '左键点击 HUD 按钮', action: '触发对应操作 (进入 / 失败 / 事件 / 模因…)' },
+    { key: '鼠标滚轮',         action: '缩放 orbit 相机 (round 58)' },
+    { key: '左键拖动 canvas',  action: '移动相机视角 (相机平移)' },
+];
+
+/**
  * Translate a single keydown into a semantic action. Returns null
  * when the key is not bound so callers can decide what to do
  * (typically: ignore, or let the event bubble to the browser).

@@ -35,6 +35,20 @@ export interface BiomeAtmosphere {
     fogFar: number;
     /** Optional hex tint for the directional light; falls back to white. */
     lightTint: string;
+    /**
+     * Round 59 — directional-light position in world units. Sets
+     * the angle of the key light per biome (e.g. ice = high noon,
+     * desert = low side, forest = angled through trees). The
+     * position is fed directly to `THREE.DirectionalLight.position`.
+     */
+    dirLightPos: { x: number; y: number; z: number };
+    /**
+     * Round 59 — point-light position in world units. Sets where
+     * the back-fill light lives per biome (e.g. dungeon = low /
+     * behind, space = high / opposite side). The position is fed
+     * directly to `THREE.PointLight.position`.
+     */
+    pointLightPos: { x: number; y: number; z: number };
 }
 
 const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
@@ -47,6 +61,10 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         fogNear: 22,
         fogFar: 95,
         lightTint: '#ff66cc',
+        // Cyberpunk: high key from the right (neon signs), low fill
+        // from behind-left (street reflection).
+        dirLightPos:   { x:  15, y: 25, z:  10 },
+        pointLightPos: { x: -20, y:  8, z: -10 },
     },
     forest: {
         particleColor: '#90c290',
@@ -57,6 +75,9 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         fogNear: 18,
         fogFar: 80,
         lightTint: '#a8d8a8',
+        // Forest: low sunbeams slicing through canopy, high fill.
+        dirLightPos:   { x:  10, y: 12, z:   6 },
+        pointLightPos: { x: -12, y: 22, z:  -4 },
     },
     desert: {
         particleColor: '#ffd166',
@@ -67,6 +88,10 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         fogNear: 35,
         fogFar: 140,
         lightTint: '#ffc870',
+        // Desert: very low side sun (long shadows), low opposite
+        // fill so dunes don't go pitch black on one side.
+        dirLightPos:   { x:  24, y:  8, z:   2 },
+        pointLightPos: { x: -18, y:  6, z:  -8 },
     },
     ice: {
         particleColor: '#ffffff',
@@ -77,6 +102,10 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         fogNear: 14,
         fogFar: 65,
         lightTint: '#b0e0ff',
+        // Ice: high noon (overhead) so the surface is evenly lit,
+        // high opposite fill (sky reflection off snow).
+        dirLightPos:   { x:   4, y: 32, z:   4 },
+        pointLightPos: { x: -10, y: 24, z:  -4 },
     },
     space: {
         particleColor: '#ffffff',
@@ -87,6 +116,10 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         fogNear: 60,
         fogFar: 200,
         lightTint: '#cce0ff',
+        // Space: distant "star" key (far + high), opposite fill
+        // simulating reflection off a planet / ship.
+        dirLightPos:   { x:  28, y: 30, z: -18 },
+        pointLightPos: { x: -22, y: 16, z:  12 },
     },
     dungeon: {
         particleColor: '#a06cd5',
@@ -97,6 +130,10 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         fogNear: 12,
         fogFar: 55,
         lightTint: '#a8a0c8',
+        // Dungeon: vertical "shaft of light from above" key, low
+        // fill from behind (torch glow feel).
+        dirLightPos:   { x:   2, y: 26, z:   4 },
+        pointLightPos: { x: -10, y:  4, z:  -6 },
     },
 };
 

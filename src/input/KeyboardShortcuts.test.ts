@@ -2,6 +2,7 @@ import {
     routeKey,
     PORTAL_ATOMS,
     BINDING_DESCRIPTIONS,
+    MOUSE_BINDINGS,
     type KeyboardAction,
 } from './KeyboardShortcuts';
 
@@ -100,6 +101,33 @@ describe('KeyboardShortcuts', () => {
                 expect(d.action.length).toBeGreaterThan(0);
                 // CJK check — every action contains at least one CJK char
                 expect(/[㐀-鿿]/.test(d.action)).toBe(true);
+            }
+        });
+    });
+
+    describe('MOUSE_BINDINGS (round 59)', () => {
+        it('has at least one entry documenting the scroll-zoom', () => {
+            // round 58 added scroll-zoom, round 59 documents it in
+            // the help overlay. The list must mention the wheel.
+            const joined = MOUSE_BINDINGS.map(d => d.key + ' ' + d.action).join(' ');
+            expect(joined).toMatch(/滚轮|缩放|wheel/i);
+        });
+
+        it('has a non-empty Chinese description for every binding', () => {
+            for (const d of MOUSE_BINDINGS) {
+                expect(d.key.length).toBeGreaterThan(0);
+                expect(d.action.length).toBeGreaterThan(0);
+                expect(/[㐀-鿿]/.test(d.action)).toBe(true);
+            }
+        });
+
+        it('does not overlap with the keyboard BINDING_DESCRIPTIONS', () => {
+            // Mouse and keyboard share the same overlay, so we
+            // sanity-check that no mouse key text is the same as a
+            // keyboard key text (they describe different surfaces).
+            const kbKeys = new Set(BINDING_DESCRIPTIONS.map(d => d.key));
+            for (const d of MOUSE_BINDINGS) {
+                expect(kbKeys.has(d.key)).toBe(false);
             }
         });
     });

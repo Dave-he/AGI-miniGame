@@ -31,7 +31,7 @@ import { SaveSystem } from './world/SaveSystem';
 import { AIEngine, BalanceTuner } from './ai/AIEngine';
 import { NPCDialogueAI, NPCProfile } from './ai/NPCDialogueAI';
 import { AIBridge, ATOM_MANIFEST } from './gameplay/AIBridge';
-import { routeKey, BINDING_DESCRIPTIONS } from './input/KeyboardShortcuts';
+import { routeKey, BINDING_DESCRIPTIONS, MOUSE_BINDINGS } from './input/KeyboardShortcuts';
 import { GameplayManager, SynthesisModule, CardModule } from './gameplay/GameplayManager';
 import { DslExecutor } from './scene/DslExecutor';
 import { HotReloadController } from './scene/HotReloadController';
@@ -1583,10 +1583,33 @@ async function bootstrap(): Promise<void> {
     // work for the page itself.
     // Populate the help overlay body once at boot from the
     // canonical BINDING_DESCRIPTIONS so the two stay in sync.
+    // Round 59 — also render the MOUSE_BINDINGS section with
+    // a divider label, so the player sees both surfaces in one
+    // place.
     {
         const body = document.getElementById('keyboard-help-body');
         if (body) {
+            // Section 1: keyboard.
+            const kbHeader = document.createElement('div');
+            kbHeader.className = 'kb-help-section';
+            kbHeader.textContent = '键盘';
+            body.appendChild(kbHeader);
             for (const d of BINDING_DESCRIPTIONS) {
+                const keyEl = document.createElement('div');
+                keyEl.className = 'kb-help-key';
+                keyEl.textContent = d.key;
+                const actEl = document.createElement('div');
+                actEl.className = 'kb-help-action';
+                actEl.textContent = d.action;
+                body.appendChild(keyEl);
+                body.appendChild(actEl);
+            }
+            // Section 2: mouse / pointer.
+            const mouseHeader = document.createElement('div');
+            mouseHeader.className = 'kb-help-section';
+            mouseHeader.textContent = '鼠标';
+            body.appendChild(mouseHeader);
+            for (const d of MOUSE_BINDINGS) {
                 const keyEl = document.createElement('div');
                 keyEl.className = 'kb-help-key';
                 keyEl.textContent = d.key;

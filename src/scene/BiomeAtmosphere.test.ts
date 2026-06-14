@@ -106,6 +106,60 @@ describe('BiomeAtmosphere', () => {
         expect(cp.lightTint).toBe(cp.particleColor);
     });
 
+    it('every biome has a finite dirLightPos triple (round 59)', () => {
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            expect(Number.isFinite(atm.dirLightPos.x)).toBe(true);
+            expect(Number.isFinite(atm.dirLightPos.y)).toBe(true);
+            expect(Number.isFinite(atm.dirLightPos.z)).toBe(true);
+        }
+    });
+
+    it('every biome has a finite pointLightPos triple (round 59)', () => {
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            expect(Number.isFinite(atm.pointLightPos.x)).toBe(true);
+            expect(Number.isFinite(atm.pointLightPos.y)).toBe(true);
+            expect(Number.isFinite(atm.pointLightPos.z)).toBe(true);
+        }
+    });
+
+    it('ice has the highest dir light (high noon) and desert the lowest (round 59)', () => {
+        const ice    = getBiomeAtmosphere('ice');
+        const desert = getBiomeAtmosphere('desert');
+        expect(ice.dirLightPos.y).toBeGreaterThan(desert.dirLightPos.y);
+    });
+
+    it('dir light y-axis is positive for every biome (no upside-down key light, round 59)', () => {
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            expect(atm.dirLightPos.y).toBeGreaterThan(0);
+        }
+    });
+
+    it('point light sits on the opposite side of the scene from the dir light (round 59)', () => {
+        // Sign convention: dir.x is positive (right), point.x is
+        // negative (left). This gives a clear key + fill setup.
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            // Only enforce the most generic case — the convention
+            // holds for all 6 biomes as designed.
+            const sameSide = Math.sign(atm.dirLightPos.x) === Math.sign(atm.pointLightPos.x)
+                          && Math.sign(atm.dirLightPos.x) !== 0;
+            expect(sameSide).toBe(false);
+        }
+    });
+
+    it('6 biomes all have distinct dirLightPos signatures (round 59)', () => {
+        const seen = new Set<string>();
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            const sig = `${atm.dirLightPos.x},${atm.dirLightPos.y},${atm.dirLightPos.z}`;
+            expect(seen.has(sig)).toBe(false);
+            seen.add(sig);
+        }
+    });
+
     it('produces the same atmosphere on repeat calls (deterministic + cached)', () => {
         const a = getBiomeAtmosphere('forest');
         const b = getBiomeAtmosphere('forest');

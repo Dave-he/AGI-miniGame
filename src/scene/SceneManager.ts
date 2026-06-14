@@ -263,6 +263,11 @@ export class SceneManager {
         const lightColorInt = parseInt(atm.lightTint.replace('#', ''), 16);
         if (this.dirLight) {
             this.dirLight.color = new THREE.Color(lightColorInt);
+            // Round 59 — directional light POSITION per biome
+            // (e.g. ice = high noon, desert = low side, forest =
+            // angled sunbeams). The position is a unit vector ×
+            // distance in world units; we feed the raw triple.
+            this.dirLight.position.set(atm.dirLightPos.x, atm.dirLightPos.y, atm.dirLightPos.z);
         }
         if (this.pointLight) {
             // The point light gets the same tint at lower
@@ -270,6 +275,10 @@ export class SceneManager {
             // key light. Keeps the biome's signature readable.
             this.pointLight.color = new THREE.Color(lightColorInt);
             this.pointLight.intensity = 0.45;
+            // Round 59 — point light position per biome (e.g.
+            // dungeon = low / behind, space = high / opposite
+            // side). Feeds the back-fill direction.
+            this.pointLight.position.set(atm.pointLightPos.x, atm.pointLightPos.y, atm.pointLightPos.z);
         }
         const count = atm.particleCount;
         const positions = new Float32Array(count * 3);

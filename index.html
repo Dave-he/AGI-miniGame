@@ -297,6 +297,25 @@
         gap: 6px 14px;
         font-size: 12px;
       }
+      .kb-help-section {
+        /* Round 59 — section divider in the help overlay. Spans
+           both grid columns so the label reads as a full-width
+           sub-header between the keyboard and mouse lists. */
+        grid-column: 1 / -1;
+        color: var(--neon-blue, #45b7d1);
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-top: 8px;
+        padding-top: 6px;
+        border-top: 1px dashed rgba(6, 214, 160, 0.3);
+      }
+      .kb-help-section:first-child {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+      }
       .kb-help-key {
         color: var(--neon-pink, #ff66cc);
         font-weight: 700;
