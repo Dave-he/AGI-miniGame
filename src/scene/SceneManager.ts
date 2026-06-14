@@ -9,6 +9,7 @@
  */
 
 import type { DimensionBlueprint } from '../ai/AIEngine';
+import type { BiomeAtmosphere } from './BiomeAtmosphere';
 
 export interface PortalDef {
     atomId: string;
@@ -46,6 +47,18 @@ export class SceneManager {
     private floats: any[] = [];
     private dungeon: any[] = [];
     private npcs: any[] = [];
+    /**
+     * Round 56 — the active ambient particle system, spawned by
+     * `setBiomeAtmosphere`. A bundle of three.js Points + a per-vertex
+     * velocity buffer + the drift / speed config. `null` between
+     * dimensions. Animated in the tick loop.
+     */
+    private ambientParticles: {
+        points: any;
+        velocities: Float32Array;
+        drift: { x: number; y: number; z: number };
+        speed: number;
+    } | null = null;
     private avatar: { group: any; body: any; dir: any; aura: any; lastPulse: number } | null = null;
     private rafHandle: number | null = null;
     private resizeHandler: () => void;
@@ -182,6 +195,69 @@ export class SceneManager {
         // Reset the entity palette to the default rainbow when
         // leaving a dimension.
         this.entityPalette = [0xff6b6b, 0xffd166, 0x4ecdc4, 0xa06cd5, 0x06d6a0, 0xef476f, 0x45b7d1];
+        // Round 56 — drop any ambient particles from the previous biome.
+        this.clearAmbientParticles();
+    }
+
+    /**
+     * Round 56 — replace the active ambient particle system with one
+     * matching the supplied biome atmosphere. Also nudges the fog's
+     * near / far to match the biome's mood. The previous particle
+     * system (if any) is removed first.
+     *
+     * No-op if Three.js hasn't loaded yet (the test environment, for
+     * example).
+     */
+    setBiomeAtmosphere(atm: BiomeAtmosphere): void {
+        if (!this.scene || !this.THREE) return;
+        const THREE = this.THREE;
+        this.clearAmbientParticles();
+        // Fog tuning
+        if (this.scene.fog) {
+            this.scene.fog.near = atm.fogNear;
+            this.scene.fog.far = atm.fogFar;
+        }
+        const count = atm.particleCount;
+        const positions = new Float32Array(count * 3);
+        const velocities = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+            // Distribute over a 40×20×40 box centred on the origin
+            positions[i * 3 + 0] = (Math.random() - 0.5) * 40;
+            positions[i * 3 + 1] = Math.random() * 16;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 40;
+            // Per-particle velocity: drift bias + random walk
+            velocities[i * 3 + 0] = (Math.random() - 0.5) * 0.6;
+            velocities[i * 3 + 1] = (Math.random() - 0.5) * 0.4;
+            velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.6;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const colorInt = parseInt(atm.particleColor.replace('#', ''), 16);
+        const mat = new THREE.PointsMaterial({
+            color: colorInt,
+            size: atm.particleSize,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.85,
+            depthWrite: false,
+        });
+        const points = new THREE.Points(geo, mat);
+        this.scene.add(points);
+        this.ambientParticles = {
+            points,
+            velocities,
+            drift: { ...atm.particleDrift },
+            speed: atm.particleSpeed,
+        };
+    }
+
+    private clearAmbientParticles(): void {
+        if (!this.ambientParticles || !this.scene) return;
+        this.scene.remove(this.ambientParticles.points);
+        // Free GPU buffers
+        this.ambientParticles.points.geometry?.dispose?.();
+        this.ambientParticles.points.material?.dispose?.();
+        this.ambientParticles = null;
     }
 
     /**
@@ -722,9 +798,37 @@ export class SceneManager {
                 npc.body.userData.flashing = false;
             }
         }
+        // Round 56 — animate the active ambient particle system.
+        this.tickAmbientParticles();
         this.renderer.render(this.scene, this.camera);
         this.rafHandle = requestAnimationFrame(this.tick);
     };
+
+    private tickAmbientParticles(): void {
+        if (!this.ambientParticles) return;
+        const ap = this.ambientParticles;
+        const dt = 1 / 60; // approximation; requestAnimationFrame cadence
+        const positions = ap.points.geometry.attributes.position.array as Float32Array;
+        const v = ap.velocities;
+        const count = v.length / 3;
+        const drift = ap.drift;
+        const speed = ap.speed;
+        for (let i = 0; i < count; i++) {
+            const idx = i * 3;
+            // velocity = random walk + drift bias
+            positions[idx + 0] += (v[idx + 0] * 0.05 + drift.x * speed) * dt;
+            positions[idx + 1] += (v[idx + 1] * 0.05 + drift.y * speed) * dt;
+            positions[idx + 2] += (v[idx + 2] * 0.05 + drift.z * speed) * dt;
+            // Wrap around so particles never escape the play area
+            if (positions[idx + 0] >  20) positions[idx + 0] = -20;
+            if (positions[idx + 0] < -20) positions[idx + 0] =  20;
+            if (positions[idx + 1] >  16) positions[idx + 1] =   0;
+            if (positions[idx + 1] <   0) positions[idx + 1] =  16;
+            if (positions[idx + 2] >  20) positions[idx + 2] = -20;
+            if (positions[idx + 2] < -20) positions[idx + 2] =  20;
+        }
+        ap.points.geometry.attributes.position.needsUpdate = true;
+    }
 
     dispose(): void {
         if (this.rafHandle !== null) cancelAnimationFrame(this.rafHandle);

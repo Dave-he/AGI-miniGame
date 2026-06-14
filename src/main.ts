@@ -38,6 +38,7 @@ import { SceneTransitions } from './scene/SceneTransitions';
 import { NpcCombat } from './scene/NpcCombat';
 import { generateDungeon, generateDungeonWithWeights, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
 import { biomeForVisualStyle } from './world/WfcBiomes';
+import { getBiomeAtmosphere } from './scene/BiomeAtmosphere';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
 import { TutorialOverlay } from './ui/TutorialOverlay';
 import { renderStatsPanel, StatsPanelHandle } from './ui/StatsPanel';
@@ -217,6 +218,7 @@ class App {
                 const biome = biomeForVisualStyle(s);
                 const dungeon = generateDungeon(r, c, Math.floor(Math.random() * 1e6));
                 this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
+                this.scene.setBiomeAtmosphere(getBiomeAtmosphere(biome.id));
                 this.analytics.track('dm.dimension', { rows: r, cols: c, style: s });
                 this.hud.log(`[DM] 渲染 ${biome.name} 主题地牢 ${r}x${c}`);
             },
@@ -482,6 +484,7 @@ class App {
             );
             const themedBiome = biomeForVisualStyle(sceneBp.biomeId);
             this.scene.renderWfcDungeon(themedDungeon.tiles, 1.0, themedBiome);
+            this.scene.setBiomeAtmosphere(getBiomeAtmosphere(themedBiome.id));
             // Spawn a wave of NPCs tagged with the theme's archetype hints.
             const archetypeIds = sceneBp.npcArchetypeHints.map(a => a as string);
             const spawned = this.scene.spawnNpcWave(sceneBp.npcCount, archetypeIds);
@@ -1108,6 +1111,7 @@ class App {
                     const dungeon = generateDungeonWithWeights(10, 10, seed, snap.wfcTileWeights);
                     const biome = biomeForVisualStyle(snap.biomeId);
                     this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
+                    this.scene.setBiomeAtmosphere(getBiomeAtmosphere(biome.id));
                     partialState.rendered = true;
                     const spawned = this.scene.spawnNpcWave(snap.npcCount, snap.npcArchetypeHints);
                     partialState.spawned = true;
@@ -1342,6 +1346,7 @@ class App {
                     // with a broken renderer context.
                     const biome = biomeForVisualStyle(snap.biomeId);
                     this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
+                    this.scene.setBiomeAtmosphere(getBiomeAtmosphere(biome.id));
                     partialState.rendered = true;
                     // Segment 3 — bulk-spawn the NPC wave. A
                     // throw here means the dungeon is on-screen
