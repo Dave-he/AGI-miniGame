@@ -49,6 +49,19 @@ export interface BiomeAtmosphere {
      * directly to `THREE.PointLight.position`.
      */
     pointLightPos: { x: number; y: number; z: number };
+    /**
+     * Round 60 — directional-light intensity multiplier (0..2
+     * typical; Three.js clamps at 0 minimum). Per-biome so
+     * desert reads brighter than space, ice reads more even than
+     * forest, etc. Fed directly to `THREE.DirectionalLight.intensity`.
+     */
+    dirLightIntensity: number;
+    /**
+     * Round 60 — point-light intensity multiplier. Controls how
+     * strong the back-fill is per biome. Fed directly to
+     * `THREE.PointLight.intensity`.
+     */
+    pointLightIntensity: number;
 }
 
 const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
@@ -65,6 +78,11 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         // from behind-left (street reflection).
         dirLightPos:   { x:  15, y: 25, z:  10 },
         pointLightPos: { x: -20, y:  8, z: -10 },
+        // Round 60 — bright neon: dir stronger than default so the
+        // scene reads "well-lit city at night". Point light also
+        // bumped (the city is full of secondary light sources).
+        dirLightIntensity:   0.85,
+        pointLightIntensity: 0.55,
     },
     forest: {
         particleColor: '#90c290',
@@ -78,6 +96,10 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         // Forest: low sunbeams slicing through canopy, high fill.
         dirLightPos:   { x:  10, y: 12, z:   6 },
         pointLightPos: { x: -12, y: 22, z:  -4 },
+        // Round 60 — dim canopy: dir subdued (sunlight is occluded),
+        // point light also dim (no city lights to fill).
+        dirLightIntensity:   0.6,
+        pointLightIntensity: 0.4,
     },
     desert: {
         particleColor: '#ffd166',
@@ -92,6 +114,11 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         // fill so dunes don't go pitch black on one side.
         dirLightPos:   { x:  24, y:  8, z:   2 },
         pointLightPos: { x: -18, y:  6, z:  -8 },
+        // Round 60 — strong sun: dir is the brightest of all 6
+        // biomes (no clouds), point light moderate (sand reflects
+        // but the scene is still sun-dominated).
+        dirLightIntensity:   0.95,
+        pointLightIntensity: 0.5,
     },
     ice: {
         particleColor: '#ffffff',
@@ -106,6 +133,11 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         // high opposite fill (sky reflection off snow).
         dirLightPos:   { x:   4, y: 32, z:   4 },
         pointLightPos: { x: -10, y: 24, z:  -4 },
+        // Round 60 — bright + even: dir moderate (high noon, light
+        // is overhead not strong), point light strong (snow
+        // reflects sky everywhere).
+        dirLightIntensity:   0.75,
+        pointLightIntensity: 0.7,
     },
     space: {
         particleColor: '#ffffff',
@@ -120,6 +152,11 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         // simulating reflection off a planet / ship.
         dirLightPos:   { x:  28, y: 30, z: -18 },
         pointLightPos: { x: -22, y: 16, z:  12 },
+        // Round 60 — dim vacuum: dir is the dimmest (no atmosphere
+        // to scatter), point light very dim (no fill). The scene
+        // is mostly black with one directional source.
+        dirLightIntensity:   0.4,
+        pointLightIntensity: 0.25,
     },
     dungeon: {
         particleColor: '#a06cd5',
@@ -134,6 +171,11 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         // fill from behind (torch glow feel).
         dirLightPos:   { x:   2, y: 26, z:   4 },
         pointLightPos: { x: -10, y:  4, z:  -6 },
+        // Round 60 — torch glow: dir moderate (shaft of light is
+        // concentrated, not room-wide), point light dim (single
+        // torch, not a chandelier).
+        dirLightIntensity:   0.5,
+        pointLightIntensity: 0.3,
     },
 };
 

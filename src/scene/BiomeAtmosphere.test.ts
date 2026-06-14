@@ -160,6 +160,65 @@ describe('BiomeAtmosphere', () => {
         }
     });
 
+    it('every biome has a positive finite dirLightIntensity (round 60)', () => {
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            expect(Number.isFinite(atm.dirLightIntensity)).toBe(true);
+            expect(atm.dirLightIntensity).toBeGreaterThan(0);
+        }
+    });
+
+    it('every biome has a positive finite pointLightIntensity (round 60)', () => {
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            expect(Number.isFinite(atm.pointLightIntensity)).toBe(true);
+            expect(atm.pointLightIntensity).toBeGreaterThan(0);
+        }
+    });
+
+    it('desert has the strongest dir light (sun-drenched) and space the dimmest (round 60)', () => {
+        const desert = getBiomeAtmosphere('desert');
+        const space  = getBiomeAtmosphere('space');
+        expect(desert.dirLightIntensity).toBeGreaterThan(space.dirLightIntensity);
+    });
+
+    it('ice has the strongest point light (snow reflects sky) and space the dimmest (round 60)', () => {
+        const ice   = getBiomeAtmosphere('ice');
+        const space = getBiomeAtmosphere('space');
+        expect(ice.pointLightIntensity).toBeGreaterThan(space.pointLightIntensity);
+    });
+
+    it('intensity values are in the sane Three.js range (0, 2] (round 60)', () => {
+        // Three.js clamps intensity at 0 (no lower bound on the
+        // engine side) but 2 is a generous upper limit — anything
+        // above 2 is usually a bug.
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            expect(atm.dirLightIntensity).toBeLessThanOrEqual(2);
+            expect(atm.pointLightIntensity).toBeLessThanOrEqual(2);
+        }
+    });
+
+    it('point light intensity is always ≤ dir light intensity (fill < key, round 60)', () => {
+        // Sanity: a fill light should never overpower the key
+        // light, or the mood cue inverts (back of scene brighter
+        // than front).
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            expect(atm.pointLightIntensity).toBeLessThanOrEqual(atm.dirLightIntensity);
+        }
+    });
+
+    it('6 biomes have distinct (dir, point) intensity pairs (round 60)', () => {
+        const seen = new Set<string>();
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            const sig = `${atm.dirLightIntensity}|${atm.pointLightIntensity}`;
+            expect(seen.has(sig)).toBe(false);
+            seen.add(sig);
+        }
+    });
+
     it('produces the same atmosphere on repeat calls (deterministic + cached)', () => {
         const a = getBiomeAtmosphere('forest');
         const b = getBiomeAtmosphere('forest');

@@ -268,13 +268,21 @@ export class SceneManager {
             // angled sunbeams). The position is a unit vector ×
             // distance in world units; we feed the raw triple.
             this.dirLight.position.set(atm.dirLightPos.x, atm.dirLightPos.y, atm.dirLightPos.z);
+            // Round 60 — directional light INTENSITY per biome
+            // (e.g. desert = 0.95 strong sun, space = 0.4 dim
+            // star, ice = 0.75 even noon). Replaces the static
+            // constructor default of 0.8 with the per-biome value.
+            this.dirLight.intensity = atm.dirLightIntensity;
         }
         if (this.pointLight) {
             // The point light gets the same tint at lower
             // intensity so the back-fill doesn't overpower the
             // key light. Keeps the biome's signature readable.
             this.pointLight.color = new THREE.Color(lightColorInt);
-            this.pointLight.intensity = 0.45;
+            // Round 60 — point light INTENSITY per biome (e.g.
+            // ice = 0.7 strong snow fill, space = 0.25 dim
+            // vacuum). Replaces the round 58 hardcoded 0.45.
+            this.pointLight.intensity = atm.pointLightIntensity;
             // Round 59 — point light position per biome (e.g.
             // dungeon = low / behind, space = high / opposite
             // side). Feeds the back-fill direction.
