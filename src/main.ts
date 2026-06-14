@@ -38,6 +38,7 @@ import { HotReloadController } from './scene/HotReloadController';
 import { SceneTransitions } from './scene/SceneTransitions';
 import { NpcCombat } from './scene/NpcCombat';
 import { generateDungeon, generateDungeonWithWeights, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
+import { renderMiniMap } from './world/MiniMap';
 import { biomeForVisualStyle } from './world/WfcBiomes';
 import { getBiomeAtmosphere } from './scene/BiomeAtmosphere';
 import { getBiomeAudio } from './audio/BiomeAudio';
@@ -491,6 +492,13 @@ class App {
             this.scene.setBiomeAtmosphere(getBiomeAtmosphere(themedBiome.id));
             this.audio.setBiomeAmbient(themedBiome.id, getBiomeAudio(themedBiome.id));
             this.audio.setBiomeSfx(themedBiome.id, getBiomeAudio(themedBiome.id));
+            // Round 63 — render an 80×60 PNG thumbnail of the
+            // dungeon grid with the resolved biome's tile
+            // palette and persist it on the WorldState. The HUD
+            // reads `worldState.lastMinimap` to show the player
+            // a visual preview of their last visited dimension
+            // (and the snapshot survives save → reload).
+            this.worldState.lastMinimap = renderMiniMap(themedDungeon.tiles, themedBiome.id);
             // Spawn a wave of NPCs tagged with the theme's archetype hints.
             const archetypeIds = sceneBp.npcArchetypeHints.map(a => a as string);
             const spawned = this.scene.spawnNpcWave(sceneBp.npcCount, archetypeIds);
