@@ -936,3 +936,158 @@ describe('WorldState — round 54 hasFailedSnapshot()', () => {
         expect(ws.hasFailedSnapshot()).toBe(false);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 72 — `lastSceneEventChain` full-timeline persistence.
+//
+// Complements the round-47 scalars (which store COUNTS only)
+// with the full `{ kind, delaySecs, payload }[]` so a future
+// "replay events" UI can render the timeline. Set via
+// `setLastSceneEventChain` (DM path) or via
+// `updateLastSceneBlueprintFull` (non-DM path). Cleared when
+// the full snapshot is cleared or `setLastSceneEventChain(null)`.
+// ---------------------------------------------------------------------------
+
+describe('WorldState — round 72 lastSceneEventChain persistence', () => {
+    const SAMPLE_CHAIN = [
+        { kind: 'spawn_wave',    delaySecs: 5,  payload: 'forest_spawn_wave_2' },
+        { kind: 'echo_lore',     delaySecs: 13, payload: 'forest_echo_lore_4' },
+        { kind: 'treasure_drop', delaySecs: 21, payload: 'forest_treasure_drop_0' },
+    ];
+
+    test('lastSceneEventChain_defaults_to_null', () => {
+        const ws = new WorldState('p', 'P');
+        expect(ws.lastSceneEventChain).toBeNull();
+    });
+
+    test('setLastSceneEventChain_stores_array', () => {
+        const ws = new WorldState('p', 'P');
+        ws.setLastSceneEventChain(SAMPLE_CHAIN);
+        expect(ws.lastSceneEventChain).not.toBeNull();
+        expect(ws.lastSceneEventChain?.length).toBe(3);
+        expect(ws.lastSceneEventChain?.[0].kind).toBe('spawn_wave');
+        expect(ws.lastSceneEventChain?.[2].payload).toBe('forest_treasure_drop_0');
+    });
+
+    test('setLastSceneEventChain_deep_clones_so_caller_mutation_does_not_leak', () => {
+        // The round-47 scalars don't have this concern (numbers),
+        // but the chain is an array of objects — a future caller
+        // might mutate the source after storing it. The
+        // defensive clone mirrors the snapshot write in
+        // `updateLastSceneBlueprintFull`.
+        const ws = new WorldState('p', 'P');
+        const source = [
+            { kind: 'spawn_wave', delaySecs: 5, payload: '0_0' },
+        ];
+        ws.setLastSceneEventChain(source);
+        // Mutate the source AFTER storing.
+        source[0].payload = 'MUTATED';
+        source.push({ kind: 'echo_lore', delaySecs: 13, payload: 'evil' });
+        // The stored copy must NOT reflect the mutation.
+        expect(ws.lastSceneEventChain?.[0].payload).toBe('0_0');
+        expect(ws.lastSceneEventChain?.length).toBe(1);
+    });
+
+    test('setLastSceneEventChain_null_clears', () => {
+        const ws = new WorldState('p', 'P');
+        ws.setLastSceneEventChain(SAMPLE_CHAIN);
+        expect(ws.lastSceneEventChain).not.toBeNull();
+        ws.setLastSceneEventChain(null);
+        expect(ws.lastSceneEventChain).toBeNull();
+    });
+
+    test('updateLastSceneBlueprintFull_syncs_chain_from_snapshot', () => {
+        // The non-DM path goes through `updateLastSceneBlueprintFull`
+        // (round 49) which receives the full snapshot. The
+        // round-72 extension should auto-sync the chain so the
+        // DM and non-DM paths produce the same WorldState shape.
+        const ws = new WorldState('p', 'P');
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        expect(ws.lastSceneEventChain).not.toBeNull();
+        expect(ws.lastSceneEventChain?.length).toBe(SAMPLE_SNAPSHOT.eventChain.length);
+        expect(ws.lastSceneEventChain?.[0].kind).toBe('spawn_wave');
+        expect(ws.lastSceneEventChain?.[3].payload).toBe('0_3');
+    });
+
+    test('updateLastSceneBlueprintFull_null_clears_chain', () => {
+        // The null branch should also clear the chain
+        // (symmetric with the setLastSceneEventChain(null)
+        // path). Without this, clearing the snapshot would
+        // leave a stale chain in WorldState.
+        const ws = new WorldState('p', 'P');
+        ws.updateLastSceneBlueprintFull(SAMPLE_SNAPSHOT);
+        expect(ws.lastSceneEventChain).not.toBeNull();
+        ws.updateLastSceneBlueprintFull(null);
+        expect(ws.lastSceneEventChain).toBeNull();
+    });
+
+    test('chain_round_trips_through_saveToJSON_loadFromJSON', () => {
+        const ws = new WorldState('p', 'P');
+        ws.setLastSceneEventChain(SAMPLE_CHAIN);
+        const json = ws.saveToJSON();
+        const parsed = JSON.parse(json);
+        // The field is present (not undefined) because
+        // `?? undefined` only omits null chains.
+        expect(parsed.lastSceneEventChain).toBeDefined();
+        expect(parsed.lastSceneEventChain.length).toBe(3);
+        expect(parsed.lastSceneEventChain[1].kind).toBe('echo_lore');
+        // Round-trip: a fresh WorldState recovers the chain.
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastSceneEventChain).not.toBeNull();
+        expect(fresh.lastSceneEventChain?.length).toBe(3);
+        expect(fresh.lastSceneEventChain?.[2].payload).toBe('forest_treasure_drop_0');
+    });
+
+    test('null_chain_round_trips_through_saveToJSON_loadFromJSON', () => {
+        // A save that never entered a dimension should
+        // omit the field entirely (compact payload).
+        const ws = new WorldState('p', 'P');
+        const json = ws.saveToJSON();
+        const parsed = JSON.parse(json);
+        expect(parsed.lastSceneEventChain).toBeUndefined();
+        // Round-trip: still null after load.
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.lastSceneEventChain).toBeNull();
+    });
+
+    test('back_compat_pre_round_72_save_falls_back_to_lastSceneBlueprint_chain', () => {
+        // Pre-round-72 saves don't carry `lastSceneEventChain`
+        // but DO carry `lastSceneBlueprint` (round 49+). The
+        // loader should fall back to the snapshot's event
+        // chain so a "replay events" UI works on old saves.
+        const oldJson = JSON.stringify({
+            player: { accountId: 'p' },
+            progression: { level: 1, xp: 0, talentPoints: 0 },
+            wallet: {},
+            inventory: [],
+            dimensionHistory: [],
+            // Round 49+ snapshot, no round-72 chain.
+            lastSceneBlueprint: SAMPLE_SNAPSHOT,
+        });
+        const fresh = new WorldState('p', 'P');
+        const ok = fresh.loadFromJSON(oldJson);
+        expect(ok).toBe(true);
+        expect(fresh.lastSceneEventChain).not.toBeNull();
+        expect(fresh.lastSceneEventChain?.length).toBe(SAMPLE_SNAPSHOT.eventChain.length);
+        expect(fresh.lastSceneEventChain?.[0].kind).toBe('spawn_wave');
+    });
+
+    test('back_compat_pre_round_49_save_loads_with_null_chain', () => {
+        // Pre-round-49 saves have NEITHER `lastSceneEventChain`
+        // NOR `lastSceneBlueprint`. The chain loader must
+        // default to null without crashing.
+        const oldJson = JSON.stringify({
+            player: { accountId: 'p' },
+            progression: { level: 1, xp: 0, talentPoints: 0 },
+            wallet: {},
+            inventory: [],
+            dimensionHistory: [],
+        });
+        const fresh = new WorldState('p', 'P');
+        const ok = fresh.loadFromJSON(oldJson);
+        expect(ok).toBe(true);
+        expect(fresh.lastSceneEventChain).toBeNull();
+    });
+});

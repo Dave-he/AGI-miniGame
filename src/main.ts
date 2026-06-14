@@ -291,6 +291,14 @@ class App {
                     eventCount: dmEventChain.length,
                     archetypeHintCount: 0,
                 });
+                // Round 72 — also store the full event-chain
+                // timeline in WorldState so a future
+                // "replay events" UI can read it. The non-DM
+                // path syncs this automatically via
+                // `updateLastSceneBlueprintFull` (round 49
+                // extension), so the DM path's manual call
+                // keeps the two paths symmetric.
+                this.worldState.setLastSceneEventChain(dmEventChain);
             },
         });
         this.replay = new SessionReplay(this.analytics, 200);
@@ -1316,6 +1324,13 @@ class App {
                 this.worldState.lastSceneBpm = backup.blueprint.musicBpm;
                 this.worldState.lastSceneEventCount = backup.blueprint.eventChain.length;
                 this.worldState.lastSceneArchetypeHintCount = backup.blueprint.npcArchetypeHints.length;
+                // Round 72 — also restore the full event-chain
+                // timeline from the backup so a "replay events"
+                // UI can show the events that the rollback
+                // undid. Mirrors the DM-path write above; the
+                // non-DM path syncs this automatically via
+                // `updateLastSceneBlueprintFull`.
+                this.worldState.setLastSceneEventChain(backup.blueprint.eventChain);
             }
             this.worldState.setLastDimensionSeed(backup.seed);
             this.worldState.lastBiome = backup.biome;

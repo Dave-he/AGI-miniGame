@@ -3,6 +3,7 @@ import { Wallet, CurrencyType } from '../economy/Wallet';
 import { Inventory, InventoryItem, Reward } from '../economy/Inventory';
 import type { BiomeId } from '../ai/SceneGen';
 import { defaultWfcWeights } from '../ai/SceneGen';
+import type { EventStep } from '../ai/SceneGen';
 import type { NpcDisposition, NpcMemoryKind } from './NpcMind';
 
 export interface DimensionInfo {
@@ -222,6 +223,22 @@ export class WorldState {
     public lastSceneArchetypeHintCount: number | null = null;
 
     /**
+     * Round 72 — full event-chain timeline for the most recent
+     * dimension. Complements the 4 scalars above (which only
+     * store COUNTS) with the full `{ kind, delaySecs, payload }`
+     * entries. The non-DM path gets it from
+     * `SceneBlueprint.eventChain`; the DM path gets it from
+     * `synthesizeDmEventChain` (round 71). A future
+     * "replay events" UI reads this to render the timeline.
+     *
+     * Back-compat: pre-round-72 saves won't have this field; the
+     * loader defaults it to `null`. The full-snapshot path
+     * (round-49+) recovers the chain from `lastSceneBlueprint.eventChain`
+     * so reloads from pre-round-72 saves still see the timeline.
+     */
+    public lastSceneEventChain: EventStep[] | null = null;
+
+    /**
      * Round 47 — replace the SceneBlueprint scalars.
      * Called from `App.enterNewDimension()` after every
      * successful `themeToScene` call.
@@ -243,6 +260,26 @@ export class WorldState {
             this.lastSceneEventCount = scalars.eventCount;
             this.lastSceneArchetypeHintCount = scalars.archetypeHintCount;
         }
+    }
+
+    /**
+     * Round 72 — replace the full event-chain timeline.
+     * The DM path passes the `synthesizeDmEventChain` output
+     * (round 71); the non-DM path's `updateLastSceneBlueprintFull`
+     * passes the snapshot's `eventChain` automatically. Pass
+     * `null` to clear (e.g. on rollback-to-nothing or when the
+     * player chooses a hard reset).
+     *
+     * The array is deep-cloned so callers can mutate the source
+     * without affecting the snapshot. Mirrors the defensive clone
+     * in `updateLastSceneBlueprintFull`'s snapshot write.
+     */
+    setLastSceneEventChain(chain: EventStep[] | null): void {
+        if (!chain) {
+            this.lastSceneEventChain = null;
+            return;
+        }
+        this.lastSceneEventChain = chain.map(e => ({ kind: e.kind, delaySecs: e.delaySecs, payload: e.payload }));
     }
 
     /**
@@ -384,6 +421,11 @@ export class WorldState {
         if (!snap) {
             this.lastSceneBlueprint = null;
             this.updateLastSceneBlueprint(null);
+            // Round 72 — also clear the round-72 chain when the
+            // full snapshot is cleared. Symmetric with the
+            // setLastSceneEventChain(snap.eventChain) write in
+            // the non-null branch below.
+            this.setLastSceneEventChain(null);
             return;
         }
         // Defensive clone — callers may mutate the source object
@@ -407,6 +449,13 @@ export class WorldState {
             eventCount: snap.eventChain.length,
             archetypeHintCount: snap.npcArchetypeHints.length,
         });
+        // Round 72 — also sync the full event-chain timeline so
+        // a future "replay events" UI can read it from one
+        // place. We pass the cloned chain (defensive copy from
+        // the snapshot write above), not the caller's source
+        // array, so subsequent mutations to either don't
+        // cross-contaminate.
+        this.setLastSceneEventChain(snap.eventChain);
     }
 
     clearActiveDimension(): DimensionInfo | null {
@@ -577,6 +626,11 @@ export class WorldState {
             lastSceneBpm: this.lastSceneBpm ?? undefined,
             lastSceneEventCount: this.lastSceneEventCount ?? undefined,
             lastSceneArchetypeHintCount: this.lastSceneArchetypeHintCount ?? undefined,
+            // Round 72 — persist the full event-chain timeline.
+            // Omitted when null so a save that never entered a
+            // dimension (or a pre-round-72 save) stays compact
+            // and back-compat readers don't see a noisy `null`.
+            lastSceneEventChain: this.lastSceneEventChain ?? undefined,
             // Round 49 — persist the full SceneBlueprint
             // snapshot (wfcTileWeights + biomeId + densities
             // + eventChain + npcArchetypeHints). Round 50
@@ -696,6 +750,22 @@ export class WorldState {
                     archetypeHintCount: this.lastSceneArchetypeHintCount,
                     biomeId: this.lastBiome,
                 });
+            }
+
+            // Round 72 — restore the full event-chain timeline.
+            // Pre-round-72 saves won't carry `lastSceneEventChain`,
+            // so we fall back to the round-49 full snapshot's
+            // `eventChain` (when present) before defaulting to
+            // null. The fallback chain lets a "replay events"
+            // UI work on pre-round-72 saves too.
+            if (Array.isArray(data.lastSceneEventChain)) {
+                this.setLastSceneEventChain(
+                    data.lastSceneEventChain as Array<{ kind: string; delaySecs: number; payload: string }>,
+                );
+            } else if (this.lastSceneBlueprint && Array.isArray(this.lastSceneBlueprint.eventChain)) {
+                this.setLastSceneEventChain(this.lastSceneBlueprint.eventChain);
+            } else {
+                this.lastSceneEventChain = null;
             }
 
             // Round 50 — restore the persisted seed. Older saves

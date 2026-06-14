@@ -872,6 +872,69 @@ describe('App — round 71 DM event chain wiring', () => {
         const scalars = setLastSceneBlueprint.mock.calls[0]?.[0] as { eventCount: number };
         expect(scalars.eventCount).toBe(3);
     });
+
+    // -----------------------------------------------------------------------
+    // Round 72 — `lastSceneEventChain` WorldState field. The DM
+    // path's `synthesizeDmEventChain` output (round 71) now also
+    // lands in WorldState via `setLastSceneEventChain`. A future
+    // "replay events" UI reads it from there.
+    // -----------------------------------------------------------------------
+
+    test('dm_dimension_writes_full_event_chain_to_worldState', () => {
+        // Stub `generateDungeon` to return an 8x8 grid with
+        // 2 chests + 1 shrine + 1 trap → 5 events.
+        const wfcModule = require('./world/WfcLevelGen') as typeof import('./world/WfcLevelGen');
+        (wfcModule.generateDungeon as jest.Mock).mockImplementation((w: number, h: number) => {
+            const tiles: number[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 0));
+            tiles[1][1] = 3; // CHEST
+            tiles[2][2] = 3; // CHEST
+            tiles[3][3] = 7; // SHRINE
+            tiles[4][4] = 6; // TRAP
+            return { tiles, success: true };
+        });
+
+        (app as unknown as { dm: { run: (line: string) => unknown } }).dm.run('dim 8 8 cyberpunk');
+        const ws = (app as unknown as {
+            worldState: { lastSceneEventChain: Array<{ kind: string; delaySecs: number; payload: string }> | null };
+        }).worldState;
+        expect(ws.lastSceneEventChain).not.toBeNull();
+        expect(ws.lastSceneEventChain?.length).toBe(5);
+        // First event is treasure_drop (chest → conditional kind).
+        expect(ws.lastSceneEventChain?.[0].kind).toBe('treasure_drop');
+        // Payloads embed the biome id (round 71 contract).
+        expect(ws.lastSceneEventChain?.[0].payload).toContain('cyberpunk');
+        // Delays follow the 5 + 8n formula (round 71).
+        expect(ws.lastSceneEventChain?.[0].delaySecs).toBe(5);
+        expect(ws.lastSceneEventChain?.[4].delaySecs).toBe(37);
+    });
+
+    test('dm_dimension_worldState_chain_is_isolated_from_dungeon_array', () => {
+        // The synthesized chain is built from the WFC grid
+        // (a local var in main.ts). A future caller mutating
+        // the grid post-render must not affect the stored
+        // chain — `setLastSceneEventChain` does a defensive
+        // clone, mirroring the round-49 snapshot write.
+        const wfcModule = require('./world/WfcLevelGen') as typeof import('./world/WfcLevelGen');
+        let storedTiles: number[][] = [];
+        (wfcModule.generateDungeon as jest.Mock).mockImplementation((w: number, h: number) => {
+            storedTiles = Array.from({ length: h }, () => Array.from({ length: w }, () => 0));
+            storedTiles[1][1] = 3; // CHEST
+            return { tiles: storedTiles, success: true };
+        });
+
+        (app as unknown as { dm: { run: (line: string) => unknown } }).dm.run('dim 8 8 cyberpunk');
+        const ws = (app as unknown as {
+            worldState: { lastSceneEventChain: Array<{ kind: string; delaySecs: number; payload: string }> | null };
+        }).worldState;
+        const chainBefore = ws.lastSceneEventChain;
+        // Mutate the dungeon array AFTER the DM call returns.
+        storedTiles[2][2] = 7; // SHRINE
+        // The stored chain must NOT reflect the post-mutation
+        // kind set (no boss_hint should appear if it wasn't
+        // in the chain at store time).
+        const kinds = (chainBefore ?? []).map(e => e.kind);
+        expect(kinds).not.toContain('boss_hint');
+    });
 });
 
 // ---------------------------------------------------------------------------
