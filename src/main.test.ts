@@ -1519,3 +1519,360 @@ describe('App — round 69 WasmLatencyStats wiring', () => {
         expect(setWasmLatencyStats.mock.calls.length).toBe(beforeCalls);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 80 — App-level e2e for the bridge → themeToScene →
+// WorldState + HUD pipeline.
+//
+// The round-48/51 WASM bridge exports live in `src/ai/SceneGenWasm.ts`
+// and have their own unit tests in `SceneGenWasm.test.ts`. The
+// round-65/66/71/77/78 describe blocks above stub either
+// `bridge.planAndLoad` (with a hard-coded blueprint) OR
+// `sceneGenWasm = null` (to force the TS-mirror path) — but no
+// existing test stubs BOTH at once and walks the full
+// `enterNewDimension` flow to verify the WorldState + HUD end
+// state.
+//
+// This block closes that gap. The 5 tests verify:
+//   1. The WASM bridge's `theme_to_scene_json` output is what
+//      gets persisted to `worldState.lastSceneBlueprint` (NOT
+//      the bridge's blueprint — they serve different purposes:
+//      bridge blueprint = `worldState.activeDimension`;
+//      themeToScene output = the persisted scene structure).
+//   2. The seed flows from `bridge.planAndLoad` through
+//      `themeToScene` to `lastDimensionSeed` byte-identical.
+//   3. The TS-mirror fallback path (`sceneGenWasm = null`)
+//      produces a valid WorldState + HUD state too — no
+//      "WASM-only" assumptions leak into the WorldState writes.
+//   4. The HUD's `setLastSceneEventChain` and
+//      `setLastSceneBlueprint` reflect the WASM-bridge output
+//      (the user-visible signal).
+//   5. The `lastMinimap` is rendered + persisted for both
+//      paths (the round-63/64 PNG thumbnail).
+// ---------------------------------------------------------------------------
+
+describe('App — round 80 e2e: bridge → themeToScene → WorldState + HUD', () => {
+    function makeBridgeBlueprint(seed: number, visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon', musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse') {
+        return {
+            id: `dim_${visualStyle}_${seed}`,
+            name: `e2e ${visualStyle}`,
+            description: 'round 80 e2e fixture',
+            atomIds: ['tower_defense'],
+            atomWeights: { tower_defense: 1 },
+            difficulty: 0.5,
+            rules: [],
+            rewards: [],
+            theme: { name: 'e2e', visualStyle, musicMood, colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1'] },
+            timeLimitSecs: 60,
+            objectives: [],
+        };
+    }
+
+    function makeWasmStub(bpOverrides: Partial<{
+        wfcTileWeights: [number, number, number, number, number, number, number, number];
+        biomeId: string;
+        baseNpcDensity: number;
+        npcDensity: number;
+        npcCount: number;
+        eventChain: Array<{ kind: string; delaySecs: number; payload: string }>;
+        musicBpm: number;
+        npcArchetypeHints: string[];
+    }> = {}) {
+        // The 4 functions the App calls into. The
+        // themeToScene WASM call returns a
+        // snake_case JSON; the others are stubbed with
+        // a no-op shape (the App only checks `r.configSource`
+        // tag for them, not the actual values).
+        return {
+            theme_to_scene_json: (themeJson: string) => {
+                const theme = JSON.parse(themeJson);
+                return JSON.stringify({
+                    wfc_tile_weights: bpOverrides.wfcTileWeights ?? [5, 4, 2, 2, 1, 0, 2, 1],
+                    biome_id: bpOverrides.biomeId ?? 'verdant-ruins',
+                    base_npc_density: bpOverrides.baseNpcDensity ?? 0.4,
+                    npc_density: bpOverrides.npcDensity ?? 0.4,
+                    npc_count: bpOverrides.npcCount ?? 6,
+                    event_chain: bpOverrides.eventChain ?? [
+                        { kind: 'spawn_wave', delay_secs: 5, payload: 'wasm_spawn_wave_0' },
+                        { kind: 'echo_lore', delay_secs: 13, payload: 'wasm_echo_lore_1' },
+                        { kind: 'treasure_drop', delay_secs: 21, payload: 'wasm_treasure_drop_2' },
+                    ],
+                    music_bpm: bpOverrides.musicBpm ?? 110,
+                    npc_archetype_hints: bpOverrides.npcArchetypeHints ?? ['mage', 'beast'],
+                    _echo: { visual_style: theme.visual_style, seed: theme.seed },
+                });
+            },
+            wasm_module_version: () => '0.2.0-round80-e2e',
+            build_generation_config_with_mood_json: (argsJson: string) => {
+                const args = JSON.parse(argsJson);
+                return JSON.stringify({
+                    min_atoms: 1,
+                    max_atoms: 2,
+                    difficulty_range_lo: 0.3,
+                    difficulty_range_hi: 0.8,
+                    player_level: args.player_level,
+                    preferred_types: ['tower_defense'],
+                    excluded_types: [],
+                    reward_multiplier: 1.0,
+                });
+            },
+            mood_palette_json: (moodJson: string) => {
+                const mood = JSON.parse(moodJson);
+                // Just emit a deterministic 3-color palette from the mood.
+                const r = Math.floor(mood.friendly * 255);
+                const g = Math.floor(mood.fear * 255);
+                const b = Math.floor(mood.trust * 255);
+                return JSON.stringify({ colors: [`#${r.toString(16).padStart(2, '0')}0000`, `#00${g.toString(16).padStart(2, '0')}00`, `#0000${b.toString(16).padStart(2, '0')}`] });
+            },
+            mood_4th_sentence_for_json: (_argsJson: string) => JSON.stringify({ sentence: 'wasm-4th' }),
+        };
+    }
+
+    function stubSideEffects(app: App) {
+        jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
+            .mockReturnValue(['mock_npc_a']);
+        jest
+            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        return {
+            setLastBiome: jest
+                .spyOn((app as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome')
+                .mockImplementation(() => undefined),
+            setMinimap: jest
+                .spyOn((app as unknown as { hud: { setMinimap: (m: string | null) => void } }).hud, 'setMinimap')
+                .mockImplementation(() => undefined),
+            setLastSceneBlueprint: jest
+                .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
+                .mockImplementation(() => undefined),
+            setLastSceneEventChain: jest
+                .spyOn((app as unknown as { hud: { setLastSceneEventChain: (c: unknown) => void } }).hud, 'setLastSceneEventChain')
+                .mockImplementation(() => undefined),
+            updateLastSceneBlueprintFull: jest
+                .spyOn((app as unknown as { worldState: { updateLastSceneBlueprintFull: (s: unknown) => void } }).worldState, 'updateLastSceneBlueprintFull')
+                .mockImplementation(() => undefined),
+        };
+    }
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('wasm_bridge_themeToScene_output_persists_to_lastSceneBlueprint', async () => {
+        // The bridge's `planAndLoad` returns a "dimension
+        // blueprint" (the high-level atom combo + theme).
+        // The WASM `themeToScene` returns the "scene
+        // blueprint" (WFC weights, biome, NPC density,
+        // event chain, BPM, archetype hints). The latter
+        // is what gets persisted to `lastSceneBlueprint`
+        // (the round-49 full snapshot used by reload to
+        // re-render the exact dungeon).
+        const app = makeApp();
+        stubSideEffects(app);
+        const seed = 12345;
+        jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async () => ({
+                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e' },
+                atomIds: ['tower_defense'],
+                blueprint: makeBridgeBlueprint(seed, 'cyberpunk', 'pulse'),
+                modules: [],
+                seed,
+                configSource: 'wasm',
+            }));
+        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = makeWasmStub({
+            npcCount: 7,
+            musicBpm: 140,
+            biomeId: 'neon-harbor',
+            npcArchetypeHints: ['mage', 'beast', 'thief'],
+        });
+
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+
+        // The persisted snapshot is the WASM output
+        // (npcCount=7, bpm=140, biome=neon-harbor), NOT
+        // the bridge blueprint (npcCount=0 — the bridge
+        // blueprint has no NPC count).
+        const fullCall = (app as unknown as {
+            worldState: { updateLastSceneBlueprintFull: jest.Mock };
+        }).worldState.updateLastSceneBlueprintFull.mock.calls[0][0] as {
+            npcCount: number;
+            musicBpm: number;
+            biomeId: string;
+            npcArchetypeHints: string[];
+        };
+        expect(fullCall.npcCount).toBe(7);
+        expect(fullCall.musicBpm).toBe(140);
+        expect(fullCall.biomeId).toBe('neon-harbor');
+        expect(fullCall.npcArchetypeHints).toEqual(['mage', 'beast', 'thief']);
+    });
+
+    test('seed_flows_byte_identical_from_bridge_through_themeToScene_to_lastDimensionSeed', async () => {
+        // The seed used for WFC re-render (round 50) is
+        // the seed the bridge returned. A future
+        // contributor changing the seed-pipe must not
+        // drift it (e.g. calling `Date.now()` again
+        // would break save → reload byte-identical
+        // re-render).
+        const app = makeApp();
+        stubSideEffects(app);
+        const seed = 0xDEADBEEF;
+        jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async () => ({
+                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e' },
+                atomIds: ['tower_defense'],
+                blueprint: makeBridgeBlueprint(seed, 'cyberpunk', 'pulse'),
+                modules: [],
+                seed,
+                configSource: 'wasm',
+            }));
+        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = makeWasmStub();
+
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+
+        // The bridge-returned seed is exactly what
+        // WorldState.lastDimensionSeed should hold.
+        const ws = (app as unknown as { worldState: { lastDimensionSeed: number | null } }).worldState;
+        expect(ws.lastDimensionSeed).toBe(seed);
+    });
+
+    test('ts_mirror_fallback_persists_valid_lastSceneBlueprint_when_wasm_null', async () => {
+        // The round-48 contract: when `sceneGenWasm` is
+        // null, the TS-mirror's `themeToScene` produces
+        // the blueprint. Verify the TS path ALSO writes
+        // `lastSceneBlueprint` (so the WorldState
+        // doesn't go blank when WASM fails to load).
+        const app = makeApp();
+        stubSideEffects(app);
+        const seed = 7777;
+        jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async () => ({
+                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e' },
+                atomIds: ['tower_defense'],
+                blueprint: makeBridgeBlueprint(seed, 'fantasy', 'cheerful'),
+                modules: [],
+                seed,
+                configSource: 'ts-fallback',
+            }));
+        // Force the TS-mirror path.
+        (app as unknown as { sceneGenWasm: null }).sceneGenWasm = null;
+
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+
+        // The TS-mirror path still calls
+        // `updateLastSceneBlueprintFull` exactly once.
+        const ws = (app as unknown as {
+            worldState: { updateLastSceneBlueprintFull: jest.Mock };
+        }).worldState.updateLastSceneBlueprintFull;
+        expect(ws).toHaveBeenCalledTimes(1);
+        // And the snapshot is non-null with the
+        // expected biome ('forest' — the TS-mirror's
+        // default for `fantasy`).
+        const fullCall = ws.mock.calls[0][0] as { biomeId: string; npcCount: number; eventChain: unknown[] };
+        expect(fullCall.biomeId).toBeTruthy();
+        expect(fullCall.npcCount).toBeGreaterThan(0);
+        expect(Array.isArray(fullCall.eventChain)).toBe(true);
+    });
+
+    test('hud_setLastSceneBlueprint_and_setLastSceneEventChain_reflect_wasm_output', async () => {
+        // The HUD's user-visible signal is two
+        // functions: `setLastSceneBlueprint(scalars)`
+        // (round 47) and `setLastSceneEventChain(chain)`
+        // (round 73). Both must reflect the WASM bridge
+        // output, not the bridge blueprint, not stale
+        // state from a prior dimension.
+        const app = makeApp();
+        const stubs = stubSideEffects(app);
+        const seed = 4242;
+        jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async () => ({
+                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e' },
+                atomIds: ['tower_defense'],
+                blueprint: makeBridgeBlueprint(seed, 'cyberpunk', 'pulse'),
+                modules: [],
+                seed,
+                configSource: 'wasm',
+            }));
+        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = makeWasmStub({
+            npcCount: 5,
+            musicBpm: 130,
+            eventChain: [
+                { kind: 'spawn_wave', delaySecs: 5, payload: 'hud_spawn_0' },
+                { kind: 'echo_lore', delaySecs: 13, payload: 'hud_echo_1' },
+            ],
+        });
+
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+
+        // setLastSceneBlueprint is called once with the
+        // WASM-derived scalars (npcCount=5, bpm=130, 2
+        // events, 2 archetype hints).
+        expect(stubs.setLastSceneBlueprint).toHaveBeenCalledTimes(1);
+        const scalars = stubs.setLastSceneBlueprint.mock.calls[0][0] as {
+            npcCount: number; bpm: number; eventCount: number; archetypeHintCount: number;
+        };
+        expect(scalars.npcCount).toBe(5);
+        expect(scalars.bpm).toBe(130);
+        expect(scalars.eventCount).toBe(2);
+        expect(scalars.archetypeHintCount).toBe(2);
+        // setLastSceneEventChain is called with the
+        // 2-event chain.
+        expect(stubs.setLastSceneEventChain).toHaveBeenCalledTimes(1);
+        const chain = stubs.setLastSceneEventChain.mock.calls[0][0] as Array<{ kind: string; payload: string }>;
+        expect(chain).toHaveLength(2);
+        expect(chain[0].kind).toBe('spawn_wave');
+        expect(chain[1].payload).toBe('hud_echo_1');
+    });
+
+    test('lastMinimap_is_rendered_and_pushed_to_HUD_on_both_paths', async () => {
+        // The round-63/64 minimap is rendered + persisted
+        // + pushed to the HUD on every `enterNewDimension`.
+        // Verify both the WASM path AND the TS-mirror
+        // path produce a non-null minimap. (The test
+        // stays robust on the exact PNG payload — the
+        // round-63 contract is "data URL starts with
+        // `data:image/png` or is null on jsdom painter
+        // failures; we just check non-null here.)
+        for (const wasmMod of [makeWasmStub(), null] as const) {
+            const app = makeApp();
+            const stubs = stubSideEffects(app);
+            jest
+                .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+                .mockImplementation(async () => ({
+                    suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e' },
+                    atomIds: ['tower_defense'],
+                    blueprint: makeBridgeBlueprint(11111, 'cyberpunk', 'pulse'),
+                    modules: [],
+                    seed: 11111,
+                    configSource: wasmMod ? 'wasm' : 'ts-fallback',
+                }));
+            (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = wasmMod;
+
+            await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+
+            // setMinimap was called with a non-null
+            // argument.
+            expect(stubs.setMinimap).toHaveBeenCalledTimes(1);
+            const arg = stubs.setMinimap.mock.calls[0][0];
+            expect(arg).not.toBeNull();
+            // WorldState.lastMinimap was set to a
+            // non-null data URL.
+            const ws = (app as unknown as { worldState: { lastMinimap: string | null } }).worldState;
+            expect(ws.lastMinimap).not.toBeNull();
+
+            jest.restoreAllMocks();
+        }
+    });
+});
