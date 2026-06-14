@@ -1838,3 +1838,325 @@ describe('App — round 80 e2e: bridge → themeToScene → WorldState + HUD', (
         }
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 83 — rollback rehydrate e2e (round-79 telemetry gate).
+//
+// The round-80 block above proved the WASM `theme_to_scene_json`
+// output flows into `WorldState.lastSceneBlueprint` on
+// `enterNewDimension`. The round-55/79 blocks proved the
+// `rollbackToLastGood` step-by-step field restore + the
+// `rollbackCount` counter wiring. But no single test walked
+// the full lifecycle:
+//
+//   1. `enterNewDimension` with `makeWasmStub` (the round-82
+//      helper) writes stub A's output to WorldState
+//   2. The pre-failure `backupFailedSnapshot` captures that
+//      good state
+//   3. WorldState mutates (simulating a failed second
+//      `enterNewDimension` that bails mid-render)
+//   4. `rollbackToLastGood` restores the snapshot
+//   5. The WorldState + HUD rehydrate to stub A's output
+//
+// …plus the round-79 telemetry gate: the lifetime
+// `rollbackCount` persists across `saveGame` → `loadGame`
+// and the HUD's 🛟 row receives the persisted count.
+//
+// This block closes that gap. The 4 tests use the round-82
+// `makeWasmStub` helper (extracted last round specifically
+// for this kind of multi-step e2e flow), so no copy-pasted
+// factory code lives in this block.
+//
+// **Why this round matters**: the round-54 rollback UI is the
+// last line of defense for the player when a second
+// `enterNewDimension` corrupts the world. The round-72 event
+// chain + round-79 rollback counter are the only persistent
+// signals the player can see AFTER a reload. If the rollback
+// path silently drops the event chain (or the rollback
+// counter never reaches the HUD on load), the player can't
+// tell that a rollback happened — the recovery is invisible.
+// ---------------------------------------------------------------------------
+
+describe('App — round 83 e2e: rollback rehydrate from WASM-stub snapshot', () => {
+    // Local helper — `makeBridgeBlueprint` is identical to
+    // the round-80 fixture. Inlined here (instead of reaching
+    // into the round-80 describe's scope) so this block is
+    // self-contained.
+    function makeBridgeBlueprint(seed: number, visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon', musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse') {
+        return {
+            id: `dim_${visualStyle}_${seed}_r83`,
+            name: `e2e r83 ${visualStyle}`,
+            description: 'round 83 e2e fixture',
+            atomIds: ['tower_defense'],
+            atomWeights: { tower_defense: 1 },
+            difficulty: 0.5,
+            rules: [],
+            rewards: [],
+            theme: { name: 'e2e_r83', visualStyle, musicMood, colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1'] },
+            timeLimitSecs: 60,
+            objectives: [],
+        };
+    }
+
+    /**
+     * Drive a full `enterNewDimension` cycle with a custom
+     * `makeWasmStub` configuration. Returns a reference to
+     * the App for further assertions + the in-process stub
+     * for any post-call tweaks.
+     *
+     * **Critical**: we do NOT spy on
+     * `worldState.updateLastSceneBlueprintFull`,
+     * `worldState.clearFailedSnapshot`, or
+     * `worldState.setLastSceneEventChain` — those are the
+     * round-49/72/53 write paths that populate
+     * `lastSceneBlueprint` / `lastSceneEventChain` /
+     * `lastFailedSnapshot`. The round-80 test stubs them
+     * (because that test asserts on the spy calls, not the
+     * persisted state). The round-83 test, by contrast,
+     * needs the REAL writes to land so the rollback can
+     * capture + restore them. Stubbing them would short-
+     * circuit the persistence and the rollback would have
+     * nothing to restore.
+     */
+    async function enterDimensionWithStub(
+        app: App,
+        seed: number,
+        visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon',
+        musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse',
+        wasmOverrides: Parameters<typeof makeWasmStub>[0] = {},
+    ) {
+        jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async () => ({
+                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e r83' },
+                atomIds: ['tower_defense'],
+                blueprint: makeBridgeBlueprint(seed, visualStyle, musicMood),
+                modules: [],
+                seed,
+                configSource: 'wasm',
+            }));
+        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = makeWasmStub(wasmOverrides);
+        // Side-effect surface stubs — the rollback
+        // re-render path needs these. The round-50
+        // real-render pipeline calls into scene/audio
+        // for the visual + audio; the rollback's
+        // Step 3 re-invokes it. Stubbing them keeps
+        // the test free of WebGL + AudioContext.
+        jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
+            .mockReturnValue(['mock_npc_a']);
+        jest
+            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn(app as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition')
+            .mockImplementation(() => undefined);
+        // HUD setters — silent no-ops so the test
+        // asserts on the WorldState, not the HUD.
+        jest
+            .spyOn((app as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setMinimap: (m: string | null) => void } }).hud, 'setMinimap')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setNpcMindsSnapshot: (s: unknown) => void } }).hud, 'setNpcMindsSnapshot')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { hideRecoveryBanner: () => void } }).hud, 'hideRecoveryBanner')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setBackupAvailable: (b: boolean) => void } }).hud, 'setBackupAvailable')
+            .mockImplementation(() => undefined);
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+    }
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('rollback_rehydrates_lastSceneBlueprint_to_pre_failure_WASM_stub_state', async () => {
+        // The full rollback lifecycle:
+        //   1. enterNewDimension with stub A (npcCount=7,
+        //      bpm=140, biome=neon-harbor) → WorldState
+        //      has stub A's output
+        //   2. backupFailedSnapshot captures the
+        //      pre-failure state (= stub A)
+        //   3. WorldState mutates (simulate a failed
+        //      second dimension) → npcCount=999
+        //   4. rollbackToLastGood → WorldState back to
+        //      stub A (npcCount=7, bpm=140)
+        const app = makeApp();
+        const seed = 0xBEEF0001;
+        await enterDimensionWithStub(app, seed, 'cyberpunk', 'pulse', {
+            npcCount: 7,
+            musicBpm: 140,
+            biomeId: 'neon-harbor',
+            npcArchetypeHints: ['mage', 'beast', 'thief'],
+        });
+        // Capture the pre-failure state.
+        (app as unknown as { worldState: { backupFailedSnapshot: () => void } }).worldState.backupFailedSnapshot();
+        // Simulate the failed second dimension by
+        // mutating the WorldState directly. The
+        // round-54 backup field is still the stub A
+        // snapshot, so rollback should restore it.
+        const ws = (app as unknown as {
+            worldState: {
+                lastSceneBlueprint: { npcCount: number; musicBpm: number; biomeId: string } | null;
+                updateLastSceneBlueprintFull: (s: { npcCount: number; musicBpm: number; biomeId: string; npcArchetypeHints: string[] }) => void;
+            };
+        }).worldState;
+        ws.lastSceneBlueprint = { ...(ws.lastSceneBlueprint ?? { npcCount: 0, musicBpm: 0, biomeId: '' }), npcCount: 999, musicBpm: 999, biomeId: 'corrupt' };
+
+        (app as unknown as { rollbackToLastGood: () => void }).rollbackToLastGood();
+
+        // The restore brings WorldState back to
+        // stub A's output (NOT the mutated
+        // post-failure state).
+        expect(ws.lastSceneBlueprint?.npcCount).toBe(7);
+        expect(ws.lastSceneBlueprint?.musicBpm).toBe(140);
+        expect(ws.lastSceneBlueprint?.biomeId).toBe('neon-harbor');
+    });
+
+    test('rollback_increments_rollbackCount_and_persists_to_save', async () => {
+        // The round-79 telemetry gate: a successful
+        // rollback increments the lifetime counter,
+        // and that count must survive save → reload
+        // (otherwise the HUD's 🛟 row would reset on
+        // every page refresh — a regression that
+        // would hide the player's rollback history).
+        const app = makeApp();
+        await enterDimensionWithStub(app, 0xBEEF0002, 'cyberpunk', 'pulse', { npcCount: 5, musicBpm: 130, biomeId: 'neon-harbor' });
+        (app as unknown as { worldState: { backupFailedSnapshot: () => void } }).worldState.backupFailedSnapshot();
+        // Mutate so rollback has work to do.
+        (app as unknown as { worldState: { lastSceneBlueprint: { npcCount: number } | null } }).worldState.lastSceneBlueprint = { npcCount: 999, musicBpm: 0, biomeId: '' } as never;
+
+        (app as unknown as { rollbackToLastGood: () => void }).rollbackToLastGood();
+
+        const ws = (app as unknown as { worldState: { rollbackCount: number } }).worldState;
+        expect(ws.rollbackCount).toBe(1);
+
+        // Persist the rollback count + WorldState.
+        (app as unknown as { saveGame: () => void }).saveGame();
+
+        // A fresh App + loadGame should see the
+        // persisted count.
+        const app2 = makeApp();
+        const setRollbackCount2 = jest
+            .spyOn((app2 as unknown as { hud: { setRollbackCount: (n: number | null) => void } }).hud, 'setRollbackCount')
+            .mockImplementation(() => undefined);
+        // Other HUD setters called by loadGame, made
+        // silent so the test only asserts on
+        // setRollbackCount.
+        jest.spyOn((app2 as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome').mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { hud: { setMinimap: (m: string | null) => void } }).hud, 'setMinimap').mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { hud: { setNpcMindsSnapshot: (s: unknown) => void } }).hud, 'setNpcMindsSnapshot').mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots').mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear').mockImplementation(() => undefined);
+        jest.spyOn(app2 as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition').mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { hud: { setLastSceneEventChain: (c: unknown) => void } }).hud, 'setLastSceneEventChain').mockImplementation(() => undefined);
+
+        (app2 as unknown as { loadGame: () => void }).loadGame();
+
+        // The HUD 🛟 row receives the persisted
+        // count on reload. If this assertion fails,
+        // a reload silently hides the player's
+        // rollback history — the recovery becomes
+        // invisible.
+        expect(setRollbackCount2).toHaveBeenCalledWith(1);
+    });
+
+    test('rollback_restores_lastSceneEventChain_to_WASM_stub_output', async () => {
+        // Round 72 — the full event chain is
+        // persisted to WorldState. The round-54
+        // rollback restores it from the backup
+        // (not the corrupted post-failure state).
+        // The HUD's ⏰ row reads from it; a
+        // rollback that drops the chain would
+        // make the player's "what events are
+        // coming up" prompt go blank.
+        const app = makeApp();
+        await enterDimensionWithStub(app, 0xBEEF0003, 'fantasy', 'epic', {
+            eventChain: [
+                { kind: 'spawn_wave', delaySecs: 5, payload: 'r83_a' },
+                { kind: 'echo_lore', delaySecs: 13, payload: 'r83_b' },
+                { kind: 'treasure_drop', delaySecs: 21, payload: 'r83_c' },
+            ],
+        });
+        (app as unknown as { worldState: { backupFailedSnapshot: () => void } }).worldState.backupFailedSnapshot();
+        // Corrupt the event chain so the rollback
+        // has something to restore.
+        (app as unknown as { worldState: { lastSceneEventChain: Array<{ kind: string; delaySecs: number; payload: string }> | null } }).worldState.lastSceneEventChain = [
+            { kind: 'corrupt', delaySecs: 0, payload: 'corrupt' },
+        ];
+
+        (app as unknown as { rollbackToLastGood: () => void }).rollbackToLastGood();
+
+        // The rollback restores the stub A event
+        // chain (3 entries, kinds spawn_wave /
+        // echo_lore / treasure_drop, payloads
+        // r83_a/b/c).
+        const ws = (app as unknown as {
+            worldState: { lastSceneEventChain: Array<{ kind: string; delaySecs: number; payload: string }> | null };
+        }).worldState;
+        expect(ws.lastSceneEventChain).not.toBeNull();
+        expect(ws.lastSceneEventChain).toHaveLength(3);
+        expect(ws.lastSceneEventChain?.map(e => e.kind)).toEqual(['spawn_wave', 'echo_lore', 'treasure_drop']);
+        expect(ws.lastSceneEventChain?.map(e => e.payload)).toEqual(['r83_a', 'r83_b', 'r83_c']);
+    });
+
+    test('rollback_no_op_does_NOT_increment_rollbackCount_even_after_save_load', async () => {
+        // Defensive regression guard: a
+        // rollbackToLastGood call with no
+        // lastFailedSnapshot is a no-op. It must
+        // NOT bump the counter (otherwise
+        // accidentally-invoked no-ops would inflate
+        // the player's rollback history).
+        const app = makeApp();
+        // No backup set, no enterNewDimension.
+        // WorldState.rollbackCount is 0.
+        (app as unknown as { rollbackToLastGood: () => void }).rollbackToLastGood();
+
+        const ws = (app as unknown as { worldState: { rollbackCount: number } }).worldState;
+        expect(ws.rollbackCount).toBe(0);
+
+        // Save + load — the persisted count is
+        // still 0, and the HUD receives
+        // setRollbackCount(0).
+        (app as unknown as { saveGame: () => void }).saveGame();
+
+        const app2 = makeApp();
+        const setRollbackCount2 = jest
+            .spyOn((app2 as unknown as { hud: { setRollbackCount: (n: number | null) => void } }).hud, 'setRollbackCount')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome').mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { hud: { setMinimap: (m: string | null) => void } }).hud, 'setMinimap').mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { hud: { setNpcMindsSnapshot: (s: unknown) => void } }).hud, 'setNpcMindsSnapshot').mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots').mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear').mockImplementation(() => undefined);
+        jest.spyOn(app2 as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition').mockImplementation(() => undefined);
+        jest.spyOn((app2 as unknown as { hud: { setLastSceneEventChain: (c: unknown) => void } }).hud, 'setLastSceneEventChain').mockImplementation(() => undefined);
+
+        (app2 as unknown as { loadGame: () => void }).loadGame();
+
+        expect(setRollbackCount2).toHaveBeenCalledWith(0);
+    });
+});
