@@ -1944,6 +1944,16 @@ async function bootstrap(): Promise<void> {
             case 'save':       app.saveGame(); break;
             case 'load':       void app.loadGame(); break;
             case 'event':      app.rollWorldEvent(); break;
+            // Round 85 — R key shortcut for the round-54
+            // rollback UI. The shortcut calls the
+            // same `rollbackToLastGood` that the inline
+            // HUD button does; if there's no
+            // `lastFailedSnapshot`, the method is a
+            // no-op (the HUD gates the button on
+            // `hasFailedSnapshot`, but the keyboard
+            // shortcut can't gate visually, so a
+            // defensive no-op is the right default).
+            case 'rollback':   app.rollbackToLastGood(); break;
         }
         // Only swallow the event when we actually handled it so
         // tab navigation, Esc-into-fullscreen-exit etc. still

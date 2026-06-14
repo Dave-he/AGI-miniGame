@@ -24,6 +24,7 @@
  *   S       — save game
  *   L       — load game
  *   E       — roll a world event
+ *   R       — rollback to last good state (round 85)
  *
  * Anything else is ignored (returns `null`). The mapping is locked
  * by the index.html help overlay and the 8-portal palette in
@@ -37,7 +38,8 @@ export type KeyboardAction =
     | { kind: 'toggle-help' }
     | { kind: 'save' }
     | { kind: 'load' }
-    | { kind: 'event' };
+    | { kind: 'event' }
+    | { kind: 'rollback' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -74,6 +76,7 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     { key: 'S',    action: '保存游戏' },
     { key: 'L',    action: '读取存档' },
     { key: 'E',    action: '触发一次世界事件' },
+    { key: 'R',    action: '回滚到上次成功的状态' },
 ];
 
 /**
@@ -127,6 +130,9 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'e':
         case 'E':
             return { kind: 'event' };
+        case 'r':
+        case 'R':
+            return { kind: 'rollback' };
         default:
             return null;
     }

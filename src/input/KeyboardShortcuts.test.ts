@@ -55,6 +55,20 @@ describe('KeyboardShortcuts', () => {
             expect(routeKey('e')).toEqual({ kind: 'event' });
         });
 
+        it('routes R/r to rollback (round 85)', () => {
+            // The round-54 rollback UI is the last line
+            // of defense for the player when a second
+            // `enterNewDimension` corrupts the world.
+            // The R key is a "good controls" shortcut
+            // for it — same effect as clicking the
+            // inline "🔙 回滚" button, but keyboard-
+            // reachable. A no-op (no `lastFailedSnapshot`)
+            // is the safe default if the player presses
+            // R when nothing's broken.
+            expect(routeKey('R')).toEqual({ kind: 'rollback' });
+            expect(routeKey('r')).toEqual({ kind: 'rollback' });
+        });
+
         it.each(['0', '9', 'a', 'z', 'F1', 'Tab', 'Enter', 'ArrowUp'])(
             'returns null for unbound key "%s"',
             (key) => {
@@ -85,7 +99,7 @@ describe('KeyboardShortcuts', () => {
     describe('BINDING_DESCRIPTIONS', () => {
         it('covers every key the router knows about', () => {
             const described = new Set(BINDING_DESCRIPTIONS.map(d => d.key));
-            // 1..8, Esc, Space, ?, S, L, E
+            // 1..8, Esc, Space, ?, S, L, E, R
             for (let i = 1; i <= 8; i++) expect(described.has(String(i))).toBe(true);
             expect(described.has('Esc')).toBe(true);
             expect(described.has('Space')).toBe(true);
@@ -93,6 +107,8 @@ describe('KeyboardShortcuts', () => {
             expect(described.has('S')).toBe(true);
             expect(described.has('L')).toBe(true);
             expect(described.has('E')).toBe(true);
+            // Round 85 — the R key for rollback.
+            expect(described.has('R')).toBe(true);
         });
 
         it('has a non-empty Chinese description for every binding', () => {
