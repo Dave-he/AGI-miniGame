@@ -707,7 +707,11 @@ export class HUD {
         // compact list of all events underneath. Round 74:
         // the dimmed count suffix and the compact list use
         // the same `.hud-memories-row-*` classes as the
-        // `⚡` row above.
+        // `⚡` row above. Round 86 — appended a kind-
+        // distribution summary (e.g. "spawn_wave ×2,
+        // echo_lore ×1") so the player can see the
+        // composition of their current scene's events at
+        // a glance, without scanning the compact list.
         let chainRows = '';
         if (chainOn && s.lastSceneEventChain) {
             const chain = s.lastSceneEventChain as EventStep[];
@@ -715,7 +719,11 @@ export class HUD {
             const allLines = chain.map((e) =>
                 `· t+<b>${e.delaySecs}</b>s <b>${escapeHtml(e.kind)}</b>`,
             );
-            chainRows = `<div class="hud-event-chain">⏰ next: <b>${escapeHtml(next.kind)}</b> in <b>${next.delaySecs}</b>s <span class="hud-memories-row-count">(${chain.length} 事件)</span><br><span class="hud-memories-row-detail">${allLines.join('<br>')}</span></div>`;
+            const dist = summarizeEventKinds(chain);
+            const distLine = dist
+                ? ` · 分布: <b>${dist}</b>`
+                : '';
+            chainRows = `<div class="hud-event-chain">⏰ next: <b>${escapeHtml(next.kind)}</b> in <b>${next.delaySecs}</b>s <span class="hud-memories-row-count">(${chain.length} 事件${distLine})</span><br><span class="hud-memories-row-detail">${allLines.join('<br>')}</span></div>`;
         }
 
         return `
@@ -775,4 +783,30 @@ function escapeHtml(s: string): string {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+}
+
+/**
+ * Round 86 — summarize an event chain's kind distribution.
+ *
+ * Walks the chain, counts occurrences of each `kind`,
+ * and returns a compact "kind ×count, kind ×count" string
+ * (e.g. "spawn_wave ×2, echo_lore ×1"). The order is
+ * first-appearance (the order the events were scheduled),
+ * so the player sees the most "upcoming" kind first.
+ *
+ * Returns an empty string for an empty chain so the
+ * caller can skip the distribution line entirely.
+ */
+function summarizeEventKinds(chain: ReadonlyArray<EventStep>): string {
+    if (chain.length === 0) return '';
+    const counts = new Map<string, number>();
+    for (const e of chain) {
+        counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
+    }
+    // First-appearance order — Map preserves insertion order.
+    const parts: string[] = [];
+    for (const [kind, count] of counts) {
+        parts.push(`${escapeHtml(kind)} ×${count}`);
+    }
+    return parts.join(', ');
 }

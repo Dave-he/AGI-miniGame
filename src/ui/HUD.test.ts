@@ -883,6 +883,74 @@ describe('HUD — round 73 setLastSceneEventChain', () => {
         expect(row.textContent).not.toContain('MUTATED');
         expect(row.textContent).not.toContain('evil');
     });
+
+    test('renders_kind_distribution_summary_for_diverse_chains (round 86)', () => {
+        // The round-86 distribution summary lets the
+        // player see the kind mix at a glance, without
+        // scanning the compact per-event list. A 4-event
+        // chain with 2× spawn_wave + 1× echo_lore + 1×
+        // treasure_drop should show "spawn_wave ×2, echo_lore
+        // ×1, treasure_drop ×1" in first-appearance order.
+        const { hud, root } = makeHud();
+        hud.setLastSceneEventChain([
+            { kind: 'spawn_wave',    delaySecs: 5,  payload: 'a' },
+            { kind: 'echo_lore',     delaySecs: 13, payload: 'b' },
+            { kind: 'spawn_wave',    delaySecs: 21, payload: 'c' },
+            { kind: 'treasure_drop', delaySecs: 29, payload: 'd' },
+        ]);
+        const row = root.querySelector('.hud-event-chain')!;
+        expect(row.textContent).toContain('分布:');
+        expect(row.textContent).toContain('spawn_wave ×2');
+        expect(row.textContent).toContain('echo_lore ×1');
+        expect(row.textContent).toContain('treasure_drop ×1');
+    });
+
+    test('omits_distribution_summary_for_single_kind_chains (round 86)', () => {
+        // A 2-event chain with 2× spawn_wave is still
+        // useful — the distribution shows "spawn_wave ×2"
+        // so the player knows the second event is a
+        // repeat (not a bug). A 1-event chain is the
+        // trivial case where the compact list already
+        // shows the kind, so the distribution is
+        // redundant; the helper still emits it (the
+        // player can scan it as confirmation).
+        const { hud, root } = makeHud();
+        hud.setLastSceneEventChain([
+            { kind: 'spawn_wave', delaySecs: 5,  payload: 'a' },
+            { kind: 'spawn_wave', delaySecs: 13, payload: 'b' },
+        ]);
+        const row = root.querySelector('.hud-event-chain')!;
+        expect(row.textContent).toContain('分布:');
+        expect(row.textContent).toContain('spawn_wave ×2');
+        // No other kinds.
+        expect(row.textContent).not.toContain('echo_lore');
+    });
+
+    test('preserves_first_appearance_order_in_distribution (round 86)', () => {
+        // A chain where spawn_wave comes after echo_lore
+        // in the schedule should still show echo_lore
+        // first in the distribution (first-appearance
+        // order, not alphabetical). This matches the
+        // player's mental model: "the first thing that's
+        // coming up is the most important kind".
+        const { hud, root } = makeHud();
+        hud.setLastSceneEventChain([
+            { kind: 'echo_lore',     delaySecs: 5,  payload: 'a' },
+            { kind: 'spawn_wave',    delaySecs: 13, payload: 'b' },
+            { kind: 'echo_lore',     delaySecs: 21, payload: 'c' },
+        ]);
+        const row = root.querySelector('.hud-event-chain')!;
+        const distStart = row.textContent!.indexOf('分布:');
+        const distEnd = row.textContent!.indexOf(')', distStart);
+        const dist = row.textContent!.slice(distStart, distEnd);
+        // echo_lore appears before spawn_wave in the
+        // distribution.
+        const echoIdx = dist.indexOf('echo_lore');
+        const spawnIdx = dist.indexOf('spawn_wave');
+        expect(echoIdx).toBeGreaterThan(-1);
+        expect(spawnIdx).toBeGreaterThan(-1);
+        expect(echoIdx).toBeLessThan(spawnIdx);
+    });
 });
 
 // ---------------------------------------------------------------------------
