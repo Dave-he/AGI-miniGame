@@ -28,6 +28,15 @@
  *     round-67 bench can finally grow a 4th function and the
  *     round-68 `wasm.latency` HUD row has a real TS baseline to
  *     subtract from its wall-clock numbers.
+ *   - Round 81 — added the round-33 individual-NPC pool
+ *     (`MOOD_4TH_INDIVIDUAL`) and a `mood4thSentenceForIndividualFallback`
+ *     mirror so the NarrationEngine's individual path no longer
+ *     needs a private `djb2` implementation. The unification
+ *     closes the round-54 TODO and brings the individual path
+ *     onto the same FNV-1a 32-bit hash as the average-mood
+ *     path. Output text changes for the same (blueprint_id,
+ *     branch) — both old and new outputs are valid pool
+ *     entries; the hash function was the only difference.
  *
  * **Branch-numeric mapping** (must match the Rust `MoodBranch` enum
  * and the existing `callMood4thSentenceFor` helper):
@@ -130,6 +139,44 @@ export const MOOD_4TH_POOL: Record<MoodBranchTag, string[]> = {
 };
 
 // ---------------------------------------------------------------------------
+// Round 81 — individual-NPC pool. Mirrors `MOOD_4TH_POOL` but
+// the sentences are first-person ("a soldier said: ...") so
+// the player feels a specific speaker rather than a chorus.
+// Originally lived in `NarrationEngine.ts` as the round-33
+// `MOOD_4TH_INDIVIDUAL`; the extraction closes the round-54
+// TODO by letting the individual path use `fnv1a32` for
+// consistency with the average-mood path (which uses
+// `fnv1a32(blueprintId)` since round 53b).
+// ---------------------------------------------------------------------------
+
+/**
+ * Round 33 — individual-NPC 4th-sentence pool. Each branch has
+ * 3 alternatives picked deterministically by the dimension id
+ * AND the branch tag (the branch tag IS in the hash key, unlike
+ * the average-mood path). The "ind" sentinel in the hash key
+ * prevents hash collisions between the average path
+ * (`fnv1a32(blueprintId)`) and the individual path
+ * (`fnv1a32(blueprintId + '|ind|' + branch)`).
+ */
+export const MOOD_4TH_INDIVIDUAL: Record<MoodBranchTag, string[]> = {
+    fear: [
+        '守夜的士兵瑟缩着说："别……别往前走了。"',
+        '一个孩子拉了拉你的衣角：里面好黑，我们逃吧。',
+        '老奶奶颤抖着说：我已经听见尖叫了。',
+    ],
+    friendly: [
+        '老猎人拍拍你的肩：上次的伤还疼吗？',
+        '村姑笑着塞给你一枚护符：带着它，会顺利的。',
+        '守门人朝你点头：你的剑我替你磨过了。',
+    ],
+    hostile: [
+        '一个男人挡在路中央："你来错地方了。"',
+        '一个老人啐了一口：滚回你来的地方。',
+        '哨兵低声威胁：再走一步，我不客气了。',
+    ],
+};
+
+// ---------------------------------------------------------------------------
 // Branch-numeric mapping. The WASM helper takes a u8 (0=fear,
 // 1=friendly, 2=hostile). The TS mirror takes a string branch
 // directly. This helper is exposed for any future caller that
@@ -195,5 +242,48 @@ export function mood4thSentenceForFallback(
 ): string {
     const pool = MOOD_4TH_POOL[branch];
     const idx = fnv1a32(blueprintId) % pool.length;
+    return pool[idx];
+}
+
+// ---------------------------------------------------------------------------
+// Round 81 — individual-NPC mirror. Same shape as
+// `mood4thSentenceForFallback` but uses the individual pool
+// (3-3-3, first-person) and includes the branch tag in the
+// hash key (`blueprintId + '|ind|' + branch`).
+//
+// Why a separate helper, not a flag on the existing one:
+//   1. The hash key shape is different
+//      (`'ind'` sentinel + branch tag vs blueprintId alone).
+//   2. The pool is different (individual vs average).
+//   3. The WASM bridge has no equivalent (the round-33 path
+//      is TS-side only). Keeping the two helpers side-by-side
+//      makes the asymmetry visible at the call site.
+//
+// The "ind" sentinel prevents hash collisions with the
+// average-mood path: `fnv1a("dim_1")` and
+// `fnv1a("dim_1|ind|fear")` hash to different values, so
+// changing between the two paths mid-narrate can't accidentally
+// pick the same index for the wrong pool.
+// ---------------------------------------------------------------------------
+
+/**
+ * TS-side mirror of the round-33 individual-NPC 4th-sentence
+ * pick. Uses the same FNV-1a 32-bit hash as the average-mood
+ * path (round 53b unification) so the engine has a single
+ * hash function for all deterministic text selection.
+ *
+ * Hash key: `blueprintId + '|ind|' + branch` (the `|ind|`
+ * sentinel + the branch tag are both in the key, unlike the
+ * average-mood path which keys on `blueprintId` alone).
+ *
+ * Always returns a string (the 3-3-3 individual pool is
+ * non-empty for all three branches).
+ */
+export function mood4thSentenceForIndividualFallback(
+    branch: MoodBranchTag,
+    blueprintId: string,
+): string {
+    const pool = MOOD_4TH_INDIVIDUAL[branch];
+    const idx = fnv1a32(`${blueprintId}|ind|${branch}`) % pool.length;
     return pool[idx];
 }

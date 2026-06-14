@@ -454,14 +454,16 @@ describe('NarrationEngine — round 70 mood4thSentenceForFallback wiring', () =>
         expect(n.getLastSentenceSource()).toBe('ts-fallback');
     });
 
-    test('individual_npc_path_is_unaffected_by_refactor', () => {
-        // The round-33 individual-NPC 4th-sentence path uses its
-        // own djb2-keyed pool (`MOOD_4TH_INDIVIDUAL`), NOT the new
-        // `mood4thSentenceForFallback` mirror. The extraction
-        // should not have touched it. This test pins that — a
-        // future refactor that accidentally routes the
-        // individual path through the new module would surface
-        // as a different 4th sentence.
+    test('individual_npc_path_uses_extracted_helper_and_individual_pool (round 81)', () => {
+        // Round 81 — the round-33 individual-NPC 4th-sentence
+        // path was unified onto the same FNV-1a hash as the
+        // average-mood path, and the pool was extracted to
+        // `Mood4thSentence.ts` as `MOOD_4TH_INDIVIDUAL` +
+        // `mood4thSentenceForIndividualFallback`. This test
+        // pins that the engine uses the extracted helper (not
+        // a private djb2 + inline pool) and that the 4th
+        // sentence still comes from the individual pool (not
+        // the average pool).
         const reg = new NpcRegistry();
         // One terrified NPC. Push fear to 0.6 (witnessed_event
         // adds w*0.15; 4 events at w=1.0 → fear ≈ 0.6).
@@ -476,25 +478,30 @@ describe('NarrationEngine — round 70 mood4thSentenceForFallback wiring', () =>
         }
         reg.insert(panic);
         const n = new NarrationEngine();
-        const id = 'r70-individual-still-djb2';
+        const id = 'r81-individual-fnv1a-via-helper';
         const out = n.narrate(bp(id, '幽邃森林'),
             { friendly: 0.0, fear: 0.0, trust: 0.0 }, // avg mood = neutral
             reg,
         );
-        // The individual path should have fired (extreme NPC won
-        // the slot); the 4th sentence is from
-        // MOOD_4TH_INDIVIDUAL, NOT MOOD_4TH_POOL.
+        // The individual path should have fired (extreme NPC
+        // won the slot); the 4th sentence is from
+        // `MOOD_4TH_INDIVIDUAL` (now in Mood4thSentence.ts),
+        // NOT `MOOD_4TH_POOL`.
         expect(out.moodBranch).toBe('fear');
         expect(out.speakerId).toBe('panic.bot');
-        const individualPool = [
-            '守夜的士兵瑟缩着说："别……别往前走了。"',
-            '一个孩子拉了拉你的衣角：里面好黑，我们逃吧。',
-            '老奶奶颤抖着说：我已经听见尖叫了。',
-        ];
-        expect(individualPool).toContain(out.sentences[3]);
-        // Cross-check: the new mirror would have returned a
-        // sentence from MOOD_4TH_POOL, NOT the individual pool.
-        // We don't assert the negative (no specific sentence),
-        // but the containment above is the pinning.
+        // Import the extracted pool at the assertion site so
+        // the test exercises the new module's public surface.
+        const { MOOD_4TH_INDIVIDUAL, mood4thSentenceForIndividualFallback } = require('../ai/Mood4thSentence') as {
+            MOOD_4TH_INDIVIDUAL: { fear: string[] };
+            mood4thSentenceForIndividualFallback: (b: 'fear' | 'friendly' | 'hostile', id: string) => string;
+        };
+        expect(MOOD_4TH_INDIVIDUAL.fear).toContain(out.sentences[3]);
+        // The engine's output must match the extracted
+        // helper's output for the same (branch, id) — a
+        // regression that re-introduced djb2 or hardcoded
+        // a different pool would surface as a mismatch.
+        expect(out.sentences[3]).toBe(
+            mood4thSentenceForIndividualFallback('fear', id),
+        );
     });
 });

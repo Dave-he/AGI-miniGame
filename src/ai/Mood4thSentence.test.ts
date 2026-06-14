@@ -20,9 +20,11 @@
 import {
     fnv1a32,
     mood4thSentenceForFallback,
+    mood4thSentenceForIndividualFallback,
     branchTagFromNumeric,
     moodBranchFromDisposition,
     MOOD_4TH_POOL,
+    MOOD_4TH_INDIVIDUAL,
 } from './Mood4thSentence';
 import type { MoodBranchTag } from './Mood4thSentence';
 import { defaultDisposition } from '../world/NpcMind';
@@ -222,5 +224,100 @@ describe('Mood4thSentence — moodBranchFromDisposition (round 70)', () => {
         // The mirror helper should return 'neutral' just like
         // the engine's `moodBranch` does.
         expect(moodBranchFromDisposition(defaultDisposition())).toBe('neutral');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 81 — individual-NPC pool + helper. Mirrors the
+// average-mood tests above but for the round-33 individual
+// path. The `MOOD_4TH_INDIVIDUAL` pool was extracted from
+// `NarrationEngine.ts` to this module so the engine could
+// share the `fnv1a32` hash with the average-mood path
+// (closing the round-54 TODO).
+// ---------------------------------------------------------------------------
+
+describe('Mood4thSentence — MOOD_4TH_INDIVIDUAL shape (round 81)', () => {
+    test('all_three_branches_present', () => {
+        expect(MOOD_4TH_INDIVIDUAL.fear).toBeDefined();
+        expect(MOOD_4TH_INDIVIDUAL.friendly).toBeDefined();
+        expect(MOOD_4TH_INDIVIDUAL.hostile).toBeDefined();
+    });
+
+    test('each_branch_has_exactly_3_sentences', () => {
+        // The round-33 individual pool is intentionally
+        // 3-3-3 (smaller than the 4-5-4 average pool)
+        // because a single specific NPC's "voice" is
+        // narrower than a chorus's. Pin the size so a
+        // future contributor adding a 4th entry sees a
+        // test failure.
+        expect(MOOD_4TH_INDIVIDUAL.fear.length).toBe(3);
+        expect(MOOD_4TH_INDIVIDUAL.friendly.length).toBe(3);
+        expect(MOOD_4TH_INDIVIDUAL.hostile.length).toBe(3);
+    });
+
+    test('all_sentences_non_empty', () => {
+        for (const branch of Object.keys(MOOD_4TH_INDIVIDUAL) as MoodBranchTag[]) {
+            for (const sentence of MOOD_4TH_INDIVIDUAL[branch]) {
+                expect(sentence.length).toBeGreaterThan(0);
+            }
+        }
+    });
+});
+
+describe('Mood4thSentence — mood4thSentenceForIndividualFallback (round 81)', () => {
+    test('returns_a_pool_entry_for_each_branch', () => {
+        for (const branch of ['fear', 'friendly', 'hostile'] as MoodBranchTag[]) {
+            const s = mood4thSentenceForIndividualFallback(branch, 'dim_42');
+            expect(MOOD_4TH_INDIVIDUAL[branch]).toContain(s);
+        }
+    });
+
+    test('is_deterministic_for_same_input', () => {
+        // The round-53b unification brought the individual
+        // path onto FNV-1a 32-bit (was djb2). The hash
+        // function is deterministic, so the same input
+        // must produce the same output across calls.
+        const a = mood4thSentenceForIndividualFallback('fear', 'dim_42');
+        const b = mood4thSentenceForIndividualFallback('fear', 'dim_42');
+        expect(a).toBe(b);
+    });
+
+    test('different_blueprint_ids_can_yield_different_pool_entries', () => {
+        // A spot check that the hash is actually
+        // sensitive to `blueprintId` (not just stuck on
+        // index 0 for every input). The 3-entry pool
+        // means at most 3 distinct values; with 10 ids
+        // we should see > 1 distinct value with high
+        // probability.
+        const results = new Set<string>();
+        for (let i = 0; i < 10; i++) {
+            results.add(mood4thSentenceForIndividualFallback('fear', `dim_${i}`));
+        }
+        expect(results.size).toBeGreaterThan(1);
+    });
+
+    test('branch_tag_is_part_of_hash_key', () => {
+        // The `|ind|` sentinel + branch tag in the hash
+        // key means the same `blueprintId` with different
+        // branches can produce different pool entries.
+        // (The branch is also the pool lookup, so the
+        // outputs are in different pools — but the
+        // underlying hash is genuinely different, not
+        // just pool-mapped.)
+        const fearHash = fnv1a32('dim_42|ind|fear');
+        const friendlyHash = fnv1a32('dim_42|ind|friendly');
+        expect(fearHash).not.toBe(friendlyHash);
+    });
+
+    test('hash_key_differs_from_average_mood_path', () => {
+        // The `|ind|` sentinel prevents hash collisions
+        // with the average-mood path (which uses
+        // `fnv1a32(blueprintId)` alone). A future
+        // contributor who refactors one of the two
+        // paths and accidentally reuses the other's
+        // key would see this test fail.
+        const averageKey = fnv1a32('dim_42');
+        const individualKey = fnv1a32('dim_42|ind|fear');
+        expect(individualKey).not.toBe(averageKey);
     });
 });

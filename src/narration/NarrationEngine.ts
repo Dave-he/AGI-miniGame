@@ -18,10 +18,19 @@
  * `cocos4-rust/src/agi_minigame/narration.rs::fnv1a`. This way the
  * WASM and TS paths produce byte-identical sentences for the same
  * `(blueprint_id, branch)` — no more "WASM-fallback divergence" the
- * player could observe across a reload. The **individual-NPC
- * 4th-sentence path** (round 33, most-extreme-NPC wins) stays on
- * `djb2` because the WASM helper doesn't model the individual
- * context yet; that unification is a round-54 follow-up.
+ * player could observe across a reload.
+ *
+ * Round 81 — the **individual-NPC 4th-sentence path**
+ * (round 33, most-extreme-NPC wins) now also uses the same
+ * FNV-1a 32-bit hash via
+ * `mood4thSentenceForIndividualFallback`. The WASM helper still
+ * doesn't model individual contexts (so the WASM path for the
+ * 4th sentence is still the average-mood call), but the TS
+ * fallback for the individual path is now on the same hash
+ * function as the average-mood path. The inline
+ * `MOOD_4TH_INDIVIDUAL` pool + private `djb2` method have been
+ * extracted to `Mood4thSentence.ts`; the engine now just calls
+ * the helper. Closes the round-54 TODO.
  *
  * **Constraint**: `blueprint_id` must be ASCII (the standard
  * `dim_<digits>` or `r<N>-<tag>-<n>` format from `Date.now()` /
@@ -36,7 +45,7 @@
 
 import type { DimensionBlueprint } from '../ai/AIEngine';
 import { callMood4thSentenceFor, type SceneGenWasmModule } from '../ai/SceneGenWasm';
-import { mood4thSentenceForFallback } from '../ai/Mood4thSentence';
+import { mood4thSentenceForFallback, mood4thSentenceForIndividualFallback } from '../ai/Mood4thSentence';
 import type { NpcDisposition, NpcRegistry } from '../world/NpcMind';
 
 export interface Narration {
@@ -83,29 +92,11 @@ const CALLS = [
     '你的选择是这个世界唯一的常数',
 ];
 
-/**
- * Round 33 — individual-NPC 4th-sentence pool. Picked when the
- * most-extreme NPC in the registry disagrees with the average
- * mood. Sentences are first-person ("a soldier said: ...") so
- * the player feels a specific speaker rather than a chorus.
- */
-const MOOD_4TH_INDIVIDUAL: Record<'fear' | 'friendly' | 'hostile', string[]> = {
-    fear: [
-        '守夜的士兵瑟缩着说："别……别往前走了。"',
-        '一个孩子拉了拉你的衣角：里面好黑，我们逃吧。',
-        '老奶奶颤抖着说：我已经听见尖叫了。',
-    ],
-    friendly: [
-        '老猎人拍拍你的肩：上次的伤还疼吗？',
-        '村姑笑着塞给你一枚护符：带着它，会顺利的。',
-        '守门人朝你点头：你的剑我替你磨过了。',
-    ],
-    hostile: [
-        '一个男人挡在路中央："你来错地方了。"',
-        '一个老人啐了一口：滚回你来的地方。',
-        '哨兵低声威胁：再走一步，我不客气了。',
-    ],
-};
+// Round 33 — individual-NPC 4th-sentence pool was extracted
+// to `src/ai/Mood4thSentence.ts` (round 81) as
+// `MOOD_4TH_INDIVIDUAL` so the engine could share the
+// `fnv1a32` hash with the average-mood path. See
+// `mood4thSentenceForIndividualFallback` in that module.
 
 export function moodBranch(mood: NpcDisposition): 'fear' | 'friendly' | 'hostile' | 'neutral' {
     if (mood.fear > 0.5) return 'fear';
@@ -209,10 +200,12 @@ export class NarrationEngine {
      *
      * Round 51 — WASM-aware 4th-sentence pick. Round 53b — the
      * TS fallback uses the same FNV-1a hash as the WASM helper
-     * for the average-mood path; the individual-NPC path stays
-     * on `djb2` (WASM helper doesn't model individual contexts
-     * yet). `main.ts` reads `lastSentenceSource` to log
-     * `[4th] WASM 真出` vs `[4th] WASM 兜底→ TS 镜像`.
+     * for the average-mood path. Round 81 — the individual-NPC
+     * path also uses FNV-1a (via
+     * `mood4thSentenceForIndividualFallback`), so both
+     * 4th-sentence paths now share a single hash function.
+     * `main.ts` reads `lastSentenceSource` to log `[4th] WASM
+     * 真出` vs `[4th] WASM 兜底→ TS 镜像`.
      */
     narrate(blueprint: DimensionBlueprint, mood?: NpcDisposition, npcRegistry?: NpcRegistry): Narration {
         const rng = this.makeRng(this.djb2(blueprint.id));
@@ -222,30 +215,25 @@ export class NarrationEngine {
         const call = this.pick(CALLS, rng);
         const sentences: string[] = [opener, moodSentence + '。', call + '。'];
 
-        // Round 33 — when a registry is provided, the most extreme
-        // individual NPC takes the 4th-sentence slot. Its branch
-        // wins over the average's. We require a non-neutral
-        // branch (so the silent majority doesn't get a fake
-        // speaker). Round 51 — the individual path stays on TS
-        // djb2 (the WASM `mood_4th_sentence_for` doesn't model
-        // individual-NPC contexts); only the average-mood path
-        // goes through the WASM bridge.
-        //
-        // TODO round-54: align with WASM fnv1a once
-        // `most_extreme_npc(reg)` is mirrored in Rust so the WASM
-        // helper can take an `(extreme_npc_id, branch)` context.
-        // Until then the individual path stays on `djb2` —
-        // the 3/3/3 individual pool is small enough that the
-        // cross-language hash divergence is a known trade-off.
+        // Round 33 — when a registry is provided, the most
+        // extreme individual NPC takes the 4th-sentence slot.
+        // Its branch wins over the average's. We require a
+        // non-neutral branch (so the silent majority doesn't
+        // get a fake speaker). Round 81 — the individual path
+        // now uses the same FNV-1a 32-bit hash as the
+        // average-mood path (via
+        // `mood4thSentenceForIndividualFallback`). The
+        // hash key is `blueprintId + '|ind|' + branch` (the
+        // `ind` sentinel + branch tag in the key prevents
+        // collisions with the average path's
+        // `fnv1a32(blueprintId)` key).
         const extreme = npcRegistry ? mostExtremeNpc(npcRegistry) : null;
         let branch: Narration['moodBranch'];
         let speakerId: string | undefined;
         if (extreme && extreme.branch !== 'neutral' && extreme.score > 0.3) {
             branch = extreme.branch;
             speakerId = extreme.id;
-            const pool = MOOD_4TH_INDIVIDUAL[branch];
-            const rng2 = this.makeRng(this.djb2(blueprint.id + '|ind|' + branch));
-            sentences.push(this.pick(pool, rng2));
+            sentences.push(mood4thSentenceForIndividualFallback(branch, blueprint.id));
             this.lastSentenceSource = null;
         } else if (mood) {
             branch = moodBranch(mood);
