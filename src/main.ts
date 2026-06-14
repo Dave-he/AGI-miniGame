@@ -40,6 +40,7 @@ import { NpcCombat } from './scene/NpcCombat';
 import { generateDungeon, generateDungeonWithWeights, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
 import { renderMiniMap } from './world/MiniMap';
 import { biomeForVisualStyle } from './world/WfcBiomes';
+import { synthesizeDmEventChain } from './ai/DmEventChain';
 import { getBiomeAtmosphere } from './scene/BiomeAtmosphere';
 import { getBiomeAudio } from './audio/BiomeAudio';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
@@ -271,10 +272,23 @@ class App {
                 this.hud.setLastBiome(biome.id);
                 this.worldState.lastMinimap = renderMiniMap(dungeon.tiles, biome.id);
                 this.hud.setMinimap(this.worldState.lastMinimap);
+                // Round 71 — synthesize a content-driven event chain
+                // for the DM-spawned dimension. The pre-round-71 code
+                // wrote `eventCount: 0` because the DM path skips
+                // `themeToScene` and so had no real chain to count.
+                // The synthesized chain is deterministic for the same
+                // (dungeon, biome) and uses the same 5 event kinds as
+                // the standard path (spawn_wave / treasure_drop /
+                // fog_pulse / boss_hint / echo_lore), so a future
+                // round-72+ "replay events" UI can render either path
+                // through the same code. See `DmEventChain.ts`.
+                const dmEventChain = synthesizeDmEventChain(dungeon.tiles, biome);
                 this.hud.setLastSceneBlueprint({
                     npcCount: 0,
                     bpm: 120,
-                    eventCount: 0,
+                    // Round 71 — the real count, not 0. The
+                    // 3-5 range mirrors the standard chain's.
+                    eventCount: dmEventChain.length,
                     archetypeHintCount: 0,
                 });
             },

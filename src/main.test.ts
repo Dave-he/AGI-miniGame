@@ -657,6 +657,13 @@ describe('App — round 66 DM+rollback minimap wiring', () => {
         const minimapArg = setMinimap.mock.calls[0]?.[0];
         expect(typeof minimapArg).toBe('string');
         // Default scalars for DM path (no full themeToScene).
+        // Round 71 — `eventCount` is now a real 3-5 number
+        // synthesized from the dungeon's special-tile count
+        // (chest/shrine/trap), not the round-66 placeholder 0.
+        // We assert a range rather than an exact value because
+        // the real WFC generator's tile distribution depends on
+        // the random seed; a separate round-71 describe block
+        // (below) stubs `generateDungeon` for a precise check.
         expect(setLastSceneBlueprint).toHaveBeenCalledTimes(1);
         const scalars = setLastSceneBlueprint.mock.calls[0]?.[0] as {
             npcCount: number;
@@ -666,7 +673,8 @@ describe('App — round 66 DM+rollback minimap wiring', () => {
         };
         expect(scalars.npcCount).toBe(0);
         expect(scalars.bpm).toBe(120);
-        expect(scalars.eventCount).toBe(0);
+        expect(scalars.eventCount).toBeGreaterThanOrEqual(3);
+        expect(scalars.eventCount).toBeLessThanOrEqual(5);
         expect(scalars.archetypeHintCount).toBe(0);
     });
 
@@ -727,6 +735,142 @@ describe('App — round 66 DM+rollback minimap wiring', () => {
         // fields (regression check).
         expect(ws.lastBiome).toBe('forest');
         expect(ws.lastSceneBlueprint?.biomeId).toBe('forest');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 71 — DM `onDimension` callback writes a real
+// `eventCount` to the HUD scalars. Pre-round-71 the value was
+// the round-66 placeholder 0. The new `synthesizeDmEventChain`
+// helper (DmEventChain.ts) produces a deterministic 3-5 chain
+// from the dungeon's special-tile count, mirroring the standard
+// `themeToScene` chain's range. This describe block stubs
+// `generateDungeon` to return a known tile grid so the assertion
+// is byte-precise (the random-seed WFC test above only asserts
+// the 3-5 range).
+// ---------------------------------------------------------------------------
+
+describe('App — round 71 DM event chain wiring', () => {
+    let app: App;
+    let renderWfcDungeon: jest.SpyInstance;
+    let setBiomeAtmosphere: jest.SpyInstance;
+    let setBiomeAmbient: jest.SpyInstance;
+    let setBiomeSfx: jest.SpyInstance;
+    let setLastBiome: jest.SpyInstance;
+    let setMinimap: jest.SpyInstance;
+    let setLastSceneBlueprint: jest.SpyInstance;
+
+    beforeEach(() => {
+        app = makeApp();
+        // Stub the WFC render / atmosphere / audio / HUD writes
+        // so we can focus on the eventCount assertion.
+        renderWfcDungeon = jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        setBiomeAtmosphere = jest
+            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        setBiomeAmbient = jest
+            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        setBiomeSfx = jest
+            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        setLastBiome = jest
+            .spyOn((app as unknown as { hud: { setLastBiome: (id: string) => void } }).hud, 'setLastBiome')
+            .mockImplementation(() => undefined);
+        setMinimap = jest
+            .spyOn((app as unknown as { hud: { setMinimap: (m: string) => void } }).hud, 'setMinimap')
+            .mockImplementation(() => undefined);
+        setLastSceneBlueprint = jest
+            .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
+            .mockImplementation(() => undefined);
+        // Stub `generateDungeon` directly so the synthesized
+        // event chain is byte-precise. We import the module
+        // and spy on the named export.
+        // (We avoid spying on the imported binding in main.ts
+        // because ESM bindings are immutable — we have to stub
+        // at the source-module level instead.)
+        const wfcModule = require('./world/WfcLevelGen') as typeof import('./world/WfcLevelGen');
+        jest.spyOn(wfcModule, 'generateDungeon').mockImplementation((w: number, h: number, _seed: number) => {
+            // 8x8 grid with 2 chests, 1 shrine, 1 trap.
+            // Expected chain: treasure_drop + boss_hint +
+            // spawn_wave + fog_pulse + echo_lore = 5 events.
+            const tiles: number[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 0 /* FLOOR */));
+            tiles[1][1] = 3; // CHEST
+            tiles[2][2] = 3; // CHEST
+            tiles[3][3] = 7; // SHRINE
+            tiles[4][4] = 6; // TRAP
+            return { tiles, success: true };
+        });
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('dm_dimension_writes_real_event_count_for_dungeon_with_chests_shrine_trap', () => {
+        // 2 chests + 1 shrine + 1 trap → all 5 kinds fire →
+        // eventCount === 5.
+        const result = (app as unknown as {
+            dm: { run: (line: string) => { ok: boolean; cmd: { kind: string }; error?: string } };
+        }).dm.run('dim 8 8 cyberpunk');
+        expect(result.ok).toBe(true);
+
+        expect(setLastSceneBlueprint).toHaveBeenCalledTimes(1);
+        const scalars = setLastSceneBlueprint.mock.calls[0]?.[0] as {
+            npcCount: number;
+            bpm: number;
+            eventCount: number;
+            archetypeHintCount: number;
+        };
+        expect(scalars.eventCount).toBe(5);
+        // Other scalars still default (round-66 DM path doesn't
+        // run themeToScene, so npcCount / bpm / archetypeHintCount
+        // remain placeholders).
+        expect(scalars.npcCount).toBe(0);
+        expect(scalars.bpm).toBe(120);
+        expect(scalars.archetypeHintCount).toBe(0);
+    });
+
+    test('dm_dimension_writes_3_events_for_empty_dungeon', () => {
+        // Override the stub for this test only — 8x8 floor-only
+        // grid → no special tiles → spawn_wave + echo_lore +
+        // padded echo_lore = 3 events.
+        const wfcModule = require('./world/WfcLevelGen') as typeof import('./world/WfcLevelGen');
+        (wfcModule.generateDungeon as jest.Mock).mockImplementation((w: number, h: number) => {
+            const tiles: number[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 0));
+            return { tiles, success: true };
+        });
+
+        const result = (app as unknown as {
+            dm: { run: (line: string) => { ok: boolean; cmd: { kind: string }; error?: string } };
+        }).dm.run('dim 8 8 cyberpunk');
+        expect(result.ok).toBe(true);
+
+        const scalars = setLastSceneBlueprint.mock.calls[0]?.[0] as {
+            eventCount: number;
+        };
+        // spawn_wave + echo_lore (2 unconditional kinds) +
+        // 1 padding echo_lore (safety net) = 3.
+        expect(scalars.eventCount).toBe(3);
+    });
+
+    test('dm_dimension_writes_4_events_for_dungeon_with_just_chests', () => {
+        // 8x8 with 1 chest → treasure_drop + spawn_wave +
+        // echo_lore = 3 events. (2 chests gives the same result
+        // because the kind is `treasure_drop` regardless of
+        // count.) We assert >= 3 and <= 5 for robustness against
+        // future kind-list edits.
+        const wfcModule = require('./world/WfcLevelGen') as typeof import('./world/WfcLevelGen');
+        (wfcModule.generateDungeon as jest.Mock).mockImplementation((w: number, h: number) => {
+            const tiles: number[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 0));
+            tiles[1][1] = 3; // CHEST
+            return { tiles, success: true };
+        });
+        (app as unknown as { dm: { run: (line: string) => unknown } }).dm.run('dim 8 8 cyberpunk');
+        const scalars = setLastSceneBlueprint.mock.calls[0]?.[0] as { eventCount: number };
+        expect(scalars.eventCount).toBe(3);
     });
 });
 
