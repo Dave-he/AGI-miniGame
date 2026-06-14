@@ -41,6 +41,7 @@ import { generateDungeon, generateDungeonWithWeights, TILE_SPAWN, TILE_GOAL } fr
 import { renderMiniMap } from './world/MiniMap';
 import { biomeForVisualStyle, bpmForMood } from './world/WfcBiomes';
 import { synthesizeDmEventChain, countNpcSpawnTiles } from './ai/DmEventChain';
+import { ZERO_SCENE_SCALARS, cloneSceneScalars, type SceneScalars } from './ai/SceneScalars';
 import { getBiomeAtmosphere } from './scene/BiomeAtmosphere';
 import { getBiomeAudio } from './audio/BiomeAudio';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
@@ -309,6 +310,11 @@ class App {
                 //                            path correctly
                 //                            reports 0.)
                 this.hud.setLastSceneBlueprint({
+                    // Round 78 — typed against SceneScalars
+                    // (the shared value object in
+                    // src/ai/SceneScalars.ts). The round-77
+                    // work closed the placeholders; this
+                    // is now a 4-tuple of real values.
                     npcCount: countNpcSpawnTiles(dungeon.tiles),
                     bpm: bpmForMood(biome.mood),
                     // Round 71 — the real count, not 0. The
@@ -647,7 +653,7 @@ class App {
                 // The HUD still reads the scalars; round 50
                 // will read the full snapshot for re-rendering
                 // the exact dungeon on reload.
-                const sceneScalars = {
+                const sceneScalars: SceneScalars = {
                     npcCount: sceneBp.npcCount,
                     bpm: sceneBp.musicBpm,
                     eventCount: sceneBp.eventChain.length,
@@ -880,12 +886,14 @@ class App {
             this.hud.setLastBiome(biome.id);
             this.worldState.lastMinimap = renderMiniMap(dungeon.tiles, biome.id);
             this.hud.setMinimap(this.worldState.lastMinimap);
-            const sceneScalars = {
-                npcCount: sceneBp?.npcCount ?? 0,
-                bpm: sceneBp?.musicBpm ?? 120,
-                eventCount: sceneBp?.eventChain.length ?? 0,
-                archetypeHintCount: sceneBp?.npcArchetypeHints.length ?? 0,
-            };
+            const sceneScalars: SceneScalars = sceneBp
+                ? {
+                      npcCount: sceneBp.npcCount,
+                      bpm: sceneBp.musicBpm,
+                      eventCount: sceneBp.eventChain.length,
+                      archetypeHintCount: sceneBp.npcArchetypeHints.length,
+                  }
+                : cloneSceneScalars(ZERO_SCENE_SCALARS);
             if (sceneBp) {
                 this.worldState.updateLastSceneBlueprintFull(sceneBp);
             }
@@ -1502,12 +1510,15 @@ class App {
             this.hud.setNpcMindsSnapshot(this.worldState.npcMindsSnapshot);
             this.syncNpcDisposition();
             if (this.worldState.lastSceneNpcCount != null) {
-                this.hud.setLastSceneBlueprint({
+                // Round 78 — typed against SceneScalars;
+                // reads from the round-47 WorldState fields.
+                const sceneScalars: SceneScalars = {
                     npcCount: this.worldState.lastSceneNpcCount,
                     bpm: this.worldState.lastSceneBpm ?? 0,
                     eventCount: this.worldState.lastSceneEventCount ?? 0,
                     archetypeHintCount: this.worldState.lastSceneArchetypeHintCount ?? 0,
-                });
+                };
+                this.hud.setLastSceneBlueprint(sceneScalars);
             }
             // If the backup had a speaker (it
             // doesn't currently capture that, but
@@ -1618,12 +1629,16 @@ class App {
             // state, matching the WorldState back-compat
             // path for older saves.
             if (this.worldState.lastSceneNpcCount != null) {
-                this.hud.setLastSceneBlueprint({
+                // Round 78 — typed against SceneScalars;
+                // rebuilds the HUD's 4-scalar view from
+                // the round-47 WorldState fields.
+                const sceneScalars: SceneScalars = {
                     npcCount: this.worldState.lastSceneNpcCount,
                     bpm: this.worldState.lastSceneBpm ?? 0,
                     eventCount: this.worldState.lastSceneEventCount ?? 0,
                     archetypeHintCount: this.worldState.lastSceneArchetypeHintCount ?? 0,
-                });
+                };
+                this.hud.setLastSceneBlueprint(sceneScalars);
             }
             // Round 49 — when a full SceneBlueprint snapshot
             // was persisted (or synthesized from round-47

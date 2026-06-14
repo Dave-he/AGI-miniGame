@@ -13,6 +13,7 @@ import type { I18n } from '../i18n/I18n';
 import type { NpcDisposition } from '../world/NpcMind';
 import type { WasmLatencySummary } from '../analytics/WasmLatencyStats';
 import type { EventStep } from '../ai/SceneGen';
+import type { SceneScalars } from '../ai/SceneScalars';
 
 export interface HUDState {
     dimension: DimensionBlueprint | null;
@@ -240,12 +241,7 @@ export class HUD {
      * fields at once (callers don't have to enumerate).
      */
     setLastSceneBlueprint(
-        scalars: {
-            npcCount: number;
-            bpm: number;
-            eventCount: number;
-            archetypeHintCount: number;
-        } | null,
+        scalars: SceneScalars | null,
     ): void {
         if (!scalars) {
             this.state = {

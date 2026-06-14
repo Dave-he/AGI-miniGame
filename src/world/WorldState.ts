@@ -5,6 +5,7 @@ import type { BiomeId } from '../ai/SceneGen';
 import { defaultWfcWeights } from '../ai/SceneGen';
 import type { EventStep } from '../ai/SceneGen';
 import type { NpcDisposition, NpcMemoryKind } from './NpcMind';
+import type { SceneScalars } from '../ai/SceneScalars';
 
 export interface DimensionInfo {
     dimensionId: string;
@@ -243,12 +244,7 @@ export class WorldState {
      * Called from `App.enterNewDimension()` after every
      * successful `themeToScene` call.
      */
-    updateLastSceneBlueprint(scalars: {
-        npcCount: number;
-        bpm: number;
-        eventCount: number;
-        archetypeHintCount: number;
-    } | null): void {
+    updateLastSceneBlueprint(scalars: SceneScalars | null): void {
         if (!scalars) {
             this.lastSceneNpcCount = null;
             this.lastSceneBpm = null;
