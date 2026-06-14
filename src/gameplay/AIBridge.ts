@@ -64,6 +64,14 @@ export interface BridgeConfig {
     mood?: NpcDisposition;
     /** Seed for the deterministic atom pick (round 23). */
     seed?: number;
+    /**
+     * Round 57 — force the dimension to a specific primary atom id
+     * (e.g. when the player presses 1-8 to jump straight into a
+     * portal). When set, the AI suggestion is bypassed and the
+     * `preferredTypes` is `[forcedAtomId]`. The forced id must be
+     * in `ATOM_MANIFEST` or the call falls back to the AI path.
+     */
+    forcedAtomId?: string;
 }
 
 export interface BridgeResult {
@@ -89,7 +97,7 @@ export interface BridgeResult {
      * was not supplied (the original `toGenerationConfig` path was
      * taken, no WASM/TS split).
      */
-    configSource: 'wasm' | 'ts-fallback' | 'n/a';
+    configSource: 'wasm' | 'ts-fallback' | 'n/a' | 'forced';
 }
 
 export class AIBridge {
@@ -142,16 +150,48 @@ export class AIBridge {
      */
     async planAndLoad(cfg: BridgeConfig): Promise<BridgeResult> {
         // 1. Ask the AI which atom ids fit this player's level/stage.
-        const suggestion = this.ai.gameplayAI.suggest(cfg.playerLevel, cfg.recentLossCount ?? 0);
+        //    Round 57 — when `cfg.forcedAtomId` is set to a known
+        //    atom, skip the AI suggestion entirely and pin the
+        //    primary atom to it. The suggestion variable still
+        //    exists for the result shape (it logs the bypass).
+        const availableIds = new Set(ATOM_MANIFEST.map(a => a.id));
+        const forced = cfg.forcedAtomId && availableIds.has(cfg.forcedAtomId)
+            ? cfg.forcedAtomId : null;
+        const suggestion = forced
+            ? {
+                stage: 'mid' as const,
+                primary: [forced],
+                secondary: [] as string[],
+                excluded: [] as string[],
+                rationale: `forced by keyboard shortcut (1-8) → ${forced}`,
+            }
+            : this.ai.gameplayAI.suggest(cfg.playerLevel, cfg.recentLossCount ?? 0);
 
         // 2. Build the GenerationConfig (filters + counts) from the
         //    suggestion. Round 23: when `mood` is provided, the mood
         //    nudges the difficulty range and the preferredTypes
         //    ordering. When absent, fall back to the hardcoded hint
-        //    — same numbers as before.
+        //    — same numbers as before. Round 57: when `forced` is
+        //    set, build a minimal GenerationConfig with just the
+        //    forced atom in preferredTypes.
         let generationCfg: ReturnType<GameplayCombinerAI['toGenerationConfig']>;
         let configSource: BridgeResult['configSource'];
-        if (cfg.mood) {
+        if (forced) {
+            // Round 57 — bypass mood/WASM/buildGenerationConfigWithMood
+            // entirely. The forced path is a single-atom dimension
+            // and the mood / WASM path was designed for the AI
+            // suggestion flow.
+            generationCfg = {
+                minAtoms: 1,
+                maxAtoms: 2,
+                difficultyRange: [0.3, 0.8],
+                playerLevel: cfg.playerLevel,
+                preferredTypes: [forced],
+                excludedTypes: [],
+                rewardMultiplier: 1.0,
+            };
+            configSource = 'forced';
+        } else if (cfg.mood) {
             // Round 51 — try WASM first; on null result, fall back to
             // the TS mirror. The fallback is always safe (the TS mirror
             // never fails for well-formed input). The `source` is
@@ -187,7 +227,6 @@ export class AIBridge {
         }
 
         // 3. Constrain preferredTypes to what the engine actually provides.
-        const availableIds = new Set(ATOM_MANIFEST.map(a => a.id));
         const filteredPreferred = generationCfg.preferredTypes.filter(id => availableIds.has(id));
         const finalCfg = { ...generationCfg, preferredTypes: filteredPreferred };
 

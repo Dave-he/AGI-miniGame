@@ -265,6 +265,47 @@
       .npc-bias-up   { color: var(--neon-pink); }
       .npc-bias-down { color: var(--neon-cyan); }
       .npc-bias-flat { color: var(--text-1); }
+
+      /* Round 57 — keyboard help overlay. Centered modal-style,
+         hidden by default via the `hidden` attribute. */
+      .kb-help {
+        position: fixed; left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 9999;
+        background: rgba(5, 6, 23, 0.95);
+        border: 2px solid var(--neon-cyan, #06d6a0);
+        border-radius: 8px;
+        padding: 18px 22px;
+        min-width: 360px;
+        max-width: 480px;
+        box-shadow: 0 0 24px rgba(6, 214, 160, 0.4);
+        color: var(--text-1, #fff);
+        font-family: monospace;
+      }
+      .kb-help[hidden] { display: none; }
+      .kb-help-title {
+        font-size: 14px; font-weight: 700;
+        color: var(--neon-cyan, #06d6a0);
+        text-align: center;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+      .kb-help-grid {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 14px;
+        font-size: 12px;
+      }
+      .kb-help-key {
+        color: var(--neon-pink, #ff66cc);
+        font-weight: 700;
+        text-align: right;
+      }
+      .kb-help-action {
+        color: var(--text-1, #fff);
+        text-align: left;
+      }
     </style>
   </head>
   <body>
@@ -279,6 +320,15 @@
     <div class="panel" id="god-root"></div>
     <div class="panel" id="vault-root"></div>
     <div class="panel" id="npc-mind-root"></div>
+
+    <!-- Round 57 — keyboard help overlay. Hidden by default;
+         toggle with the ? key. The body is populated at runtime
+         by KeyboardShortcuts.BINDING_DESCRIPTIONS so the two
+         stay in sync automatically. -->
+    <div id="keyboard-help" class="kb-help" hidden>
+      <div class="kb-help-title">⌨ 键盘快捷键 (按 ? 关闭)</div>
+      <div class="kb-help-grid" id="keyboard-help-body"></div>
+    </div>
 
     <div class="controls">
       <button class="ctl" id="btn-enter">进入次元</button>

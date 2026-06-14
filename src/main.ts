@@ -31,6 +31,7 @@ import { SaveSystem } from './world/SaveSystem';
 import { AIEngine, BalanceTuner } from './ai/AIEngine';
 import { NPCDialogueAI, NPCProfile } from './ai/NPCDialogueAI';
 import { AIBridge, ATOM_MANIFEST } from './gameplay/AIBridge';
+import { routeKey, BINDING_DESCRIPTIONS } from './input/KeyboardShortcuts';
 import { GameplayManager, SynthesisModule, CardModule } from './gameplay/GameplayManager';
 import { DslExecutor } from './scene/DslExecutor';
 import { HotReloadController } from './scene/HotReloadController';
@@ -631,6 +632,75 @@ class App {
     /** Round 21 — record the current dimension as failed/abandoned. */
     failCurrentDimension(): void { this.recordDimensionOutcome('failed', -0.4); }
     abandonCurrentDimension(): void { this.recordDimensionOutcome('abandoned', -0.1); }
+
+    /**
+     * Round 57 — enter a dimension pinned to a specific primary atom
+     * (used by the 1-8 keyboard shortcuts). Skips the AI suggestion
+     * step in the bridge (via `forcedAtomId`) and renders a quick
+     * 10×10 WFC dungeon themed to the atom's manifest entry. The
+     * full themeToScene + eventChain pipeline is reserved for the
+     * normal `enterNewDimension` path — keyboard entry is a fast
+     * portal jump, not a full blueprint rollout.
+     */
+    async enterAtom(atomId: string): Promise<void> {
+        if (!atomId) return;
+        const known = ATOM_MANIFEST.find(a => a.id === atomId);
+        if (!known) {
+            this.hud.log(`[kb] 未知 atom: ${atomId}`);
+            return;
+        }
+        this.hud.log(`[kb] 键 1-8 触发 → ${atomId} (${known.name})`);
+        try {
+            const avgMood = this.npcMinds.averageDisposition();
+            const r = await this.bridge.planAndLoad({
+                playerLevel: this.worldState.player.level,
+                mood: avgMood,
+                seed: Date.now(),
+                forcedAtomId: atomId,
+            });
+            // Quick 10×10 WFC + biome render. Pick the biome
+            // from the blueprint's resolved biomeId (if set) or
+            // fall back to atom-style keyword match.
+            const seed = r.seed ?? Date.now();
+            this.worldState.setLastDimensionSeed(seed);
+            // Use a uniform-ish weight set; the forced path
+            // is a fast portal jump, not a thematically-tuned
+            // scene rollout.
+            const dungeon = generateDungeon(10, 10, seed);
+            const visualStyle = r.blueprint.theme?.visualStyle ?? 'dungeon';
+            const biome = biomeForVisualStyle(visualStyle);
+            this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
+            this.scene.setBiomeAtmosphere(getBiomeAtmosphere(biome.id));
+            // Spawn a small wave of NPCs (2-4) keyed to the
+            // atom's gameplayType.
+            const archetypeIds = r.blueprint.atomIds.slice(0, 3);
+            const spawned = this.scene.spawnNpcWave(archetypeIds.length, archetypeIds);
+            this.hud.log(
+                `[scene] 快速入口: ${atomId} · biome=${biome.id} · ` +
+                `NPC×${spawned.length} · seed=${seed}`,
+            );
+        } catch (err) {
+            this.hud.log(`[kb] enterAtom(${atomId}) 失败: ${(err as Error).message}`);
+        }
+    }
+
+    /**
+     * Round 57 — toggle the in-game help overlay. The overlay is a
+     * hidden-by-default `<div id="keyboard-help">` that lists every
+     * keybinding. We just flip the `hidden` attribute.
+     */
+    toggleHelp(): void {
+        const el = document.getElementById('keyboard-help');
+        if (!el) return;
+        const isHidden = el.hasAttribute('hidden');
+        if (isHidden) {
+            el.removeAttribute('hidden');
+            this.hud.log('[kb] 帮助浮层已打开 (按 ? 关闭)');
+        } else {
+            el.setAttribute('hidden', '');
+            this.hud.log('[kb] 帮助浮层已关闭');
+        }
+    }
 
     /**
      * Round 35 — keep `worldState.lastNpcDisposition` in sync with
@@ -1504,6 +1574,48 @@ async function bootstrap(): Promise<void> {
         { itemId: 'gold', quantity: 100 },
         { itemId: 'gem',  quantity: 5 },
     ]));
+
+    // Round 57 — global keyboard shortcuts. Bound at the window
+    // level so the player can drive the game from anywhere; the
+    // router translates each keydown into a semantic action that
+    // dispatches into the App. Modifier-held keys (Ctrl/Meta/Alt)
+    // are ignored so browser shortcuts (Cmd+S, Ctrl+L etc.) still
+    // work for the page itself.
+    // Populate the help overlay body once at boot from the
+    // canonical BINDING_DESCRIPTIONS so the two stay in sync.
+    {
+        const body = document.getElementById('keyboard-help-body');
+        if (body) {
+            for (const d of BINDING_DESCRIPTIONS) {
+                const keyEl = document.createElement('div');
+                keyEl.className = 'kb-help-key';
+                keyEl.textContent = d.key;
+                const actEl = document.createElement('div');
+                actEl.className = 'kb-help-action';
+                actEl.textContent = d.action;
+                body.appendChild(keyEl);
+                body.appendChild(actEl);
+            }
+        }
+    }
+    window.addEventListener('keydown', (ev: KeyboardEvent) => {
+        if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        const action = routeKey(ev.key);
+        if (!action) return;
+        switch (action.kind) {
+            case 'enter-atom': void app.enterAtom(action.atomId); break;
+            case 'abandon':    app.abandonCurrentDimension(); break;
+            case 'reroll':     void app.enterNewDimension(); break;
+            case 'toggle-help':app.toggleHelp(); break;
+            case 'save':       app.saveGame(); break;
+            case 'load':       void app.loadGame(); break;
+            case 'event':      app.rollWorldEvent(); break;
+        }
+        // Only swallow the event when we actually handled it so
+        // tab navigation, Esc-into-fullscreen-exit etc. still
+        // behave normally.
+        ev.preventDefault();
+    });
 
     // Auto-enter the first dimension after 1.5s
     setTimeout(() => app.enterNewDimension(), 1500);
