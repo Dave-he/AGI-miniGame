@@ -671,8 +671,12 @@ describe('App — round 66 DM+rollback minimap wiring', () => {
             eventCount: number;
             archetypeHintCount: number;
         };
-        expect(scalars.npcCount).toBe(0);
-        expect(scalars.bpm).toBe(120);
+        // Round 77 — the 3 remaining scalar placeholders are
+        // now real. The real WFC generator always places at
+        // least 1 SPAWN tile, so npcCount >= 1. The cyberpunk
+        // biome's mood is 'pulse' → bpmForMood returns 140.
+        expect(scalars.npcCount).toBeGreaterThanOrEqual(1);
+        expect(scalars.bpm).toBe(140);
         expect(scalars.eventCount).toBeGreaterThanOrEqual(3);
         expect(scalars.eventCount).toBeLessThanOrEqual(5);
         expect(scalars.archetypeHintCount).toBe(0);
@@ -825,11 +829,17 @@ describe('App — round 71 DM event chain wiring', () => {
             archetypeHintCount: number;
         };
         expect(scalars.eventCount).toBe(5);
-        // Other scalars still default (round-66 DM path doesn't
-        // run themeToScene, so npcCount / bpm / archetypeHintCount
-        // remain placeholders).
+        // Round 77 — the 3 remaining scalar placeholders are
+        // now real:
+        //   - npcCount: 0 (the round-71 test grid has no
+        //                SPAWN tiles)
+        //   - bpm:      140 (cyberpunk biome's mood is
+        //                'pulse' → bpmForMood returns 140)
+        //   - archetypeHintCount: 0 (WFC path doesn't emit
+        //                archetype hints — that's a
+        //                `themeToScene` concept)
         expect(scalars.npcCount).toBe(0);
-        expect(scalars.bpm).toBe(120);
+        expect(scalars.bpm).toBe(140);
         expect(scalars.archetypeHintCount).toBe(0);
     });
 
@@ -1021,6 +1031,118 @@ describe('App — round 73 HUD setLastSceneEventChain wiring', () => {
         }).worldState;
         expect(ws.lastSceneEventChain?.length).toBe(5);
         expect(ws.lastSceneEventChain?.[0].payload).toBe('cyberpunk_treasure_drop_0');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 77 — close the 3 remaining scalar placeholders on
+// the DM `onDimension` path. Round 71 closed `eventCount`
+// (synthesized chain length). Round 77 closes:
+//   - npcCount           → `countNpcSpawnTiles(tiles)` (real
+//                          spawn-tile count in the WFC grid)
+//   - bpm                → `bpmForMood(biome.mood)` (the
+//                          biome's mood maps to a tempo)
+//   - archetypeHintCount → 0 (WFC doesn't emit archetype
+//                          hints — that's a `themeToScene`
+//                          concept)
+//
+// The unit-test for the 2 helpers lives in
+// WfcBiomes.test.ts / DmEventChain.test.ts. This block
+// exercises the integration: a DM `dim 8 8 cyberpunk` call
+// must write a 5-event chain with the right scalar triple.
+// ---------------------------------------------------------------------------
+
+describe('App — round 77 DM path real scalars (npcCount + bpm)', () => {
+    let app: App;
+    let setLastSceneBlueprint: jest.SpyInstance;
+
+    beforeEach(() => {
+        app = makeApp();
+        // Stub the WFC render / atmosphere / audio / minimap
+        // so we can focus on the scalar write.
+        jest.spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { hud: { setLastBiome: (id: string) => void } }).hud, 'setLastBiome')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { hud: { setMinimap: (m: string) => void } }).hud, 'setMinimap')
+            .mockImplementation(() => undefined);
+        setLastSceneBlueprint = jest
+            .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
+            .mockImplementation(() => undefined);
+        // Set up a default WFC stub. Each test below
+        // overrides this with a specific tile layout.
+        const wfcModule = require('./world/WfcLevelGen') as typeof import('./world/WfcLevelGen');
+        jest.spyOn(wfcModule, 'generateDungeon').mockImplementation((w: number, h: number) => {
+            const tiles: number[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 0));
+            return { tiles, success: true };
+        });
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('cyberpunk_dim_writes_pulse_bpm_and_spawn_tile_count', () => {
+        // Stub generateDungeon to return an 8x8 grid with
+        // 3 SPAWN tiles (no chests / shrines / traps) so
+        // we get the minimum-event chain (3 events) and a
+        // known npcCount.
+        const wfcModule = require('./world/WfcLevelGen') as typeof import('./world/WfcLevelGen');
+        (wfcModule.generateDungeon as jest.Mock).mockImplementation((w: number, h: number) => {
+            const tiles: number[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 0));
+            tiles[1][1] = 4; // TILE_SPAWN
+            tiles[2][2] = 4; // TILE_SPAWN
+            tiles[3][3] = 4; // TILE_SPAWN
+            return { tiles, success: true };
+        });
+        (app as unknown as { dm: { run: (line: string) => unknown } }).dm.run('dim 8 8 cyberpunk');
+        const scalars = setLastSceneBlueprint.mock.calls[0]?.[0] as {
+            npcCount: number;
+            bpm: number;
+            eventCount: number;
+            archetypeHintCount: number;
+        };
+        // 3 SPAWN tiles → npcCount=3.
+        expect(scalars.npcCount).toBe(3);
+        // cyberpunk biome has mood='pulse' → bpmForMood returns 140.
+        expect(scalars.bpm).toBe(140);
+        // WFC path doesn't emit archetype hints.
+        expect(scalars.archetypeHintCount).toBe(0);
+    });
+
+    test('forest_dim_writes_slower_bpm_for_mysterious_mood', () => {
+        // The forest biome has mood='mysterious' →
+        // bpmForMood returns 60. A future regression that
+        // flipped the BPM mapping would be caught here.
+        const wfcModule = require('./world/WfcLevelGen') as typeof import('./world/WfcLevelGen');
+        (wfcModule.generateDungeon as jest.Mock).mockImplementation((w: number, h: number) => {
+            const tiles: number[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 0));
+            tiles[1][1] = 4; // 1 SPAWN
+            return { tiles, success: true };
+        });
+        (app as unknown as { dm: { run: (line: string) => unknown } }).dm.run('dim 8 8 forest');
+        const scalars = setLastSceneBlueprint.mock.calls[0]?.[0] as { npcCount: number; bpm: number };
+        expect(scalars.npcCount).toBe(1);
+        expect(scalars.bpm).toBe(60);
+    });
+
+    test('empty_grid_writes_zero_npc_count', () => {
+        // Boundary: a grid with NO SPAWN tiles → npcCount=0.
+        // Mirrors the round-71 "empty dungeon" case.
+        const wfcModule = require('./world/WfcLevelGen') as typeof import('./world/WfcLevelGen');
+        (wfcModule.generateDungeon as jest.Mock).mockImplementation((w: number, h: number) => {
+            const tiles: number[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 0));
+            return { tiles, success: true };
+        });
+        (app as unknown as { dm: { run: (line: string) => unknown } }).dm.run('dim 8 8 cyberpunk');
+        const scalars = setLastSceneBlueprint.mock.calls[0]?.[0] as { npcCount: number };
+        expect(scalars.npcCount).toBe(0);
     });
 });
 

@@ -125,3 +125,34 @@ export function biomeForVisualStyle(style: string): BiomePalette {
     if (s.includes('space') || s.includes('star')  || s.includes('星')) return BIOMES.space;
     return BIOMES.dungeon;
 }
+
+/**
+ * Round 77 — `bpmForMood(mood)` maps a biome's `mood` field to
+ * a sensible music BPM. Used by the round-71+ DM `onDimension`
+ * callback to fill the `bpm` scalar on the
+ * `lastSceneBlueprint` (previously a hard-coded `120` placeholder).
+ *
+ * The mapping is hand-tuned to feel right per mood:
+ * - `mysterious` → 60 BPM (slow ambient drones)
+ * - `tense`      → 110 BPM (rising pulses, mid-tempo)
+ * - `cheerful`   → 130 BPM (bright arpeggios, up-tempo)
+ * - `pulse`      → 140 BPM (cyberpunk synthwave, fastest)
+ * - `epic`       → 90 BPM (cinematic swells, moderate)
+ *
+ * The non-DM `themeToScene` path computes its own `musicBpm`
+ * from the `aiContent.theme` (see SceneGen.ts), so this helper
+ * is only consulted on the DM `dim <rows> <cols> <style>` path
+ * where the player picks the visual style interactively and
+ * there's no AI-generated theme to read from.
+ */
+export type BiomeMood = BiomePalette['mood'];
+
+export function bpmForMood(mood: BiomeMood): number {
+    switch (mood) {
+        case 'mysterious': return 60;
+        case 'tense':      return 110;
+        case 'cheerful':   return 130;
+        case 'pulse':      return 140;
+        case 'epic':       return 90;
+    }
+}

@@ -39,8 +39,8 @@ import { SceneTransitions } from './scene/SceneTransitions';
 import { NpcCombat } from './scene/NpcCombat';
 import { generateDungeon, generateDungeonWithWeights, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
 import { renderMiniMap } from './world/MiniMap';
-import { biomeForVisualStyle } from './world/WfcBiomes';
-import { synthesizeDmEventChain } from './ai/DmEventChain';
+import { biomeForVisualStyle, bpmForMood } from './world/WfcBiomes';
+import { synthesizeDmEventChain, countNpcSpawnTiles } from './ai/DmEventChain';
 import { getBiomeAtmosphere } from './scene/BiomeAtmosphere';
 import { getBiomeAudio } from './audio/BiomeAudio';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
@@ -283,9 +283,34 @@ class App {
                 // round-72+ "replay events" UI can render either path
                 // through the same code. See `DmEventChain.ts`.
                 const dmEventChain = synthesizeDmEventChain(dungeon.tiles, biome);
+                // Round 77 — close the 3 remaining scalar
+                // placeholders. The DM path doesn't run
+                // `themeToScene` (no AI-generated theme to
+                // read from), so the 4 scalars were:
+                //   - npcCount           = 0    (placeholder)
+                //   - bpm                = 120  (placeholder)
+                //   - eventCount         = dmEventChain.length (round 71)
+                //   - archetypeHintCount = 0    (placeholder)
+                //
+                // The WFC grid + the resolved biome are
+                // enough to compute the other three:
+                //   - npcCount           = countNpcSpawnTiles(tiles)
+                //                            (real spawn tiles in
+                //                             the generated grid)
+                //   - bpm                = bpmForMood(biome.mood)
+                //                            (the biome's mood
+                //                             maps to a sensible
+                //                             tempo)
+                //   - archetypeHintCount = 0  (WFC doesn't emit
+                //                            archetype hints —
+                //                            that's a
+                //                            `themeToScene`
+                //                            concept. The DM
+                //                            path correctly
+                //                            reports 0.)
                 this.hud.setLastSceneBlueprint({
-                    npcCount: 0,
-                    bpm: 120,
+                    npcCount: countNpcSpawnTiles(dungeon.tiles),
+                    bpm: bpmForMood(biome.mood),
                     // Round 71 — the real count, not 0. The
                     // 3-5 range mirrors the standard chain's.
                     eventCount: dmEventChain.length,

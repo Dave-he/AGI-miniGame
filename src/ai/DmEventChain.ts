@@ -199,3 +199,34 @@ function shouldEmit(kind: typeof DM_EVENT_KIND_ORDER[number], counts: TileCounts
         case 'fog_pulse':    return counts.trap > 0;
     }
 }
+
+// ---------------------------------------------------------------------------
+// Round 77 — `countNpcSpawnTiles(tiles)` — companion helper
+// for the DM `onDimension` callback. Returns the number of
+// tiles that spawn an NPC during play (the SPAWN tile id).
+// The non-DM `themeToScene` path computes its own `npcCount`
+// from `npcDensity * 12` (see SceneGen.ts:328-330) because
+// it has the full `theme` object to read from. The DM path
+// is leaner — only the WFC grid + the resolved biome — so we
+// count actual spawn tiles instead of estimating from a
+// density heuristic. This is a more honest value: a grid
+// with 3 SPAWN tiles will produce 3 NPCs, full stop.
+//
+// A regression here (e.g. someone changes the tile id, or
+// the function is renamed) would silently make the DM path's
+// `lastSceneBlueprint.npcCount` stay at 0 — which the round-71
+// test used to assert. The new round-77 tests pin the real
+// contract.
+// ---------------------------------------------------------------------------
+
+import { TILE_SPAWN } from '../world/WfcLevelGen';
+
+export function countNpcSpawnTiles(tiles: TileId[][]): number {
+    let n = 0;
+    for (const row of tiles) {
+        for (const id of row) {
+            if (id === TILE_SPAWN) n++;
+        }
+    }
+    return n;
+}

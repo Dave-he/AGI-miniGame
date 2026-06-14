@@ -7,13 +7,14 @@
  * non-zero `eventCount` to the HUD) lives in `main.test.ts`.
  */
 
-import { synthesizeDmEventChain } from './DmEventChain';
+import { synthesizeDmEventChain, countNpcSpawnTiles } from './DmEventChain';
 import {
     TILE_FLOOR,
     TILE_WALL,
     TILE_CHEST,
     TILE_TRAP,
     TILE_SHRINE,
+    TILE_SPAWN,
     type TileId,
 } from '../world/WfcLevelGen';
 import { BIOMES, type BiomePalette } from '../world/WfcBiomes';
@@ -258,5 +259,82 @@ describe('DmEventChain — determinism (round 71)', () => {
         const b = synthesizeDmEventChain(gB, forest);
         // Different kinds → different chains.
         expect(a[0].kind).not.toBe(b[0].kind);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 77 — `countNpcSpawnTiles(tiles)` helper. The DM
+// `onDimension` callback in main.ts uses this to fill the
+// `npcCount` scalar (previously a hard-coded `0` placeholder).
+// The function counts SPAWN (id=4) tiles in the WFC grid —
+// a real, observable count of where NPCs will appear during
+// play. Floor / wall / door / chest / trap / shrine / goal
+// don't count (they're structural or content, not spawn
+// points).
+// ---------------------------------------------------------------------------
+
+describe('DmEventChain — round 77 countNpcSpawnTiles', () => {
+    test('empty_grid_returns_zero', () => {
+        const g = grid(5, 5);
+        expect(countNpcSpawnTiles(g)).toBe(0);
+    });
+
+    test('all_floor_grid_returns_zero', () => {
+        // An 8x8 floor-only dungeon (the round-71 "empty
+        // dungeon" case) has no spawn points.
+        const g = grid(8, 8, TILE_FLOOR);
+        expect(countNpcSpawnTiles(g)).toBe(0);
+    });
+
+    test('single_spawn_tile_returns_one', () => {
+        const g = grid(5, 5);
+        placeTile(g, 2, 2, TILE_SPAWN);
+        expect(countNpcSpawnTiles(g)).toBe(1);
+    });
+
+    test('multiple_spawn_tiles_sum_correctly', () => {
+        const g = grid(8, 8);
+        placeTile(g, 1, 1, TILE_SPAWN);
+        placeTile(g, 3, 3, TILE_SPAWN);
+        placeTile(g, 5, 5, TILE_SPAWN);
+        placeTile(g, 6, 6, TILE_SPAWN);
+        expect(countNpcSpawnTiles(g)).toBe(4);
+    });
+
+    test('non_spawn_tiles_are_not_counted', () => {
+        // Mirrors the round-71 "dungeon with chests
+        // shrine trap" grid: 2 chests + 1 shrine +
+        // 1 trap. None of these are SPAWN tiles, so
+        // the count stays at 0.
+        const g = grid(5, 5);
+        placeTile(g, 0, 0, TILE_CHEST);
+        placeTile(g, 1, 1, TILE_CHEST);
+        placeTile(g, 2, 2, TILE_SHRINE);
+        placeTile(g, 3, 3, TILE_TRAP);
+        expect(countNpcSpawnTiles(g)).toBe(0);
+    });
+
+    test('mixed_grid_counts_only_spawn', () => {
+        // Realistic 5x5 grid: 1 chest + 2 spawn + 1 wall.
+        // The helper must count 2, not 4.
+        const g = grid(5, 5);
+        placeTile(g, 0, 0, TILE_CHEST);
+        placeTile(g, 1, 1, TILE_SPAWN);
+        placeTile(g, 2, 2, TILE_SPAWN);
+        placeTile(g, 3, 3, TILE_WALL);
+        expect(countNpcSpawnTiles(g)).toBe(2);
+    });
+
+    test('non_rectangular_grid_works', () => {
+        // The helper doesn't assume the grid is square
+        // — it iterates each row independently. A 3x7
+        // grid (3 rows, 7 cols) with 2 spawns in the
+        // last row should return 2.
+        const g: TileId[][] = [
+            [TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR],
+            [TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR],
+            [TILE_SPAWN, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_FLOOR, TILE_SPAWN],
+        ];
+        expect(countNpcSpawnTiles(g)).toBe(2);
     });
 });
