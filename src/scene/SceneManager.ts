@@ -10,6 +10,7 @@
 
 import type { DimensionBlueprint } from '../ai/AIEngine';
 import type { BiomeAtmosphere } from './BiomeAtmosphere';
+import { clampCamRadius, stepCamRadius, CAM_RADIUS_MIN, CAM_RADIUS_MAX, CAM_RADIUS_STEP, CAM_RADIUS_DEFAULT } from './CameraZoom';
 
 export interface PortalDef {
     atomId: string;
@@ -59,6 +60,29 @@ export class SceneManager {
         drift: { x: number; y: number; z: number };
         speed: number;
     } | null = null;
+    /**
+     * Round 58 — the three scene lights are stored as fields so
+     * `setBiomeAtmosphere` can retint the directional / point lights
+     * per biome. The ambient light stays constant (it's the
+     * "studio fill" of the scene and shouldn't change with mood).
+     */
+    private ambientLight: any = null;
+    private dirLight: any = null;
+    private pointLight: any = null;
+    /**
+     * Round 58 — scroll-to-zoom camera state. The actual radius
+     * lerps toward `targetCamRadius` so the wheel feels smooth
+     * instead of jittery. Defaults match the previous hardcoded
+     * `camRadius = 28` so the first frame is byte-identical.
+     */
+    private camRadius: number = CAM_RADIUS_DEFAULT;
+    private targetCamRadius: number = CAM_RADIUS_DEFAULT;
+    /**
+     * Stored on the instance so the handler closure can read the
+     * current `targetCamRadius` (it doesn't need a ref because the
+     * closure captures `this`).
+     */
+    private wheelHandler: ((ev: WheelEvent) => void) | null = null;
     private avatar: { group: any; body: any; dir: any; aura: any; lastPulse: number } | null = null;
     private rafHandle: number | null = null;
     private resizeHandler: () => void;
@@ -99,14 +123,14 @@ export class SceneManager {
         this.camera.lookAt(0, 4, 0);
 
         // Lights
-        const ambient = new THREE.AmbientLight(0xb0aaff, 0.45);
-        this.scene.add(ambient);
-        const dir = new THREE.DirectionalLight(0xff66cc, 0.8);
-        dir.position.set(15, 25, 10);
-        this.scene.add(dir);
-        const back = new THREE.PointLight(0x66ddff, 0.6, 60);
-        back.position.set(-20, 8, -10);
-        this.scene.add(back);
+        this.ambientLight = new THREE.AmbientLight(0xb0aaff, 0.45);
+        this.scene.add(this.ambientLight);
+        this.dirLight = new THREE.DirectionalLight(0xff66cc, 0.8);
+        this.dirLight.position.set(15, 25, 10);
+        this.scene.add(this.dirLight);
+        this.pointLight = new THREE.PointLight(0x66ddff, 0.6, 60);
+        this.pointLight.position.set(-20, 8, -10);
+        this.scene.add(this.pointLight);
 
         // Ground
         const groundGeo = new THREE.CircleGeometry(40, 64);
@@ -164,6 +188,21 @@ export class SceneManager {
         });
 
         window.addEventListener('resize', this.resizeHandler);
+        // Round 58 — scroll-to-zoom. The wheel handler updates
+        // `targetCamRadius` (clamped to [CAM_RADIUS_MIN, CAM_RADIUS_MAX]
+        // via `stepCamRadius`); the actual camera position lerps
+        // toward the target in the tick loop for smooth motion.
+        this.wheelHandler = (ev: WheelEvent) => {
+            // wheel deltaY > 0 means the wheel scrolled DOWN →
+            // the user expects that to ZOOM OUT (camera moves
+            // away from the centre). The mouse wheel "natural"
+            // direction is "scroll down = page goes down = move
+            // camera up" in many UIs, so we invert the sign here
+            // to match what players actually want.
+            const direction = ev.deltaY > 0 ? 1 : -1;
+            this.targetCamRadius = stepCamRadius(this.targetCamRadius, direction);
+        };
+        window.addEventListener('wheel', this.wheelHandler, { passive: true });
         this.startedAt = performance.now();
         this.tick();
     }
@@ -216,6 +255,21 @@ export class SceneManager {
         if (this.scene.fog) {
             this.scene.fog.near = atm.fogNear;
             this.scene.fog.far = atm.fogFar;
+        }
+        // Round 58 — retint the directional light to the biome's
+        // signature `lightTint`. The ambient light stays constant
+        // (it's the studio fill, not the mood cue). The point
+        // light is also retinted so the back-of-scene fill matches.
+        const lightColorInt = parseInt(atm.lightTint.replace('#', ''), 16);
+        if (this.dirLight) {
+            this.dirLight.color = new THREE.Color(lightColorInt);
+        }
+        if (this.pointLight) {
+            // The point light gets the same tint at lower
+            // intensity so the back-fill doesn't overpower the
+            // key light. Keeps the biome's signature readable.
+            this.pointLight.color = new THREE.Color(lightColorInt);
+            this.pointLight.intensity = 0.45;
         }
         const count = atm.particleCount;
         const positions = new Float32Array(count * 3);
@@ -778,10 +832,11 @@ export class SceneManager {
             }
         }
 
-        // Slow camera orbit
-        const camRadius = 28;
-        this.camera.position.x = Math.cos(t * 0.1) * camRadius;
-        this.camera.position.z = Math.sin(t * 0.1) * camRadius;
+        // Slow camera orbit (radius lerps toward `targetCamRadius`,
+        // which the scroll-to-zoom wheel handler updates — round 58).
+        this.camRadius += (this.targetCamRadius - this.camRadius) * 0.08;
+        this.camera.position.x = Math.cos(t * 0.1) * this.camRadius;
+        this.camera.position.z = Math.sin(t * 0.1) * this.camRadius;
         this.camera.lookAt(0, 4, 0);
 
         this.fadeOldSpawned();
@@ -833,6 +888,10 @@ export class SceneManager {
     dispose(): void {
         if (this.rafHandle !== null) cancelAnimationFrame(this.rafHandle);
         window.removeEventListener('resize', this.resizeHandler);
+        if (this.wheelHandler) {
+            window.removeEventListener('wheel', this.wheelHandler);
+            this.wheelHandler = null;
+        }
         if (this.renderer) {
             this.renderer.dispose();
             this.renderer = null;
