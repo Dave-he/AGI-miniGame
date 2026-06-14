@@ -4,6 +4,7 @@
 
 import { NarrationEngine, moodBranch } from '../narration/NarrationEngine';
 import { AIEngine } from '../ai/AIEngine';
+import { mood4thSentenceForFallback } from '../ai/Mood4thSentence';
 import type { NpcDisposition } from '../world/NpcMind';
 import { defaultDisposition, makeEntry } from '../world/NpcMind';
 
@@ -389,5 +390,111 @@ describe('NarrationEngine — round 33 individual-NPC 4th sentence', () => {
         );
         expect(out.moodBranch).toBe('friendly');
         expect(out.speakerId).toBeUndefined();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 70 — engine delegates to the extracted
+// `mood4thSentenceForFallback` for the WASM-fallback path. These
+// tests pin the wiring: with `wasmMod = null` (the default for a
+// fresh engine), the 4th sentence picked by `narrate` must
+// equal the result of calling `mood4thSentenceForFallback`
+// directly with the same (branch, id) pair.
+// ---------------------------------------------------------------------------
+
+describe('NarrationEngine — round 70 mood4thSentenceForFallback wiring', () => {
+    function mood(overrides: Partial<NpcDisposition> = {}): NpcDisposition {
+        return { ...defaultDisposition(), ...overrides };
+    }
+
+    test('ts_fallback_4th_sentence_matches_extracted_mirror', () => {
+        // Fresh engine — no `setSceneGenWasm` call, so the WASM
+        // bridge is null and the TS fallback path runs. The 4th
+        // sentence should equal `mood4thSentenceForFallback`
+        // called directly with the same (branch, id).
+        const n = new NarrationEngine();
+        const id = 'r70-wiring-fear';
+        const out = n.narrate(bp(id, '幽邃森林'),
+            mood({ friendly: 0.0, fear: 0.8, trust: 0.0 }));
+        expect(out.moodBranch).toBe('fear');
+        expect(out.sentences.length).toBe(4);
+        const expected = mood4thSentenceForFallback('fear', id);
+        expect(out.sentences[3]).toBe(expected);
+    });
+
+    test('ts_fallback_4th_sentence_matches_extracted_mirror_friendly', () => {
+        const n = new NarrationEngine();
+        const id = 'r70-wiring-friendly';
+        const out = n.narrate(bp(id, '赛博朋克'),
+            mood({ friendly: 0.7, fear: 0.0, trust: 0.4 }));
+        expect(out.moodBranch).toBe('friendly');
+        const expected = mood4thSentenceForFallback('friendly', id);
+        expect(out.sentences[3]).toBe(expected);
+    });
+
+    test('ts_fallback_4th_sentence_matches_extracted_mirror_hostile', () => {
+        const n = new NarrationEngine();
+        const id = 'r70-wiring-hostile';
+        const out = n.narrate(bp(id, '暗黑地牢'),
+            mood({ friendly: -0.5, fear: 0.0, trust: 0.0 }));
+        expect(out.moodBranch).toBe('hostile');
+        const expected = mood4thSentenceForFallback('hostile', id);
+        expect(out.sentences[3]).toBe(expected);
+    });
+
+    test('source_tag_remains_ts_fallback_after_refactor', () => {
+        // The pre-refactor `narrate` always set
+        // `lastSentenceSource = 'ts-fallback'` for the non-WASM
+        // branch. The extraction must preserve that contract —
+        // `main.ts` reads the tag to log `[4th] WASM 兜底→ TS
+        // 镜像` and would render the wrong message if it broke.
+        const n = new NarrationEngine();
+        n.narrate(bp('r70-source-tag', '赛博朋克'),
+            mood({ friendly: 0.7, fear: 0.0, trust: 0.4 }));
+        expect(n.getLastSentenceSource()).toBe('ts-fallback');
+    });
+
+    test('individual_npc_path_is_unaffected_by_refactor', () => {
+        // The round-33 individual-NPC 4th-sentence path uses its
+        // own djb2-keyed pool (`MOOD_4TH_INDIVIDUAL`), NOT the new
+        // `mood4thSentenceForFallback` mirror. The extraction
+        // should not have touched it. This test pins that — a
+        // future refactor that accidentally routes the
+        // individual path through the new module would surface
+        // as a different 4th sentence.
+        const reg = new NpcRegistry();
+        // One terrified NPC. Push fear to 0.6 (witnessed_event
+        // adds w*0.15; 4 events at w=1.0 → fear ≈ 0.6).
+        const panic = new NpcMind('panic.bot');
+        for (let i = 0; i < 4; i++) {
+            panic.remember({
+                kind: 'witnessed_event',
+                summary: `saw ghost ${i}`,
+                turn: i + 1,
+                weight: 1.0,
+            });
+        }
+        reg.insert(panic);
+        const n = new NarrationEngine();
+        const id = 'r70-individual-still-djb2';
+        const out = n.narrate(bp(id, '幽邃森林'),
+            { friendly: 0.0, fear: 0.0, trust: 0.0 }, // avg mood = neutral
+            reg,
+        );
+        // The individual path should have fired (extreme NPC won
+        // the slot); the 4th sentence is from
+        // MOOD_4TH_INDIVIDUAL, NOT MOOD_4TH_POOL.
+        expect(out.moodBranch).toBe('fear');
+        expect(out.speakerId).toBe('panic.bot');
+        const individualPool = [
+            '守夜的士兵瑟缩着说："别……别往前走了。"',
+            '一个孩子拉了拉你的衣角：里面好黑，我们逃吧。',
+            '老奶奶颤抖着说：我已经听见尖叫了。',
+        ];
+        expect(individualPool).toContain(out.sentences[3]);
+        // Cross-check: the new mirror would have returned a
+        // sentence from MOOD_4TH_POOL, NOT the individual pool.
+        // We don't assert the negative (no specific sentence),
+        // but the containment above is the pinning.
     });
 });

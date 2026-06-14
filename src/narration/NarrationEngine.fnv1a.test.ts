@@ -27,15 +27,16 @@
  */
 
 import { NarrationEngine } from '../narration/NarrationEngine';
+import { fnv1a32 } from '../ai/Mood4thSentence';
 
 describe('NarrationEngine — round 53b fnv1a hash function', () => {
-    // Access the private method via a public surface. The
-    // `narrate` path is public, so we round-trip through a
-    // fixture (id + mood) and observe the 4th sentence picked.
-    // For direct hash verification we use a workaround:
-    // expose `fnv1a` for testing by casting through `unknown`.
-    const engine = new NarrationEngine();
-    const fnv1a = (engine as unknown as { fnv1a: (s: string) => number }).fnv1a.bind(engine);
+    // Round 70 — the FNV-1a 32-bit hash moved out of
+    // `NarrationEngine` (where it was a private method) into the
+    // new `Mood4thSentence` module as a stand-alone exported
+    // function. The pinned test vectors below still apply — same
+    // constants, same byte-for-byte match against the Rust
+    // implementation in `cocos4-rust/src/agi_minigame/narration.rs`.
+    const fnv1a = fnv1a32;
 
     test('empty_string_returns_FNV_offset_basis', () => {
         // FNV-1a 32-bit offset basis = 2166136261 = 0x811c9dc5.

@@ -36,6 +36,7 @@
 
 import type { DimensionBlueprint } from '../ai/AIEngine';
 import { callMood4thSentenceFor, type SceneGenWasmModule } from '../ai/SceneGenWasm';
+import { mood4thSentenceForFallback } from '../ai/Mood4thSentence';
 import type { NpcDisposition, NpcRegistry } from '../world/NpcMind';
 
 export interface Narration {
@@ -81,35 +82,6 @@ const CALLS = [
     '那里等待着的，是更深的真实',
     '你的选择是这个世界唯一的常数',
 ];
-
-/**
- * Round 25 — mood-driven 4th-sentence pool. Each branch has 4-5
- * alternatives picked deterministically by the dimension id. Branch
- * order matches the Rust `narration::mood_branch` exactly. Round
- * 30 expanded the pools so re-visits of the same dim get
- * different 4th sentences.
- */
-const MOOD_4TH: Record<'fear' | 'friendly' | 'hostile', string[]> = {
-    fear: [
-        '空气本身在退避，仿佛这里有过太多恐惧。',
-        '远处有什么东西在低声警告你停下脚步。',
-        '脚下的地板似乎在颤抖，不是风。',
-        '阴影里残留的尖叫还没有完全散去。',
-    ],
-    friendly: [
-        '当地的居民说，这里对旅人尚算友好。',
-        '守门人朝你点了点头，似乎记得上次的英勇。',
-        '空气里飘着淡淡的节日气息，像是在欢迎。',
-        '村口的风铃响了三下，节奏恰好。',
-        '你听见远处有人在哼着熟悉的小调。',
-    ],
-    hostile: [
-        '他们不会原谅你上次带来的麻烦。',
-        '哨兵把手按在剑柄上，眼神很冷。',
-        '上一次的伤痕写在每一张脸上。',
-        '你听见身后有人在啐口水。',
-    ],
-};
 
 /**
  * Round 33 — individual-NPC 4th-sentence pool. Picked when the
@@ -307,9 +279,17 @@ export class NarrationEngine {
                     sentences.push(wasmSentence);
                     this.lastSentenceSource = 'wasm';
                 } else {
-                    const pool = MOOD_4TH[branch];
-                    const branchRng = this.makeRng(this.fnv1a(blueprint.id));
-                    sentences.push(this.pick(pool, branchRng));
+                    // Round 70 — the TS-side mirror is now a stand-alone
+                    // function (`mood4thSentenceForFallback`) owned by
+                    // `Mood4thSentence.ts`. It uses the same FNV-1a 32-bit
+                    // hash + branch pool as the Rust WASM helper, so the
+                    // WASM and TS paths produce byte-identical sentences
+                    // for the same `(blueprint_id, branch)` (round 53b).
+                    // We used to inline the pool + hash + `pick` chain
+                    // here; the extraction enables the round-67 bench to
+                    // grow a 4th function and keeps the engine focused
+                    // on sentence composition rather than hash math.
+                    sentences.push(mood4thSentenceForFallback(branch, blueprint.id));
                     this.lastSentenceSource = 'ts-fallback';
                 }
             } else {
@@ -333,30 +313,6 @@ export class NarrationEngine {
     private djb2(s: string): number {
         let h = 5381;
         for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-        return h >>> 0;
-    }
-
-    /**
-     * Round 53b — FNV-1a 32-bit hash. Byte-for-byte equivalent to
-     * the Rust implementation in
-     * `cocos4-rust/src/agi_minigame/narration.rs::fnv1a` for ASCII
-     * inputs (the standard `dim_<digits>` or `r<N>-<tag>-<n>`
-     * format). The constants 2166136261 (offset basis) and
-     * 16777619 (prime) are the canonical FNV-1a 32-bit values
-     * (RFC 9923 / FNV reference implementation).
-     *
-     * Used by the **average-mood 4th-sentence path** so the WASM
-     * bridge and the TS fallback produce identical sentences for
-     * the same `(blueprint_id, branch)`. The individual-NPC path
-     * (round 33) still uses `djb2` because the WASM helper
-     * doesn't model the individual context yet (round-54 follow-up).
-     */
-    private fnv1a(s: string): number {
-        let h = 2166136261;
-        for (let i = 0; i < s.length; i++) {
-            h ^= s.charCodeAt(i);
-            h = Math.imul(h, 16777619);
-        }
         return h >>> 0;
     }
 

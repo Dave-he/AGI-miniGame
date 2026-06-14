@@ -31,21 +31,26 @@
  * not a 1.2x regression. The point of this benchmark is the
  * RATIO between the three paths, not the absolute numbers.
  *
- * The 4th-sentence WASM helper (`callMood4thSentenceFor`) is
- * intentionally NOT benchmarked here — the round-51 follow-up to
- * extract its TS-side `djb2` mirror from `NarrationEngine` is
- * still pending, so there's no clean "TS mirror vs bridge"
- * comparison to make yet.
- *
  * `console.log` is intentional — jest prints these lines in the
  * test output, so the bench numbers are visible in CI logs
  * without needing a separate harness.
+ *
+ * Round 70 — added the 4th function (`mood4thSentenceFor`):
+ *   - The TS-side mirror (`mood4thSentenceForFallback`) was
+ *     extracted from `NarrationEngine` into the new
+ *     `Mood4thSentence.ts` module, so the bench can finally
+ *     grow a 4th "TS mirror vs WASM bridge" pair.
+ *   - The 4th-sentence WASM call (`callMood4thSentenceFor`) is
+ *     the smallest in the bridge: a single u8 + a single string
+ *     in, a single string out. We expect the TS-mirror path
+ *     (no FFI, no JSON round-trip) to be near-instant.
  */
 
 import {
     callThemeToScene,
     callBuildGenerationConfigWithMood,
     callMoodPalette,
+    callMood4thSentenceFor,
     themeToSceneWithFallback,
     buildGenerationConfigWithMoodWithFallback,
     moodPaletteWithFallback,
@@ -57,6 +62,7 @@ import {
     moodPalette as moodPaletteTs,
     DEFAULT_GENERATION_HINT,
 } from './SceneGen';
+import { mood4thSentenceForFallback } from './Mood4thSentence';
 import { defaultDisposition } from '../world/NpcMind';
 import type { ThemeInput } from './SceneGen';
 
@@ -308,6 +314,61 @@ describe('SceneGenWasm — round 67 call-overhead benchmark', () => {
         test('ts_fallback_via_moodPaletteWithFallback', () => {
             const r = bench('moodPalette · WithFallback (null mod)', () => {
                 moodPaletteWithFallback(null, sampleMood);
+            }, ITERS, RUNS);
+            logBench(r);
+            expect(r.medianUsPerCall).toBeLessThan(20);
+        });
+    });
+
+    // -----------------------------------------------------------------------
+    // Round 70 — mood4thSentenceFor (4th bridge fn, smallest
+    // payload of the four: a u8 branch + a string id in, a
+    // string out). The TS-side mirror was extracted from
+    // `NarrationEngine` into `Mood4thSentence.ts` so we can finally
+    // bench the "TS mirror vs WASM bridge" pair.
+    // -----------------------------------------------------------------------
+
+    describe('mood4thSentenceFor', () => {
+        // The 4th-sentence call uses (branch=0, blueprint_id).
+        // We pin the id so the hash is deterministic across runs
+        // — the bench measures bridge cost, not the pick.
+        const SAMPLE_BRANCH = 0; // fear
+        const SAMPLE_ID = 'dim_bench_4th';
+
+        test('ts_mirror_is_baseline', () => {
+            // The mirror is a pure JS function: fnv1a32 +
+            // mod + array index. Should be < 5μs/call. This is
+            // the same order of magnitude as `moodPalette`'s
+            // mirror — both are O(1) lookups.
+            const r = bench('mood4thSentenceFor · TS mirror', () => {
+                mood4thSentenceForFallback('fear', SAMPLE_ID);
+            }, ITERS, RUNS);
+            logBench(r);
+            expect(r.medianUsPerCall).toBeLessThan(20);
+        });
+
+        test('wasm_bridge_via_callMood4thSentenceFor', () => {
+            // Smallest JSON payload in the bridge (a u8 + a
+            // short string in, a short string out). The cost
+            // should be dominated by the JSON round-trip, just
+            // like the other 3 WASM fns.
+            const stub = makeStubModule();
+            const r = bench('mood4thSentenceFor · WASM bridge (stub)', () => {
+                callMood4thSentenceFor(stub, SAMPLE_BRANCH, SAMPLE_ID);
+            }, ITERS, RUNS);
+            logBench(r);
+            expect(r.medianUsPerCall).toBeLessThan(500);
+        });
+
+        test('ts_mirror_via_callMood4thSentenceFor_null_mod', () => {
+            // The null-module path: bridge short-circuits and
+            // returns null. This is what `NarrationEngine` sees
+            // when `loadSceneGenWasm` fails — it then calls
+            // `mood4thSentenceForFallback` directly. We bench
+            // the bridge's null-short-circuit cost, NOT the
+            // mirror's cost (covered above).
+            const r = bench('mood4thSentenceFor · WASM bridge (null mod)', () => {
+                callMood4thSentenceFor(null, SAMPLE_BRANCH, SAMPLE_ID);
             }, ITERS, RUNS);
             logBench(r);
             expect(r.medianUsPerCall).toBeLessThan(20);
