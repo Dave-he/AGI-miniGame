@@ -864,3 +864,74 @@ describe('App — round 68 wasm.latency event emission', () => {
         expect(typeof callMood4thSentenceFor).toBe('function');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 69 — App-level WasmLatencyStats wiring. The App
+// constructor instantiates a `WasmLatencyStats`, attaches it
+// to `this.analytics`, and subscribes to its summary stream
+// to push `setWasmLatencyStats(s)` into the HUD. We verify
+// the end-to-end flow: emit a `wasm.latency` event via
+// `this.analytics.track(...)`, and the HUD's setWasmLatencyStats
+// is called with a summary that contains the per-fn stat.
+// ---------------------------------------------------------------------------
+
+describe('App — round 69 WasmLatencyStats wiring', () => {
+    let app: App;
+    let setWasmLatencyStats: jest.SpyInstance;
+
+    beforeEach(() => {
+        app = makeApp();
+        setWasmLatencyStats = jest
+            .spyOn((app as unknown as { hud: { setWasmLatencyStats: (s: unknown) => void } }).hud, 'setWasmLatencyStats')
+            .mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('emitting_wasm_latency_event_pushes_summary_to_hud', () => {
+        // Simulate the round-68 `analytics.bench` wrapper
+        // firing a `wasm.latency` event on the bus. The
+        // round-69 `WasmLatencyStats` aggregator (attached
+        // in the App constructor) should pick it up,
+        // compute a summary, and call
+        // `hud.setWasmLatencyStats(s)`.
+        const analytics = (app as unknown as { analytics: { track: (k: string, d?: unknown) => void } }).analytics;
+        analytics.track('wasm.latency', { name: 'themeToScene', ms: 1.5 });
+        analytics.track('wasm.latency', { name: 'themeToScene', ms: 2.5 });
+        analytics.track('wasm.latency', { name: 'mood4thSentenceFor', ms: 0.8 });
+
+        // The summary listener should have fired 3 times
+        // (once per track), and the most recent call should
+        // contain both fns with the right counts.
+        expect(setWasmLatencyStats).toHaveBeenCalledTimes(3);
+        const lastCall = setWasmLatencyStats.mock.calls[setWasmLatencyStats.mock.calls.length - 1];
+        const summary = lastCall[0] as {
+            perFn: Record<string, { count: number; medianMs: number; p95Ms: number; maxMs: number }>;
+            totalSamples: number;
+        };
+        expect(summary.totalSamples).toBe(3);
+        expect(summary.perFn.themeToScene.count).toBe(2);
+        expect(summary.perFn.themeToScene.medianMs).toBe(2);
+        expect(summary.perFn.themeToScene.maxMs).toBe(2.5);
+        expect(summary.perFn.mood4thSentenceFor.count).toBe(1);
+        expect(summary.perFn.mood4thSentenceFor.medianMs).toBe(0.8);
+    });
+
+    test('non_wasm_latency_events_do_not_trigger_hud_update', () => {
+        // The aggregator should filter the bus: only
+        // `wasm.latency` events count. Other event kinds
+        // (dimension.entered, dm.dimension, etc.) pass
+        // through unfiltered and the HUD never sees a
+        // summary update for them.
+        const analytics = (app as unknown as { analytics: { track: (k: string, d?: unknown) => void } }).analytics;
+        const beforeCalls = setWasmLatencyStats.mock.calls.length;
+        analytics.track('dimension.entered', { dimId: 'dim_1' });
+        analytics.track('dm.dimension', { rows: 10, cols: 10, style: 'cyberpunk' });
+        analytics.track('epoch.collapsed');
+        // No wasm.latency event was emitted, so the
+        // setWasmLatencyStats call count should be unchanged.
+        expect(setWasmLatencyStats.mock.calls.length).toBe(beforeCalls);
+    });
+});

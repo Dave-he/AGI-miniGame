@@ -650,3 +650,120 @@ describe('HUD — round 54 rollback button', () => {
         expect(handler).toHaveBeenCalledTimes(1);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 69 — `setWasmLatencyStats` + the new `⚡` row in the
+// persistent-memories block. The setter accepts a
+// WasmLatencySummary (per-fn count + median + p95 + max) and
+// pushes it into HUDState. The render method emits a `.hud-wasm-latency`
+// div with one bullet line per active fn, formatted as
+// "median Xms · p95 Yms · max Zms (×N)". The `⚡` emoji is
+// added to the summary strip only when at least one fn has
+// a non-zero count (zero-count summaries don't pull the row
+// in, matching the round-64 minimap "data URL present" guard).
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 69 setWasmLatencyStats', () => {
+    test('setWasmLatencyStats_pushes_into_state', () => {
+        const { hud } = makeHud();
+        expect(hud.getState().wasmLatencyStats).toBeUndefined();
+        hud.setWasmLatencyStats({
+            perFn: { themeToScene: { count: 1, medianMs: 1.5, p95Ms: 1.5, maxMs: 1.5 } },
+            totalSamples: 1,
+        });
+        expect(hud.getState().wasmLatencyStats?.totalSamples).toBe(1);
+        expect(hud.getState().wasmLatencyStats?.perFn.themeToScene.medianMs).toBe(1.5);
+    });
+
+    test('setWasmLatencyStats_null_clears_state', () => {
+        const { hud } = makeHud();
+        hud.setWasmLatencyStats({
+            perFn: { themeToScene: { count: 1, medianMs: 1, p95Ms: 1, maxMs: 1 } },
+            totalSamples: 1,
+        });
+        hud.setWasmLatencyStats(null);
+        expect(hud.getState().wasmLatencyStats).toBeNull();
+    });
+
+    test('renders_⚡_row_when_perFn_non_empty', () => {
+        const { hud, root } = makeHud();
+        hud.setWasmLatencyStats({
+            perFn: {
+                themeToScene: { count: 5, medianMs: 1.5, p95Ms: 2.0, maxMs: 2.5 },
+                mood4thSentenceFor: { count: 3, medianMs: 0.8, p95Ms: 0.9, maxMs: 1.0 },
+            },
+            totalSamples: 8,
+        });
+        const row = root.querySelector('.hud-wasm-latency');
+        expect(row).not.toBeNull();
+        expect(row!.textContent).toContain('⚡');
+        expect(row!.textContent).toContain('themeToScene');
+        expect(row!.textContent).toContain('mood4thSentenceFor');
+        expect(row!.textContent).toContain('median');
+        expect(row!.textContent).toContain('p95');
+        expect(row!.textContent).toContain('max');
+        // Both fns should appear (5 + 3 = 8 total samples
+        // matches what the analytics bus emitted).
+        expect(row!.textContent).toContain('×5');
+        expect(row!.textContent).toContain('×3');
+    });
+
+    test('does_not_render_⚡_row_when_perFn_is_empty', () => {
+        // Zero-count summary (e.g. immediately after
+        // WasmLatencyStats.reset()): the row should be
+        // hidden, NOT pulled in as a no-op divider.
+        const { hud, root } = makeHud();
+        hud.setWasmLatencyStats({ perFn: {}, totalSamples: 0 });
+        const row = root.querySelector('.hud-wasm-latency');
+        expect(row).toBeNull();
+    });
+
+    test('⚡_emoji_appears_in_summary_strip_when_stats_present', () => {
+        // The round-51 summary shows the active-field count
+        // + an emoji strip. Round 69 added ⚡ as the 7th
+        // emoji. Verify it appears when wasm stats are set.
+        const { hud, root } = makeHud();
+        hud.setLastBiome('forest');
+        hud.setWasmLatencyStats({
+            perFn: { themeToScene: { count: 1, medianMs: 1, p95Ms: 1, maxMs: 1 } },
+            totalSamples: 1,
+        });
+        const summary = root.querySelector('details.hud-memories > summary');
+        expect(summary).not.toBeNull();
+        expect(summary!.textContent).toContain('⚡');
+        // The count should reflect both ↩ (lastBiome) + ⚡
+        // (wasm) = 2. (no other fields set in this test).
+        expect(summary!.textContent).toContain('2');
+    });
+
+    test('coexists_with_other_memory_fields', () => {
+        // Regression check — the new ⚡ row shouldn't break
+        // the round-43/44/45/46/47/64 fields. Setting every
+        // memory field + WASM stats should produce 7 fields
+        // in the summary (↩ 🗣 🧠 🎭 🎬 🗺 ⚡).
+        const { hud, root } = makeHud();
+        hud.setLastBiome('forest');
+        hud.setLastSpeaker({
+            id: 'npc_1',
+            branch: 'fear',
+            disposition: { friendly: 0.1, fear: 0.7, trust: 0.0 },
+        });
+        hud.setNpcMindsSnapshot([{ entries: [{}, {}] }, { entries: [{}] }]);
+        hud.setLastNpcDisposition({ friendly: 0.5, fear: 0.2, trust: 0.3 });
+        hud.setLastSceneBlueprint({ npcCount: 5, bpm: 120, eventCount: 3, archetypeHintCount: 2 });
+        hud.setMinimap('data:image/png;base64,FAKE');
+        hud.setWasmLatencyStats({
+            perFn: { themeToScene: { count: 2, medianMs: 1.5, p95Ms: 1.8, maxMs: 2.0 } },
+            totalSamples: 2,
+        });
+        const summary = root.querySelector('details.hud-memories > summary');
+        expect(summary!.textContent).toContain('7');
+        // All 7 emojis should appear in the strip.
+        for (const emoji of ['↩', '🗣', '🧠', '🎭', '🎬', '🗺', '⚡']) {
+            expect(summary!.textContent).toContain(emoji);
+        }
+        // The wasm row should be present in the body.
+        const row = root.querySelector('.hud-wasm-latency');
+        expect(row).not.toBeNull();
+    });
+});

@@ -54,6 +54,7 @@ import { NarrationEngine } from './narration/NarrationEngine';
 import { WebAudioService, NullAudioService } from './audio/AudioService';
 import { GameAudio } from './audio/GameAudio';
 import { Analytics } from './analytics/Analytics';
+import { WasmLatencyStats } from './analytics/WasmLatencyStats';
 import { HttpLLMClient } from './ai/HttpLLMClient';
 import { DimensionVault } from './world/DimensionVault';
 import { renderVaultPanel, VaultPanelHandle } from './ui/VaultPanel';
@@ -139,6 +140,16 @@ class App {
     private npcCombat: NpcCombat;
     private audio: GameAudio;
     private analytics: Analytics;
+    /**
+     * Round 69 — per-fn WASM latency aggregator. Subscribes
+     * to the round-68 `wasm.latency` event stream and pushes
+     * a (count, median, p95, max) breakdown into the HUD on
+     * every event. The aggregation happens in-process so the
+     * HUD only sees a single state update per event. The
+     * per-fn ring buffer is bounded (default 200 samples) so
+     * a long session doesn't unbounded-grow the Map.
+     */
+    private wasmLatencyStats: WasmLatencyStats;
     private statsHandle: StatsPanelHandle | null = null;
     private statsTimer: ReturnType<typeof setInterval> | null = null;
     private llm: HttpLLMClient | { complete: typeof HttpLLMClient.prototype.complete } | null = null;
@@ -187,6 +198,20 @@ class App {
                 : new NullAudioService(),
         );
         this.analytics = new Analytics();
+        // Round 69 — attach the latency aggregator to the
+        // analytics bus. `attach()` is idempotent (matches
+        // the SessionReplay pattern at line 270), so the
+        // double-call in App.setSceneGenWasm or any future
+        // re-init path is safe.
+        this.wasmLatencyStats = new WasmLatencyStats();
+        this.wasmLatencyStats.attach(this.analytics);
+        // Push the per-fn summary into the HUD on every
+        // event. The aggregator already throttles via the
+        // bounded ring buffer (median over ≤200 samples),
+        // so we don't need an additional setInterval gate.
+        this.wasmLatencyStats.onSummary((s) => {
+            this.hud.setWasmLatencyStats(s);
+        });
         this.health = new PlayerHealth({
             epochTriggerCollapse: () => this.triggerCollapse(),
             analytics: this.analytics,

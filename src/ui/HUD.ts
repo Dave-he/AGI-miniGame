@@ -11,6 +11,7 @@ import type { DimensionBlueprint } from '../ai/AIEngine';
 import type { WorldEventDraft } from '../ai/SmartWorldAI';
 import type { I18n } from '../i18n/I18n';
 import type { NpcDisposition } from '../world/NpcMind';
+import type { WasmLatencySummary } from '../analytics/WasmLatencyStats';
 
 export interface HUDState {
     dimension: DimensionBlueprint | null;
@@ -89,6 +90,17 @@ export interface HUDState {
      * block, just under the "上次离开 #biome" line.
      */
     lastMinimap?: string | null;
+    /**
+     * Round 69 — the round-68 wasm.latency event stream
+     * aggregated by WasmLatencyStats. When set (and
+     * non-empty), the HUD renders a `⚡` row in the
+     * round-51 memories block showing the per-fn
+     * (count, median, p95, max) breakdown. Null when
+     * no WASM calls have been observed yet (fresh boot
+     * or the analytics bus has not fired any `wasm.latency`
+     * events).
+     */
+    wasmLatencyStats?: WasmLatencySummary | null;
 }
 
 export class HUD {
@@ -239,6 +251,28 @@ export class HUD {
                 lastSceneEventCount: scalars.eventCount,
                 lastSceneArchetypeHintCount: scalars.archetypeHintCount,
             };
+        }
+        this.render();
+    }
+
+    /**
+     * Round 69 — push the round-68 `wasm.latency` event
+     * stream's per-fn aggregation into the HUD. Pushed
+     * by `App.wasmLatencyStats.onSummary(...)` (set up in
+     * the App constructor right after `new WasmLatencyStats()`).
+     * The render call is throttled inside the aggregator
+     * (bounded ring buffer + listener-bypass on no-change),
+     * so this method can be called on every WASM event
+     * without measurable cost.
+     *
+     * Passing `null` clears the row (e.g. on a fresh boot
+     * where no WASM calls have been observed yet).
+     */
+    setWasmLatencyStats(stats: WasmLatencySummary | null): void {
+        if (!stats) {
+            this.state = { ...this.state, wasmLatencyStats: null };
+        } else {
+            this.state = { ...this.state, wasmLatencyStats: stats };
         }
         this.render();
     }
@@ -496,6 +530,11 @@ export class HUD {
      * the body preserves the original five divs verbatim so the
      * round-43/44/45/46/47 HUD contract is unchanged.
      *
+     * Round 64 added a 6th (🗺 minimap) and round 69 added a
+     * 7th (⚡ wasm-latency). The summary count, emoji strip,
+     * and per-row guards all scale automatically with the
+     * boolean flags below.
+     *
      * Returns an empty string when no fields are set (the
      * `<details>` block is then absent from the DOM, matching
      * the pre-round-51 behavior where each line was an
@@ -513,8 +552,16 @@ export class HUD {
             || s.lastSceneEventCount != null
             || s.lastSceneArchetypeHintCount != null;
         const minimapOn = s.lastMinimap != null;
+        // Round 69 — the wasm latency row is "on" when stats
+        // exist AND at least one fn has a non-zero count. A
+        // zero-count stats object (immediately after reset, or
+        // after a typo where the aggregator wired up but no
+        // events fired yet) shouldn't pull the row in.
+        const wasmOn = (s.wasmLatencyStats?.perFn
+            ? Object.keys(s.wasmLatencyStats.perFn).length > 0
+            : false);
 
-        const count = (biomeOn ? 1 : 0) + (speakerOn ? 1 : 0) + (snapshotOn ? 1 : 0) + (moodOn ? 1 : 0) + (sceneOn ? 1 : 0) + (minimapOn ? 1 : 0);
+        const count = (biomeOn ? 1 : 0) + (speakerOn ? 1 : 0) + (snapshotOn ? 1 : 0) + (moodOn ? 1 : 0) + (sceneOn ? 1 : 0) + (minimapOn ? 1 : 0) + (wasmOn ? 1 : 0);
         if (count === 0) return '';
 
         const emojiOrder: string[] = [];
@@ -524,6 +571,7 @@ export class HUD {
         if (moodOn) emojiOrder.push('🎭');
         if (sceneOn) emojiOrder.push('🎬');
         if (minimapOn) emojiOrder.push('🗺');
+        if (wasmOn) emojiOrder.push('⚡');
 
         // sessionStorage may be absent in non-browser test envs;
         // guard with a typeof check before reading. The key
@@ -533,6 +581,19 @@ export class HUD {
             ? sessionStorage.getItem('hud-memories-open') === '1'
             : false;
         const openAttr = persistedOpen ? ' open' : '';
+
+        // Round 69 — build the per-fn WASM latency lines.
+        // One `<div>` per active fn, in insertion order. The
+        // number format is "median Xms · p95 Yms · max Zms
+        // (×N samples)" so the player can spot a regression
+        // (p95 climbing) at a glance.
+        let wasmRows = '';
+        if (wasmOn && s.wasmLatencyStats) {
+            const lines = Object.entries(s.wasmLatencyStats.perFn).map(
+                ([name, stat]) => `· <b>${escapeHtml(name)}</b>: median <b>${stat.medianMs}</b>ms · p95 <b>${stat.p95Ms}</b>ms · max <b>${stat.maxMs}</b>ms (×${stat.count})`,
+            );
+            wasmRows = `<div class="hud-wasm-latency">⚡ WASM 延迟 <span style="opacity:0.7">(${s.wasmLatencyStats.totalSamples} 样本)</span><br><span style="font-size:0.85em">${lines.join('<br>')}</span></div>`;
+        }
 
         return `
             <details class="hud-memories"${openAttr}>
@@ -555,6 +616,7 @@ export class HUD {
                 ${sceneOn
                     ? `<div class="hud-scene-blueprint">🎬 上次维度: NPC×<b>${s.lastSceneNpcCount ?? '—'}</b> · BPM <b>${s.lastSceneBpm ?? '—'}</b> · <b>${s.lastSceneEventCount ?? '—'}</b> 事件 · <b>${s.lastSceneArchetypeHintCount ?? '—'}</b> archetype</div>`
                     : ''}
+                ${wasmRows}
             </details>
         `;
     }
