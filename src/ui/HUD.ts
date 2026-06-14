@@ -81,6 +81,14 @@ export interface HUDState {
         biome: string | null;
         visible: boolean;
     } | null;
+    /**
+     * Round 64 — the round-63 lastMinimap snapshot.
+     * 80×60 PNG data URL of the last dimension's WFC
+     * grid + biome palette. When set, the HUD renders
+     * a small image inside the round-51 memories
+     * block, just under the "上次离开 #biome" line.
+     */
+    lastMinimap?: string | null;
 }
 
 export class HUD {
@@ -128,6 +136,23 @@ export class HUD {
      */
     setLastBiome(biome: string | null): void {
         this.state = { ...this.state, lastBiome: biome };
+        this.render();
+    }
+
+    /**
+     * Round 64 — push the round-63 lastMinimap snapshot
+     * (80×60 PNG data URL) into the HUD. The image is
+     * rendered inside the round-51 memories block so
+     * the player sees a visual preview of their last
+     * visited dimension (survives save → reload because
+     * the WorldState already persists it).
+     *
+     * Pass `null` to hide the image (e.g. on a fresh
+     * game where no dimension has been entered yet, or
+     * on pre-round-63 saves that don't carry the field).
+     */
+    setMinimap(dataUrl: string | null): void {
+        this.state = { ...this.state, lastMinimap: dataUrl };
         this.render();
     }
 
@@ -487,8 +512,9 @@ export class HUD {
             || s.lastSceneBpm != null
             || s.lastSceneEventCount != null
             || s.lastSceneArchetypeHintCount != null;
+        const minimapOn = s.lastMinimap != null;
 
-        const count = (biomeOn ? 1 : 0) + (speakerOn ? 1 : 0) + (snapshotOn ? 1 : 0) + (moodOn ? 1 : 0) + (sceneOn ? 1 : 0);
+        const count = (biomeOn ? 1 : 0) + (speakerOn ? 1 : 0) + (snapshotOn ? 1 : 0) + (moodOn ? 1 : 0) + (sceneOn ? 1 : 0) + (minimapOn ? 1 : 0);
         if (count === 0) return '';
 
         const emojiOrder: string[] = [];
@@ -497,6 +523,7 @@ export class HUD {
         if (snapshotOn) emojiOrder.push('🧠');
         if (moodOn) emojiOrder.push('🎭');
         if (sceneOn) emojiOrder.push('🎬');
+        if (minimapOn) emojiOrder.push('🗺');
 
         // sessionStorage may be absent in non-browser test envs;
         // guard with a typeof check before reading. The key
@@ -512,6 +539,9 @@ export class HUD {
                 <summary>${emojiOrder.join('')} <b>${count}</b> 条记忆 · 点击展开</summary>
                 ${biomeOn
                     ? `<div class="hud-biome-remembered">↩ 上次离开 <b>#${escapeHtml(s.lastBiome!)}</b></div>`
+                    : ''}
+                ${s.lastMinimap
+                    ? `<div class="hud-minimap-row"><img class="hud-minimap" src="${escapeHtml(s.lastMinimap)}" alt="minimap of #${escapeHtml(s.lastBiome ?? '?')}" width="80" height="60" /></div>`
                     : ''}
                 ${speakerOn
                     ? `<div class="hud-speaker-remembered">🗣 你刚才听见了 <b>${escapeHtml(s.lastSpeakerId!)}</b> 说${s.lastSpeakerBranch ? ` <span class="hud-speaker-branch hud-speaker-${escapeHtml(String(s.lastSpeakerBranch))}">[${escapeHtml(String(s.lastSpeakerBranch))}]</span>` : ''}</div>`

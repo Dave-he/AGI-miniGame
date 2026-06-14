@@ -297,6 +297,21 @@
         gap: 6px 14px;
         font-size: 12px;
       }
+      /* Round 64 — minimap thumbnail inside the round-51
+         memories block. 80×60 PNG with a subtle neon
+         border so it pops against the dark HUD background. */
+      .hud-minimap-row {
+        margin: 4px 0 6px;
+        display: flex;
+        justify-content: center;
+      }
+      .hud-minimap {
+        border: 1px solid var(--neon-cyan, #06d6a0);
+        border-radius: 2px;
+        display: block;
+        image-rendering: pixelated;
+        background: #0a0a0a;
+      }
       .kb-help-section {
         /* Round 59 — section divider in the help overlay. Spans
            both grid columns so the label reads as a full-width

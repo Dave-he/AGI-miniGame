@@ -139,6 +139,52 @@ describe('HUD — round 26 getState() (typed read-only snapshot)', () => {
 // line in the stats panel after reload.
 // ---------------------------------------------------------------------------
 
+describe('HUD — round 64 setMinimap', () => {
+    test('setMinimap_pushes_into_state', () => {
+        const { hud } = makeHud();
+        expect(hud.getState().lastMinimap).toBeUndefined();
+        hud.setMinimap('data:image/png;base64,AAAA');
+        expect(hud.getState().lastMinimap).toBe('data:image/png;base64,AAAA');
+        hud.setMinimap(null);
+        expect(hud.getState().lastMinimap).toBeNull();
+    });
+
+    test('renders_img_with_src_when_data_url_set', () => {
+        const { hud, root } = makeHud();
+        hud.setMinimap('data:image/png;base64,FAKE');
+        const img = root.querySelector('img.hud-minimap');
+        expect(img).not.toBeNull();
+        expect(img?.getAttribute('src')).toBe('data:image/png;base64,FAKE');
+        expect(img?.getAttribute('width')).toBe('80');
+        expect(img?.getAttribute('height')).toBe('60');
+    });
+
+    test('renders_alt_text_using_lastBiome_when_both_set', () => {
+        const { hud, root } = makeHud();
+        hud.setLastBiome('forest');
+        hud.setMinimap('data:image/png;base64,FAKE');
+        const img = root.querySelector('img.hud-minimap');
+        expect(img?.getAttribute('alt')).toBe('minimap of #forest');
+    });
+
+    test('omits_img_when_data_url_null', () => {
+        const { hud, root } = makeHud();
+        hud.setMinimap('data:image/png;base64,FAKE');
+        expect(root.querySelector('img.hud-minimap')).not.toBeNull();
+        hud.setMinimap(null);
+        expect(root.querySelector('img.hud-minimap')).toBeNull();
+    });
+
+    test('minimap_counted_in_emoji_memo_summary', () => {
+        const { hud, root } = makeHud();
+        hud.setLastBiome('forest');
+        hud.setMinimap('data:image/png;base64,FAKE');
+        // The details summary should now include 2 (biome + minimap).
+        const summary = root.querySelector('details.hud-memories summary');
+        expect(summary?.textContent).toMatch(/2/);
+    });
+});
+
 describe('HUD — round 43 lastBiome HUD prompt', () => {
     test('setLastBiome_pushes_into_state', () => {
         const { hud } = makeHud();

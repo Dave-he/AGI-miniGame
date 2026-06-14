@@ -499,6 +499,10 @@ class App {
             // a visual preview of their last visited dimension
             // (and the snapshot survives save → reload).
             this.worldState.lastMinimap = renderMiniMap(themedDungeon.tiles, themedBiome.id);
+            // Round 64 — push the freshly-rendered thumbnail
+            // into the HUD so the memories block shows the
+            // visual preview immediately on enter.
+            this.hud.setMinimap(this.worldState.lastMinimap);
             // Spawn a wave of NPCs tagged with the theme's archetype hints.
             const archetypeIds = sceneBp.npcArchetypeHints.map(a => a as string);
             const spawned = this.scene.spawnNpcWave(sceneBp.npcCount, archetypeIds);
@@ -1295,6 +1299,11 @@ class App {
             // snapshot into the HUD so the "上次离开
             // #biome" prompt becomes visible.
             this.hud.setLastBiome(this.worldState.lastBiome);
+            // Round 64 — push the round-63 lastMinimap
+            // data URL into the HUD so the persistent
+            // memories block renders the 80×60 PNG
+            // preview next to the biome line.
+            this.hud.setMinimap(this.worldState.lastMinimap);
             // Round 45 — push the round-40 per-NPC
             // memory snapshot into the HUD so the
             // "🧠 N 个 NPC 记住了 K 段记忆" tally
