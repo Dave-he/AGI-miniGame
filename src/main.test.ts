@@ -9,10 +9,17 @@
  *     (lastSceneBlueprint + lastDimensionSeed + lastBiome +
  *     npcMindsSnapshot → WorldState) + banner-hide +
  *     backupAvailable=false + lastFailedSnapshot=null cleanup.
+ *   - Round 80 — bridge → `themeToScene` → WorldState + HUD e2e:
+ *     the bridge's `planAndLoad` is mocked to return a blueprint,
+ *     the WASM `sceneGenWasm` is stubbed via the round-82
+ *     `makeWasmStub` test-util, and the 5 e2e tests assert that
+ *     the App persists + HUD-pipes the WASM output byte-for-byte.
  *
  * Out of scope (deliberately):
  *   - WebGL real-render assertions (jsdom has no WebGL).
  *   - WASM bridge paths (covered by `SceneGenWasm.test.ts`).
+ *   - The WASM stub's own shape — locked by
+ *     `src/test-utils/sceneGenWasmStub.test.ts` (round 82).
  *   - `backupFailedSnapshot` internals (covered by
  *     `WorldState.test.ts`).
  *   - The orchestrator's "last-resort catch" rescue path
@@ -23,10 +30,17 @@
  * The manual mock pattern from rounds 53/54 (50 lines of
  * `as any` casts) is replaced with a `jest.spyOn` chain —
  * spies are recorded by name, assertions read like English.
+ *
+ * Round 82 — the `makeWasmStub` factory moved to
+ * `src/test-utils/sceneGenWasmStub.ts` so future e2e tests
+ * (round-80 follow-ups: rollback rehydrate, dual-load race,
+ * etc.) can import it without copy-pasting 60 lines of stub
+ * code. The shape is locked by the test-util's own test file.
  */
 
 import { App } from './main';
 import type { SceneBlueprintSnapshot } from './world/WorldState';
+import { makeWasmStub } from './test-utils/sceneGenWasmStub';
 
 // ---------------------------------------------------------------------------
 // Test fixtures — small, in-file, no .fixture file dependencies.
@@ -1568,65 +1582,13 @@ describe('App — round 80 e2e: bridge → themeToScene → WorldState + HUD', (
         };
     }
 
-    function makeWasmStub(bpOverrides: Partial<{
-        wfcTileWeights: [number, number, number, number, number, number, number, number];
-        biomeId: string;
-        baseNpcDensity: number;
-        npcDensity: number;
-        npcCount: number;
-        eventChain: Array<{ kind: string; delaySecs: number; payload: string }>;
-        musicBpm: number;
-        npcArchetypeHints: string[];
-    }> = {}) {
-        // The 4 functions the App calls into. The
-        // themeToScene WASM call returns a
-        // snake_case JSON; the others are stubbed with
-        // a no-op shape (the App only checks `r.configSource`
-        // tag for them, not the actual values).
-        return {
-            theme_to_scene_json: (themeJson: string) => {
-                const theme = JSON.parse(themeJson);
-                return JSON.stringify({
-                    wfc_tile_weights: bpOverrides.wfcTileWeights ?? [5, 4, 2, 2, 1, 0, 2, 1],
-                    biome_id: bpOverrides.biomeId ?? 'verdant-ruins',
-                    base_npc_density: bpOverrides.baseNpcDensity ?? 0.4,
-                    npc_density: bpOverrides.npcDensity ?? 0.4,
-                    npc_count: bpOverrides.npcCount ?? 6,
-                    event_chain: bpOverrides.eventChain ?? [
-                        { kind: 'spawn_wave', delay_secs: 5, payload: 'wasm_spawn_wave_0' },
-                        { kind: 'echo_lore', delay_secs: 13, payload: 'wasm_echo_lore_1' },
-                        { kind: 'treasure_drop', delay_secs: 21, payload: 'wasm_treasure_drop_2' },
-                    ],
-                    music_bpm: bpOverrides.musicBpm ?? 110,
-                    npc_archetype_hints: bpOverrides.npcArchetypeHints ?? ['mage', 'beast'],
-                    _echo: { visual_style: theme.visual_style, seed: theme.seed },
-                });
-            },
-            wasm_module_version: () => '0.2.0-round80-e2e',
-            build_generation_config_with_mood_json: (argsJson: string) => {
-                const args = JSON.parse(argsJson);
-                return JSON.stringify({
-                    min_atoms: 1,
-                    max_atoms: 2,
-                    difficulty_range_lo: 0.3,
-                    difficulty_range_hi: 0.8,
-                    player_level: args.player_level,
-                    preferred_types: ['tower_defense'],
-                    excluded_types: [],
-                    reward_multiplier: 1.0,
-                });
-            },
-            mood_palette_json: (moodJson: string) => {
-                const mood = JSON.parse(moodJson);
-                // Just emit a deterministic 3-color palette from the mood.
-                const r = Math.floor(mood.friendly * 255);
-                const g = Math.floor(mood.fear * 255);
-                const b = Math.floor(mood.trust * 255);
-                return JSON.stringify({ colors: [`#${r.toString(16).padStart(2, '0')}0000`, `#00${g.toString(16).padStart(2, '0')}00`, `#0000${b.toString(16).padStart(2, '0')}`] });
-            },
-            mood_4th_sentence_for_json: (_argsJson: string) => JSON.stringify({ sentence: 'wasm-4th' }),
-        };
-    }
+    // Round 82 — `makeWasmStub` is now a shared helper in
+    // `src/test-utils/sceneGenWasmStub.ts`. Imported at the
+    // top of this file. The factory's round-80 happy-path
+    // shape (5,4,2,2,1,0,2,1 weights + verdant-ruins biome +
+    // 3-event chain + 0.2.0-round80-e2e stamp) is locked by
+    // `sceneGenWasmStub.test.ts`; the e2e tests below rely on
+    // those defaults to drive the App's WASM branch.
 
     function stubSideEffects(app: App) {
         jest
