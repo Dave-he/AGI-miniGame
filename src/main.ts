@@ -226,6 +226,32 @@ class App {
                 this.audio.setBiomeSfx(biome.id, getBiomeAudio(biome.id));
                 this.analytics.track('dm.dimension', { rows: r, cols: c, style: s });
                 this.hud.log(`[DM] 渲染 ${biome.name} 主题地牢 ${r}x${c}`);
+                // Round 66 — keep the persistent-memories
+                // block in sync after a DM-driven dimension.
+                // Without this, the round-49 "↩ 上次离开
+                // #biome" line, round-64 🗺 minimap, and
+                // round-47 "🎬 上次维度" summary all stay
+                // stale after the player / GM uses the God
+                // console to spawn a dimension. We use
+                // biome defaults for the 4 scalars
+                // (npcCount=0, bpm=120, eventCount=0,
+                // archetypeHintCount=0) since the DM path
+                // doesn't run the full themeToScene pipeline
+                // (the player just picks rows/cols/style
+                // interactively). The minimap is rendered
+                // with the resolved biome's palette so the
+                // 🗺 preview matches what the player sees
+                // on screen.
+                this.worldState.lastBiome = biome.id;
+                this.hud.setLastBiome(biome.id);
+                this.worldState.lastMinimap = renderMiniMap(dungeon.tiles, biome.id);
+                this.hud.setMinimap(this.worldState.lastMinimap);
+                this.hud.setLastSceneBlueprint({
+                    npcCount: 0,
+                    bpm: 120,
+                    eventCount: 0,
+                    archetypeHintCount: 0,
+                });
             },
         });
         this.replay = new SessionReplay(this.analytics, 200);
@@ -1283,6 +1309,17 @@ class App {
                     this.scene.setBiomeAtmosphere(getBiomeAtmosphere(biome.id));
                 this.audio.setBiomeAmbient(biome.id, getBiomeAudio(biome.id));
                 this.audio.setBiomeSfx(biome.id, getBiomeAudio(biome.id));
+                    // Round 66 — render + push the
+                    // round-63 80×60 PNG minimap into
+                    // WorldState + HUD so the persistent
+                    // memories block shows the rolled-back
+                    // dungeon's preview, not the
+                    // pre-rollback corruption placeholder.
+                    // Mirrors the round-65 / enterAtom
+                    // sequence (and round-63/64
+                    // enterNewDimension sequence).
+                    this.worldState.lastMinimap = renderMiniMap(dungeon.tiles, biome.id);
+                    this.hud.setMinimap(this.worldState.lastMinimap);
                     partialState.rendered = true;
                     const spawned = this.scene.spawnNpcWave(snap.npcCount, snap.npcArchetypeHints);
                     partialState.spawned = true;

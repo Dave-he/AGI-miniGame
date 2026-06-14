@@ -572,3 +572,160 @@ describe('App — round 65 enterAtom HUD wiring', () => {
         expect(setMinimap).not.toHaveBeenCalled();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 66 — DM `onDimension` callback + `rollbackToLastGood` minimap
+// write paths. The DM path (the God console's `dim <r> <c> <style>`
+// command) and the render-failure rollback path (called from
+// `recoverFromRenderFailure`'s 4 branches when the user clicks
+// "↩ 上次保存") both render a real WFC dungeon but used to
+// skip the round-64 🗺 minimap update — leaving the
+// persistent-memories block showing the pre-action preview
+// (or the empty / placeholder) instead of the freshly
+// rendered scene. We verify both paths now mirror the
+// round-63/64/65 `enterNewDimension` / `enterAtom` sequence
+// (lastBiome → setLastBiome → lastMinimap → setMinimap →
+// setLastSceneBlueprint).
+// ---------------------------------------------------------------------------
+
+describe('App — round 66 DM+rollback minimap wiring', () => {
+    let app: App;
+    let renderWfcDungeon: jest.SpyInstance;
+    let setBiomeAtmosphere: jest.SpyInstance;
+    let setBiomeAmbient: jest.SpyInstance;
+    let setBiomeSfx: jest.SpyInstance;
+    let setLastBiome: jest.SpyInstance;
+    let setMinimap: jest.SpyInstance;
+    let setLastSceneBlueprint: jest.SpyInstance;
+    let spawnNpcWave: jest.SpyInstance;
+
+    beforeEach(() => {
+        app = makeApp();
+        renderWfcDungeon = jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        spawnNpcWave = jest
+            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
+            .mockReturnValue(['mock_npc_a']);
+        setBiomeAtmosphere = jest
+            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        setBiomeAmbient = jest
+            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        setBiomeSfx = jest
+            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        setLastBiome = jest
+            .spyOn((app as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome')
+            .mockImplementation(() => undefined);
+        setMinimap = jest
+            .spyOn((app as unknown as { hud: { setMinimap: (m: string | null) => void } }).hud, 'setMinimap')
+            .mockImplementation(() => undefined);
+        setLastSceneBlueprint = jest
+            .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
+            .mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('dm_dimension_writes_setLastBiome_setMinimap_setLastSceneBlueprint', () => {
+        // The DM console parses "dim 10 10 cyberpunk" and
+        // dispatches to the round-66-aware onDimension
+        // callback. We invoke the DM command path end-to-end
+        // so the parse + handler + writes all run in a
+        // single chain (no double-stubbing needed).
+        const result = (app as unknown as {
+            dm: { run: (line: string) => { ok: boolean; cmd: { kind: string }; error?: string } };
+        }).dm.run('dim 10 10 cyberpunk');
+        expect(result.ok).toBe(true);
+        expect(result.cmd.kind).toBe('dimension');
+
+        // Render pipeline ran exactly once.
+        expect(renderWfcDungeon).toHaveBeenCalledTimes(1);
+        // Atmosphere / audio / analytics side-effects fired.
+        expect(setBiomeAtmosphere).toHaveBeenCalledTimes(1);
+        expect(setBiomeAmbient).toHaveBeenCalledTimes(1);
+        expect(setBiomeSfx).toHaveBeenCalledTimes(1);
+
+        // Round 66 — persistent-memories block sync.
+        expect(setLastBiome).toHaveBeenCalledTimes(1);
+        expect(setLastBiome).toHaveBeenCalledWith('cyberpunk');
+        expect(setMinimap).toHaveBeenCalledTimes(1);
+        const minimapArg = setMinimap.mock.calls[0]?.[0];
+        expect(typeof minimapArg).toBe('string');
+        // Default scalars for DM path (no full themeToScene).
+        expect(setLastSceneBlueprint).toHaveBeenCalledTimes(1);
+        const scalars = setLastSceneBlueprint.mock.calls[0]?.[0] as {
+            npcCount: number;
+            bpm: number;
+            eventCount: number;
+            archetypeHintCount: number;
+        };
+        expect(scalars.npcCount).toBe(0);
+        expect(scalars.bpm).toBe(120);
+        expect(scalars.eventCount).toBe(0);
+        expect(scalars.archetypeHintCount).toBe(0);
+    });
+
+    test('dm_dimension_updates_worldState_lastBiome_and_lastMinimap', () => {
+        // Mirror the round-65 enterAtom direct-assign
+        // check — the DM path should also write
+        // worldState.lastBiome and worldState.lastMinimap
+        // (used by the next reload's rehydrate and by
+        // the round-49 "↩ 上次离开 #biome" line).
+        (app as unknown as { dm: { run: (line: string) => unknown } }).dm.run('dim 8 8 forest');
+        const ws = (app as unknown as {
+            worldState: { lastBiome: string | null; lastMinimap: string | null };
+        }).worldState;
+        expect(ws.lastBiome).toBe('forest');
+        expect(typeof ws.lastMinimap).toBe('string');
+    });
+
+    test('rollback_writes_setMinimap_and_worldState_lastMinimap', () => {
+        // Set up a corrupted worldState so rollbackToLastGood
+        // has something to restore (mirrors the round-55
+        // rollback test pattern at line 312).
+        const ws = (app as unknown as {
+            worldState: {
+                lastFailedSnapshot: ReturnType<typeof makeBackup>;
+                lastBiome: string;
+                lastSceneBlueprint: SceneBlueprintSnapshot | null;
+                lastDimensionSeed: number | null;
+                npcMindsSnapshot: unknown[];
+                lastMinimap: string | null;
+            };
+        }).worldState;
+        const backup = makeBackup({ biome: 'forest' });
+        ws.lastFailedSnapshot = backup;
+        ws.lastBiome = 'corrupted_placeholder_biome';
+        ws.lastSceneBlueprint = makeSnap({ biomeId: 'corrupted_placeholder_biome' });
+        ws.lastDimensionSeed = 999;
+        ws.npcMindsSnapshot = [];
+        // Pre-rollback the minimap is a placeholder
+        // (string that doesn't match the fresh render).
+        ws.lastMinimap = 'data:image/png;base64,PLACEHOLDER';
+
+        (app as unknown as { rollbackToLastGood: () => void }).rollbackToLastGood();
+
+        // Round 66 — minimap must have been re-rendered
+        // and pushed to both worldState and HUD.
+        expect(setMinimap).toHaveBeenCalledTimes(1);
+        const minimapArg = setMinimap.mock.calls[0]?.[0];
+        expect(typeof minimapArg).toBe('string');
+        expect(minimapArg).not.toBe('data:image/png;base64,PLACEHOLDER');
+        expect(ws.lastMinimap).toBe(minimapArg);
+
+        // Round-66 does NOT add a fresh setLastBiome to
+        // rollback (setLastBiome was already in the
+        // round-55 path at line 351), and does NOT
+        // add a fresh setLastSceneBlueprint (round-54
+        // path at line 295 already covers that).
+        // We assert rollback still restores the 4
+        // fields (regression check).
+        expect(ws.lastBiome).toBe('forest');
+        expect(ws.lastSceneBlueprint?.biomeId).toBe('forest');
+    });
+});
