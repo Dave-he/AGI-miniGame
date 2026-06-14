@@ -261,6 +261,13 @@ describe('Gameplay Atoms Mechanics & Runtime Core', () => {
         const matches = atom.findMatches();
         expect(matches.length).toBe(0); // initial removal should ensure no initial matches
 
+        // Use a deterministic no-match board so random refill cannot make this test flaky.
+        for (let r = 0; r < board.length; r++) {
+            for (let c = 0; c < board[r].length; c++) {
+                board[r][c] = (r * 2 + c) % 6;
+            }
+        }
+
         // Manually force a match of 3 gems horizontally at (0,0), (0,1), (0,2)
         const forcedGem = 2;
         board[0][0] = forcedGem;
@@ -269,6 +276,8 @@ describe('Gameplay Atoms Mechanics & Runtime Core', () => {
         
         // Re-inject board and process matches
         (atom as any).board = board;
+        const refill = [0, 1, 2];
+        (atom as any).randomGem = () => refill.shift() ?? 3;
         atom.processChain();
 
         expect(atom.currentScore).toBeGreaterThan(0);

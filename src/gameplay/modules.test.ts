@@ -67,9 +67,16 @@ describe('SynthesisModule', () => {
 });
 
 describe('Match3Module (new gameplay)', () => {
+    function installStableBoard(m: Match3Module): void {
+        m['board'] = Array.from({ length: 8 }, (_, row) =>
+            Array.from({ length: 8 }, (_, col) => (row * 2 + col) % 6)
+        );
+    }
+
     test('findMatches on a force-built 3-in-a-row returns one group', async () => {
         const m = new Match3Module();
         await m.load();
+        installStableBoard(m);
         m['board'][0][0] = 0; m['board'][0][1] = 0; m['board'][0][2] = 0;
         const groups = m.findMatches();
         expect(groups.length).toBeGreaterThanOrEqual(1);
