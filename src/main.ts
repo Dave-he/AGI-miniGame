@@ -40,6 +40,7 @@ import { NpcCombat } from './scene/NpcCombat';
 import { generateDungeon, generateDungeonWithWeights, TILE_SPAWN, TILE_GOAL } from './world/WfcLevelGen';
 import { biomeForVisualStyle } from './world/WfcBiomes';
 import { getBiomeAtmosphere } from './scene/BiomeAtmosphere';
+import { getBiomeAudio } from './audio/BiomeAudio';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
 import { TutorialOverlay } from './ui/TutorialOverlay';
 import { renderStatsPanel, StatsPanelHandle } from './ui/StatsPanel';
@@ -220,6 +221,7 @@ class App {
                 const dungeon = generateDungeon(r, c, Math.floor(Math.random() * 1e6));
                 this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
                 this.scene.setBiomeAtmosphere(getBiomeAtmosphere(biome.id));
+                this.audio.setBiomeAmbient(biome.id, getBiomeAudio(biome.id));
                 this.analytics.track('dm.dimension', { rows: r, cols: c, style: s });
                 this.hud.log(`[DM] 渲染 ${biome.name} 主题地牢 ${r}x${c}`);
             },
@@ -486,6 +488,7 @@ class App {
             const themedBiome = biomeForVisualStyle(sceneBp.biomeId);
             this.scene.renderWfcDungeon(themedDungeon.tiles, 1.0, themedBiome);
             this.scene.setBiomeAtmosphere(getBiomeAtmosphere(themedBiome.id));
+            this.audio.setBiomeAmbient(themedBiome.id, getBiomeAudio(themedBiome.id));
             // Spawn a wave of NPCs tagged with the theme's archetype hints.
             const archetypeIds = sceneBp.npcArchetypeHints.map(a => a as string);
             const spawned = this.scene.spawnNpcWave(sceneBp.npcCount, archetypeIds);
@@ -671,6 +674,7 @@ class App {
             const biome = biomeForVisualStyle(visualStyle);
             this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
             this.scene.setBiomeAtmosphere(getBiomeAtmosphere(biome.id));
+            this.audio.setBiomeAmbient(biome.id, getBiomeAudio(biome.id));
             // Spawn a small wave of NPCs (2-4) keyed to the
             // atom's gameplayType.
             const archetypeIds = r.blueprint.atomIds.slice(0, 3);
@@ -1182,6 +1186,7 @@ class App {
                     const biome = biomeForVisualStyle(snap.biomeId);
                     this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
                     this.scene.setBiomeAtmosphere(getBiomeAtmosphere(biome.id));
+                this.audio.setBiomeAmbient(biome.id, getBiomeAudio(biome.id));
                     partialState.rendered = true;
                     const spawned = this.scene.spawnNpcWave(snap.npcCount, snap.npcArchetypeHints);
                     partialState.spawned = true;
@@ -1417,6 +1422,7 @@ class App {
                     const biome = biomeForVisualStyle(snap.biomeId);
                     this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
                     this.scene.setBiomeAtmosphere(getBiomeAtmosphere(biome.id));
+                this.audio.setBiomeAmbient(biome.id, getBiomeAudio(biome.id));
                     partialState.rendered = true;
                     // Segment 3 — bulk-spawn the NPC wave. A
                     // throw here means the dungeon is on-screen

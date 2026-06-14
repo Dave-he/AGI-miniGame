@@ -7,6 +7,8 @@
  */
 
 import type { AudioService, AudioCue } from './AudioService';
+import type { BiomeAudio } from './BiomeAudio';
+import type { BiomeId } from '../world/WfcBiomes';
 
 export type GameAudioEvent =
     | 'dsl.applied' | 'dsl.rejected'
@@ -61,4 +63,30 @@ export class GameAudio {
 
     setMuted(muted: boolean): void { this.muted = muted; this.svc.setMuted(muted); }
     isMuted(): boolean { return this.muted; }
+
+    /**
+     * Round 61 — switch the ambient drone to the given biome's
+     * audio config. Thin pass-through to AudioService. The App
+     * calls this alongside `scene.setBiomeAtmosphere` so the
+     * audio + visual atmosphere change in lockstep.
+     */
+    setBiomeAmbient(biome: string | BiomeId, audio: BiomeAudio): void {
+        this.svc.setBiomeAmbient(biome, audio);
+    }
+
+    /**
+     * Round 61 — stop the ambient drone immediately. Called when
+     * the player leaves a dimension.
+     */
+    stopAmbient(): void {
+        this.svc.stopAmbient();
+    }
+
+    /**
+     * Round 61 — diagnostic: which biome's ambient is active?
+     * Returns null when no ambient is playing.
+     */
+    getActiveBiome(): string | null {
+        return this.svc.getActiveBiome();
+    }
 }

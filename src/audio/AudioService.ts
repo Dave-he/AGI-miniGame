@@ -16,7 +16,18 @@
  *   - 'chest'      bright bell
  *   - 'shrine'     ambient pad
  *   - 'click'      UI blip
+ *
+ * Round 61 — per-biome ambient loop. The `setBiomeAmbient` method
+ * takes a BiomeAudio config and starts (or crossfades to) a
+ * long-running drone tuned to the biome's mood. The drone is a
+ * 2-oscillator stack (root + optional perfect fifth) with a
+ * fade-in / fade-out envelope. Calling `setBiomeAmbient` twice
+ * with different configs fades the old one out and the new one
+ * in (no abrupt cut).
  */
+
+import type { BiomeAudio } from './BiomeAudio';
+import type { BiomeId } from '../world/WfcBiomes';
 
 export type AudioCue =
     | 'spawn' | 'damage' | 'heal' | 'epoch' | 'levelup'
@@ -26,12 +37,41 @@ export interface AudioService {
     playCue(cue: AudioCue): void;
     setMuted(muted: boolean): void;
     isMuted(): boolean;
+    /**
+     * Round 61 — switch the ambient drone to the given biome's
+     * audio config. Calling twice with the same biome is a no-op
+     * (no audible glitch). Calling with a different biome
+     * crossfades between the two.
+     */
+    setBiomeAmbient(biome: string | BiomeId, audio: BiomeAudio): void;
+    /**
+     * Round 61 — stop the current ambient drone immediately
+     * (no fade). Used when leaving a dimension.
+     */
+    stopAmbient(): void;
+    /**
+     * Round 61 — diagnostic: which biome's ambient is currently
+     * playing? Returns null when no ambient is active. Used by
+     * tests and HUD logs.
+     */
+    getActiveBiome(): string | null;
 }
 
 export class WebAudioService implements AudioService {
     private ctx: AudioContext | null = null;
     private masterGain: GainNode | null = null;
     private muted: boolean = false;
+    /**
+     * Round 61 — the active ambient drone, if any. A bundle of
+     * the gain node (so we can fade it) + the current biome id
+     * (so we can detect same-biome no-op). The oscillators
+     * themselves are kept on the GainNode chain via Web Audio's
+     * native reference; we don't need to track them separately.
+     */
+    private ambient: {
+        gain: GainNode;
+        biome: string;
+    } | null = null;
 
     constructor() {
         // Lazy: don't touch AudioContext until the first user gesture.
@@ -67,9 +107,93 @@ export class WebAudioService implements AudioService {
     setMuted(muted: boolean): void {
         this.muted = muted;
         if (this.masterGain) this.masterGain.gain.value = muted ? 0 : 0.4;
+        // The ambient drone rides on the master gain, so the
+        // existing muted = 0 path is enough. No additional
+        // per-ambient mute handling needed.
     }
 
     isMuted(): boolean { return this.muted; }
+
+    /**
+     * Round 61 — switch the ambient drone to the supplied biome
+     * audio config. Same-biome calls are a no-op (the drone is
+     * already playing). Different-biome calls fade the old
+     * drone out, then start the new one with a fade-in.
+     */
+    setBiomeAmbient(biome: string | BiomeId, audio: BiomeAudio): void {
+        const ctx = this.ensureCtx();
+        if (!ctx || !this.masterGain) return;
+        if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+        }
+        // Same biome — no audible change needed.
+        if (this.ambient && this.ambient.biome === biome) return;
+        // Fade out the old drone, then start the new one.
+        const fadeOutDur = this.ambient ? this.ambient.gain : null;
+        const oldFadeOutSecs = audio.fadeOut;
+        if (this.ambient) {
+            const oldGain = this.ambient.gain;
+            const now = ctx.currentTime;
+            oldGain.gain.cancelScheduledValues(now);
+            oldGain.gain.setValueAtTime(oldGain.gain.value, now);
+            oldGain.gain.linearRampToValueAtTime(0, now + oldFadeOutSecs);
+            // Disconnect after the fade so the old oscillators
+            // stop consuming CPU.
+            setTimeout(() => {
+                try { oldGain.disconnect(); } catch { /* already disconnected */ }
+            }, oldFadeOutSecs * 1000 + 50);
+        }
+        // Build the new drone.
+        const newGain = ctx.createGain();
+        newGain.gain.value = 0;
+        newGain.connect(this.masterGain);
+        // Root oscillator
+        const osc1 = ctx.createOscillator();
+        osc1.type = audio.waveform;
+        osc1.frequency.value = audio.baseFreq;
+        osc1.connect(newGain);
+        osc1.start();
+        // Optional fifth overtone
+        if (audio.withFifth) {
+            const osc2 = ctx.createOscillator();
+            osc2.type = audio.waveform;
+            osc2.frequency.value = audio.baseFreq * 1.5;
+            osc2.connect(newGain);
+            osc2.start();
+        }
+        // Fade in
+        const now = ctx.currentTime;
+        newGain.gain.setValueAtTime(0, now);
+        newGain.gain.linearRampToValueAtTime(audio.gain, now + audio.fadeIn);
+        this.ambient = { gain: newGain, biome: String(biome) };
+    }
+
+    /**
+     * Round 61 — stop the active ambient drone immediately. The
+     * next `setBiomeAmbient` call will start a fresh drone.
+     */
+    stopAmbient(): void {
+        if (!this.ambient) return;
+        const ctx = this.ctx;
+        if (ctx) {
+            const now = ctx.currentTime;
+            this.ambient.gain.gain.cancelScheduledValues(now);
+            this.ambient.gain.gain.setValueAtTime(this.ambient.gain.gain.value, now);
+            this.ambient.gain.gain.linearRampToValueAtTime(0, now + 0.05);
+            setTimeout(() => {
+                try { this.ambient?.gain.disconnect(); } catch { /* noop */ }
+            }, 100);
+        }
+        this.ambient = null;
+    }
+
+    /**
+     * Round 61 — diagnostic: which biome's ambient drone is
+     * currently active? Returns null when no ambient is playing.
+     */
+    getActiveBiome(): string | null {
+        return this.ambient ? this.ambient.biome : null;
+    }
 }
 
 type Builder = (ctx: AudioContext, out: AudioNode) => void;
@@ -164,7 +288,11 @@ function pad(ctx: AudioContext, out: AudioNode, freq: number, dur: number): void
 /** Silent stub for tests / environments without Web Audio. */
 export class NullAudioService implements AudioService {
     private muted = false;
+    private activeBiome: string | null = null;
     playCue(_cue: AudioCue): void { /* noop */ }
     setMuted(muted: boolean): void { this.muted = muted; }
     isMuted(): boolean { return this.muted; }
+    setBiomeAmbient(biome: string, _audio: BiomeAudio): void { this.activeBiome = biome; }
+    stopAmbient(): void { this.activeBiome = null; }
+    getActiveBiome(): string | null { return this.activeBiome; }
 }
