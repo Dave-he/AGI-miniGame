@@ -1091,3 +1091,85 @@ describe('WorldState — round 72 lastSceneEventChain persistence', () => {
         expect(fresh.lastSceneEventChain).toBeNull();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 79 — `rollbackCount` field. Monotonically increasing
+// integer; persists across save/load; defaults to 0 for
+// pre-round-79 saves.
+// ---------------------------------------------------------------------------
+
+describe('WorldState — round 79 rollbackCount field', () => {
+    test('defaults_to_zero_on_fresh_WorldState', () => {
+        const ws = new WorldState('p', 'P');
+        expect(ws.rollbackCount).toBe(0);
+    });
+
+    test('setRollbackCount_stores_value', () => {
+        const ws = new WorldState('p', 'P');
+        ws.setRollbackCount(7);
+        expect(ws.rollbackCount).toBe(7);
+    });
+
+    test('setRollbackCount_null_resets_to_zero', () => {
+        const ws = new WorldState('p', 'P');
+        ws.setRollbackCount(5);
+        expect(ws.rollbackCount).toBe(5);
+        ws.setRollbackCount(null);
+        expect(ws.rollbackCount).toBe(0);
+    });
+
+    test('rollbackCount_round_trips_through_saveToJSON_loadFromJSON', () => {
+        const ws = new WorldState('p', 'P');
+        ws.setRollbackCount(3);
+        const json = ws.saveToJSON();
+        const parsed = JSON.parse(json);
+        // The field IS persisted (not omitted) because it's > 0.
+        expect(parsed.rollbackCount).toBe(3);
+
+        // Round-trip: a fresh WorldState recovers the count.
+        const fresh = new WorldState('p', 'P');
+        fresh.loadFromJSON(json);
+        expect(fresh.rollbackCount).toBe(3);
+    });
+
+    test('rollbackCount_omitted_from_save_when_zero', () => {
+        // Back-compat discipline: a save that never saw a
+        // rollback stays compact (no `rollbackCount: 0`
+        // noise). Pre-round-79 readers see the same JSON
+        // they would have seen pre-round-79.
+        const ws = new WorldState('p', 'P');
+        const json = ws.saveToJSON();
+        const parsed = JSON.parse(json);
+        expect(parsed.rollbackCount).toBeUndefined();
+    });
+
+    test('pre_round_79_save_loads_with_rollbackCount_zero', () => {
+        // A save JSON that lacks `rollbackCount` entirely
+        // (i.e. written by a pre-round-79 build) must
+        // load successfully and default the count to 0.
+        const oldJson = JSON.stringify({
+            player: { accountId: 'p' },
+            progression: { level: 1, xp: 0, talentPoints: 0 },
+            wallet: {},
+            inventory: [],
+            dimensionHistory: [],
+        });
+        const fresh = new WorldState('p', 'P');
+        const ok = fresh.loadFromJSON(oldJson);
+        expect(ok).toBe(true);
+        expect(fresh.rollbackCount).toBe(0);
+    });
+
+    test('rollbackCount_monotonically_increments_through_setRollbackCount', () => {
+        // Mirrors the App.rollbackToLastGood() success
+        // path: each call reads the prev value, adds 1,
+        // and stores the result. Verified here at the
+        // WorldState level so a future contributor
+        // changing the setter signature sees the contract.
+        const ws = new WorldState('p', 'P');
+        ws.setRollbackCount((ws.rollbackCount ?? 0) + 1);
+        ws.setRollbackCount((ws.rollbackCount ?? 0) + 1);
+        ws.setRollbackCount((ws.rollbackCount ?? 0) + 1);
+        expect(ws.rollbackCount).toBe(3);
+    });
+});

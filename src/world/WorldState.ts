@@ -408,6 +408,52 @@ export class WorldState {
     }
 
     /**
+     * Round 79 — lifetime count of successful rollbacks
+     * the player has triggered (via the inline "🔙 回滚"
+     * button in the recovery banner). Starts at 0 on a
+     * fresh WorldState and monotonically increases by 1
+     * per successful `rollbackToLastGood()`. Surfaces as
+     * a `🛟` row in the HUD's persistent-memories block
+     * (round-51 `<details>`) so the player can see how
+     * often the auto-recovery path was needed during
+     * this save's lifetime.
+     *
+     * Why a counter (not a history): the user-visible
+     * signal is "this save needed N manual recoveries"
+     * — the per-rollback *details* (which biome, which
+     * seed, which snapshot) are already in
+     * `dimensionHistory`. Adding a separate history
+     * would be redundant; a single integer is enough
+     * to answer "is this save recovery-heavy?".
+     *
+     * Back-compat: pre-round-79 saves do not carry the
+     * field; `loadFromJSON` defaults it to 0. The HUD
+     * hides the row when the count is 0, so a fresh
+     * save (or a legacy save) renders identically to
+     * pre-round-79 behavior.
+     */
+    public rollbackCount: number = 0;
+
+    /**
+     * Round 79 — replace the persisted rollback count.
+     * Pass `null` to reset (e.g. on a hard-reset or a
+     * fresh-save scenario). The HUD pushes the live
+     * value via `hud.setRollbackCount(n)` so the
+     * persistent-memories block stays in sync.
+     *
+     * The setter does NOT clamp to ≥ 0; a negative
+     * value is a developer error and we want it to
+     * show up in tests / dev tools, not be silently
+     * papered over. (The increment path in
+     * `App.rollbackToLastGood()` always produces
+     * `prev + 1`, so the field never goes negative in
+     * normal use.)
+     */
+    setRollbackCount(n: number | null): void {
+        this.rollbackCount = n ?? 0;
+    }
+
+    /**
      * Round 49 — replace the full SceneBlueprint snapshot. Also
      * keeps the round-47 four scalars in sync so callers that
      * still read them (HUD setLastSceneBlueprint, panels) get the
@@ -652,6 +698,13 @@ export class WorldState {
             // Round 63 — 80×60 PNG data URL of the last dimension.
             // null for older saves (back-compat).
             lastMinimap: this.lastMinimap ?? undefined,
+            // Round 79 — lifetime rollback count. Omitted when 0
+            // so a fresh save (or a save that never saw a
+            // rollback) stays compact and back-compat readers
+            // don't see a noisy `0` field. The HUD hides the
+            // 🛟 row when the value is 0 anyway, so omitting
+            // it is semantically equivalent to writing 0.
+            rollbackCount: this.rollbackCount > 0 ? this.rollbackCount : undefined,
         });
     }
 
@@ -783,6 +836,8 @@ export class WorldState {
             // field; `null` default is the "no failure"
             // sentinel so the recovery banner is suppressed
             // on reload.
+            this.rollbackCount =
+                typeof data.rollbackCount === 'number' ? data.rollbackCount : 0;
             if (data.lastFailedSnapshot && typeof data.lastFailedSnapshot === 'object') {
                 const raw = data.lastFailedSnapshot as {
                     blueprint: unknown;

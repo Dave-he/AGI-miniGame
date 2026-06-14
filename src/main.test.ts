@@ -364,6 +364,174 @@ describe('App — round 55 rollbackToLastGood', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Round 79 — `rollbackToLastGood` increments the lifetime
+// `rollbackCount` and pushes the new value into the HUD via
+// `setRollbackCount`. The integration test verifies the
+// round-54 success path wires the round-79 telemetry counter
+// at the end of the restore sequence (after the success
+// cleanup, before the catch).
+// ---------------------------------------------------------------------------
+
+describe('App — round 79 rollback counter integration', () => {
+    let app: App;
+    let setRollbackCount: jest.SpyInstance;
+    let setBackupAvailable: jest.SpyInstance;
+    let hideRecoveryBanner: jest.SpyInstance;
+    let renderWfcDungeon: jest.SpyInstance;
+
+    beforeEach(() => {
+        app = makeApp();
+        // Stub the side-effect surfaces so the rollback
+        // success path can run to completion. We don't
+        // need to assert on them here — the round-55
+        // tests in the block above already do that.
+        setRollbackCount = jest
+            .spyOn((app as unknown as { hud: { setRollbackCount: (n: number | null) => void } }).hud, 'setRollbackCount')
+            .mockImplementation(() => undefined);
+        setBackupAvailable = jest
+            .spyOn((app as unknown as { hud: { setBackupAvailable: (b: boolean) => void } }).hud, 'setBackupAvailable')
+            .mockImplementation(() => undefined);
+        hideRecoveryBanner = jest
+            .spyOn((app as unknown as { hud: { hideRecoveryBanner: () => void } }).hud, 'hideRecoveryBanner')
+            .mockImplementation(() => undefined);
+        renderWfcDungeon = jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        // Also stub the full loadFromSnapshots / clear / syncNpcDisposition / clearFailedSnapshot
+        // paths the round-55 block uses; we don't want
+        // them to throw or re-render in this block.
+        jest
+            .spyOn((app as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn(app as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { worldState: { clearFailedSnapshot: () => void } }).worldState, 'clearFailedSnapshot')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setNpcMindsSnapshot: (s: unknown) => void } }).hud, 'setNpcMindsSnapshot')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
+            .mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('rollback_increments_worldState_rollbackCount_by_one', () => {
+        const ws = (app as unknown as {
+            worldState: {
+                lastFailedSnapshot: ReturnType<typeof makeBackup>;
+                rollbackCount: number;
+            };
+        }).worldState;
+        ws.lastFailedSnapshot = makeBackup();
+        ws.rollbackCount = 0;
+
+        (app as unknown as { rollbackToLastGood: () => void }).rollbackToLastGood();
+
+        // The lifetime counter goes 0 → 1.
+        expect(ws.rollbackCount).toBe(1);
+    });
+
+    test('rollback_pushes_updated_count_to_HUD_via_setRollbackCount', () => {
+        const ws = (app as unknown as {
+            worldState: {
+                lastFailedSnapshot: ReturnType<typeof makeBackup>;
+                rollbackCount: number;
+            };
+        }).worldState;
+        ws.lastFailedSnapshot = makeBackup();
+        ws.rollbackCount = 5;
+
+        (app as unknown as { rollbackToLastGood: () => void }).rollbackToLastGood();
+
+        // The HUD should see the new total (5 + 1 = 6),
+        // not the prev value.
+        expect(setRollbackCount).toHaveBeenCalledWith(6);
+    });
+
+    test('success_path_runs_in_order: hide → setBackupAvailable(false) → setRollbackCount', () => {
+        // The increment must happen AFTER the success
+        // cleanup (so a half-restored rollback doesn't
+        // bump the counter). Verify the call order
+        // matches the round-54 success-path order.
+        const ws = (app as unknown as {
+            worldState: { lastFailedSnapshot: ReturnType<typeof makeBackup>; rollbackCount: number };
+        }).worldState;
+        ws.lastFailedSnapshot = makeBackup();
+        ws.rollbackCount = 0;
+
+        (app as unknown as { rollbackToLastGood: () => void }).rollbackToLastGood();
+
+        const hideOrder = hideRecoveryBanner.mock.invocationCallOrder[0];
+        const backupOrder = setBackupAvailable.mock.invocationCallOrder[0];
+        const countOrder = setRollbackCount.mock.invocationCallOrder[0];
+        expect(typeof hideOrder).toBe('number');
+        expect(typeof backupOrder).toBe('number');
+        expect(typeof countOrder).toBe('number');
+        // The count must be set AFTER both the banner
+        // hide and the backup-available flip.
+        expect(countOrder).toBeGreaterThan(hideOrder as number);
+        expect(countOrder).toBeGreaterThan(backupOrder as number);
+    });
+
+    test('multiple_rollbacks_accumulate_the_count', () => {
+        // Each call increments by 1 — a save that needs
+        // 3 successive recoveries should show 3 in the
+        // HUD after the 3rd call.
+        const ws = (app as unknown as {
+            worldState: {
+                lastFailedSnapshot: ReturnType<typeof makeBackup>;
+                rollbackCount: number;
+            };
+        }).worldState;
+        const appCtl = app as unknown as { rollbackToLastGood: () => void };
+
+        ws.rollbackCount = 0;
+        ws.lastFailedSnapshot = makeBackup();
+        appCtl.rollbackToLastGood();
+        ws.lastFailedSnapshot = makeBackup(); // re-arm the one-deep snapshot
+        appCtl.rollbackToLastGood();
+        ws.lastFailedSnapshot = makeBackup();
+        appCtl.rollbackToLastGood();
+
+        expect(ws.rollbackCount).toBe(3);
+        // The HUD was pushed the new total 3 times.
+        expect(setRollbackCount).toHaveBeenNthCalledWith(1, 1);
+        expect(setRollbackCount).toHaveBeenNthCalledWith(2, 2);
+        expect(setRollbackCount).toHaveBeenNthCalledWith(3, 3);
+    });
+
+    test('rollback_no_op_does_NOT_increment_count', () => {
+        // The early-return guard (no `lastFailedSnapshot`)
+        // must not bump the counter — a button press
+        // with no recoverable state is a UI glitch, not
+        // a rollback.
+        const ws = (app as unknown as {
+            worldState: { lastFailedSnapshot: unknown; rollbackCount: number };
+        }).worldState;
+        ws.lastFailedSnapshot = null;
+        ws.rollbackCount = 7;
+
+        (app as unknown as { rollbackToLastGood: () => void }).rollbackToLastGood();
+
+        expect(ws.rollbackCount).toBe(7);
+        expect(setRollbackCount).not.toHaveBeenCalled();
+        expect(renderWfcDungeon).not.toHaveBeenCalled();
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Round 65 — `enterAtom` HUD wiring.
 // The fast-portal-jump path (1-8 keyboard shortcuts) used to skip
 // the persistent-memories state updates that a full `enterNewDimension`

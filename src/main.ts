@@ -1534,6 +1534,20 @@ class App {
             this.worldState.clearFailedSnapshot();
             this.hud.hideRecoveryBanner();
             this.hud.setBackupAvailable(false);
+            // Round 79 — increment the lifetime rollback
+            // counter on the WorldState and push it into
+            // the HUD so the persistent-memories block's
+            // 🛟 row updates. We increment AFTER the
+            // success cleanup so a rollback that throws
+            // partway through (and falls into the catch
+            // below) does NOT silently bump the counter
+            // — only fully-successful rollbacks count.
+            // (The "rollback 自身 re-render 失败" path
+            // returns early above; the "灾难性失败"
+            // catch below also doesn't bump, so a
+            // half-restored state stays un-counted.)
+            this.worldState.rollbackCount = (this.worldState.rollbackCount ?? 0) + 1;
+            this.hud.setRollbackCount(this.worldState.rollbackCount);
             this.hud.log('[scene] rollback 成功: 4 字段已恢复 + 真重渲染完成 + banner hide');
         } catch (e) {
             // Step 5 (catastrophic failure) —
@@ -1568,6 +1582,12 @@ class App {
             // "🧠 N 个 NPC 记住了 K 段记忆" tally
             // becomes visible.
             this.hud.setNpcMindsSnapshot(this.worldState.npcMindsSnapshot);
+            // Round 79 — push the round-79 lifetime
+            // rollback count into the HUD so the
+            // persistent-memories block's 🛟 row shows
+            // the count carried across save → reload.
+            // Mirrors the round-43/45/64 push pattern.
+            this.hud.setRollbackCount(this.worldState.rollbackCount);
             // Round 48 — actually rehydrate the live
             // NpcRegistry from the snapshot (round 40
             // was informational only; the registry was

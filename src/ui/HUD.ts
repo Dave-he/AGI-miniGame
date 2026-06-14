@@ -114,6 +114,18 @@ export interface HUDState {
      * no dimension has been entered yet.
      */
     lastSceneEventChain?: EventStep[] | null;
+    /**
+     * Round 79 — lifetime count of successful
+     * `rollbackToLastGood()` invocations (the round-54
+     * inline "🔙 回滚" button inside the recovery banner).
+     * When set and > 0, the HUD renders a `🛟` row in
+     * the round-51 memories block showing
+     * "回滚了 N 次" so the player can see how often the
+     * auto-recovery path was needed. Hidden when null
+     * or 0 (fresh boot, legacy save, or a save that
+     * never saw a recoverable failure).
+     */
+    rollbackCount?: number | null;
 }
 
 export class HUD {
@@ -319,6 +331,24 @@ export class HUD {
                 })),
             };
         }
+        this.render();
+    }
+
+    /**
+     * Round 79 — push the round-79 lifetime rollback
+     * count into the HUD. The persistent-memories
+     * block (round-51 `<details>`) renders a `🛟` row
+     * with the value when it's non-null and > 0. Pass
+     * `null` to clear (e.g. on a hard-reset or when a
+     * legacy save without the field is loaded).
+     *
+     * The setter does NOT clamp negative inputs — a
+     * negative count is a developer error and we want
+     * it to surface visibly rather than be silently
+     * zeroed.
+     */
+    setRollbackCount(count: number | null): void {
+        this.state = { ...this.state, rollbackCount: count };
         this.render();
     }
 
@@ -611,6 +641,14 @@ export class HUD {
         // a chain to recover) shouldn't pull the row in.
         const chainOn = Array.isArray(s.lastSceneEventChain)
             && (s.lastSceneEventChain as EventStep[]).length > 0;
+        // Round 79 — the rollback-count row is "on" when
+        // the count is a positive number. A null (legacy
+        // save / not-yet-set), 0 (fresh boot), or negative
+        // (shouldn't happen, but treat as off) all keep
+        // the row hidden so the player only sees the row
+        // when the save has actually triggered ≥ 1
+        // rollback.
+        const rollbackOn = typeof s.rollbackCount === 'number' && s.rollbackCount > 0;
 
         const count = (biomeOn ? 1 : 0)
             + (speakerOn ? 1 : 0)
@@ -619,7 +657,8 @@ export class HUD {
             + (sceneOn ? 1 : 0)
             + (minimapOn ? 1 : 0)
             + (wasmOn ? 1 : 0)
-            + (chainOn ? 1 : 0);
+            + (chainOn ? 1 : 0)
+            + (rollbackOn ? 1 : 0);
         if (count === 0) return '';
 
         const emojiOrder: string[] = [];
@@ -631,6 +670,7 @@ export class HUD {
         if (minimapOn) emojiOrder.push('🗺');
         if (wasmOn) emojiOrder.push('⚡');
         if (chainOn) emojiOrder.push('⏰');
+        if (rollbackOn) emojiOrder.push('🛟');
 
         // sessionStorage may be absent in non-browser test envs;
         // guard with a typeof check before reading. The key
@@ -701,6 +741,9 @@ export class HUD {
                     : ''}
                 ${wasmRows}
                 ${chainRows}
+                ${rollbackOn
+                    ? `<div class="hud-rollback-count">🛟 回滚了 <b>${s.rollbackCount}</b> 次</div>`
+                    : ''}
             </details>
         `;
     }

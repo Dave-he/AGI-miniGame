@@ -1010,3 +1010,90 @@ describe('HUD — round 74 hud-memories-row-* class-based styling', () => {
         expect(css).toMatch(/\.hud-memories-row-detail\s*\{\s*font-size:\s*0\.85em\s*;?\s*\}/);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 79 — `setRollbackCount` + 🛟 row. Mirrors the
+// round-69/73/74 row-rendering tests but for the lifetime
+// rollback count surfaced from `WorldState.rollbackCount`.
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 79 setRollbackCount', () => {
+    test('renders_🛟_row_with_count', () => {
+        const { hud, root } = makeHud();
+        hud.setRollbackCount(2);
+        const row = root.querySelector('.hud-rollback-count');
+        expect(row).not.toBeNull();
+        expect(row!.textContent).toContain('🛟');
+        expect(row!.textContent).toContain('2');
+    });
+
+    test('adds_🛟_to_emoji_strip_and_increments_count', () => {
+        const { hud, root } = makeHud();
+        hud.setRollbackCount(1);
+        const summary = root.querySelector('.hud-memories > summary')!;
+        expect(summary.textContent).toContain('🛟');
+        // Count "1 条记忆" should be present.
+        expect(summary.textContent).toContain('1');
+    });
+
+    test('does_not_render_🛟_row_when_count_is_zero', () => {
+        // A fresh save (or a save that never saw a
+        // rollback) renders identically to pre-round-79:
+        // no 🛟 row, no 🛟 in the emoji strip.
+        const { hud, root } = makeHud();
+        hud.setRollbackCount(0);
+        const row = root.querySelector('.hud-rollback-count');
+        expect(row).toBeNull();
+        const summary = root.querySelector('.hud-memories > summary');
+        if (summary) {
+            expect(summary.textContent).not.toContain('🛟');
+        }
+    });
+
+    test('does_not_render_🛟_row_when_count_is_null', () => {
+        // A legacy save (or a hard-reset path) loaded
+        // without the field defaults to null, which must
+        // also keep the row hidden.
+        const { hud, root } = makeHud();
+        hud.setRollbackCount(null);
+        const row = root.querySelector('.hud-rollback-count');
+        expect(row).toBeNull();
+    });
+
+    test('clears_🛟_row_when_setRollbackCount_called_with_null', () => {
+        // Round a count in, then clear it — the row
+        // should vanish and the emoji strip should drop 🛟.
+        const { hud, root } = makeHud();
+        hud.setRollbackCount(3);
+        expect(root.querySelector('.hud-rollback-count')).not.toBeNull();
+        hud.setRollbackCount(null);
+        expect(root.querySelector('.hud-rollback-count')).toBeNull();
+        const summary = root.querySelector('.hud-memories > summary');
+        if (summary) {
+            expect(summary.textContent).not.toContain('🛟');
+        }
+    });
+
+    test('renders_multi_digit_count', () => {
+        // A save with many rollbacks (heavy recovery
+        // history) should display the full integer, not
+        // truncate. Sanity check for the `b$` template
+        // binding.
+        const { hud, root } = makeHud();
+        hud.setRollbackCount(17);
+        const row = root.querySelector('.hud-rollback-count')!;
+        expect(row.textContent).toContain('17');
+    });
+
+    test('setRollbackCount_reflected_in_getState', () => {
+        // The HUDState contract — `getState()` should
+        // expose the count for callers (e.g. tests, debug
+        // overlays) that need to read it without parsing
+        // the DOM. Mirrors the round-26 read-only
+        // snapshot contract.
+        const { hud } = makeHud();
+        hud.setRollbackCount(4);
+        const state = hud.getState();
+        expect(state.rollbackCount).toBe(4);
+    });
+});
