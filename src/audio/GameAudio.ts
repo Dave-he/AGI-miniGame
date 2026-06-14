@@ -89,4 +89,28 @@ export class GameAudio {
     getActiveBiome(): string | null {
         return this.svc.getActiveBiome();
     }
+
+    /**
+     * Round 62 — start the per-biome intermittent SFX loop
+     * (the "events" layer on top of the round 61 ambient
+     * drone). Pass-through to AudioService.
+     */
+    setBiomeSfx(biome: string | BiomeId, audio: BiomeAudio): void {
+        this.svc.setBiomeSfx(biome, audio);
+    }
+
+    /**
+     * Round 62 — stop the SFX loop. Pass-through.
+     */
+    stopBiomeSfx(): void {
+        this.svc.stopBiomeSfx();
+    }
+
+    /**
+     * Round 62 — diagnostic: is the SFX loop active for the
+     * given biome? Pass-through.
+     */
+    isSfxActive(biome: string | BiomeId): boolean {
+        return this.svc.isSfxActive(biome);
+    }
 }

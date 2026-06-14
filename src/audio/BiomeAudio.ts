@@ -60,6 +60,41 @@ export interface BiomeAudio {
      * uses single-oscillator (vacuum) for a thinner feel.
      */
     withFifth: boolean;
+    /**
+     * Round 62 — intermittent short-SFX config (the "events"
+     * layer on top of the round 61 ambient drone). Each biome
+     * gets a distinct character (cyberpunk neon buzz, forest
+     * bird call, desert wind gust, ice crack, space silence,
+     * dungeon water drip) fired at a random interval.
+     */
+    sfx: BiomeSfx;
+}
+
+/**
+ * Round 62 — per-biome SFX config. The dispatcher fires a
+ * single short oscillator pluck at a random delay in
+ * [intervalMinSec, intervalMaxSec] — when it fires, it picks
+ * a frequency uniformly from [freqMin, freqMax] and plays
+ * for `durSec` seconds at `gain` volume.
+ *
+ * `enabled=false` silences the SFX layer entirely (used by
+ * space — the void has no sound, not even intermittent).
+ */
+export interface BiomeSfx {
+    /** Toggle the SFX layer (false = silent SFX, drone still plays). */
+    enabled: boolean;
+    /** Minimum interval between SFX firings, in seconds. */
+    intervalMinSec: number;
+    /** Maximum interval between SFX firings, in seconds. */
+    intervalMaxSec: number;
+    /** Frequency range lower bound (Hz). */
+    freqMin: number;
+    /** Frequency range upper bound (Hz). */
+    freqMax: number;
+    /** SFX pluck duration in seconds (typically 0.05 - 0.3). */
+    durSec: number;
+    /** Per-SFX volume trim (0..1). */
+    gain: number;
 }
 
 const TABLE: Record<BiomeId, BiomeAudio> = {
@@ -71,6 +106,17 @@ const TABLE: Record<BiomeId, BiomeAudio> = {
         fadeIn:        0.4,    // quick snap to match the visual
         fadeOut:       0.6,
         withFifth:     true,
+        // Round 62 — neon buzz SFX: high-pitched short stabs
+        // 1500-3000Hz every 2-5s, snappy square pluck.
+        sfx: {
+            enabled:        true,
+            intervalMinSec: 2.0,
+            intervalMaxSec: 5.0,
+            freqMin:        1500,
+            freqMax:        3000,
+            durSec:         0.08,
+            gain:           0.18,
+        },
     },
     forest: {
         label:         'wind through trees',
@@ -80,6 +126,17 @@ const TABLE: Record<BiomeId, BiomeAudio> = {
         fadeIn:        1.5,    // slow organic fade
         fadeOut:       1.0,
         withFifth:     true,
+        // Round 62 — bird call SFX: high pitched tweet 1800-2800Hz
+        // every 4-8s, sine pluck.
+        sfx: {
+            enabled:        true,
+            intervalMinSec: 4.0,
+            intervalMaxSec: 8.0,
+            freqMin:        1800,
+            freqMax:        2800,
+            durSec:         0.15,
+            gain:           0.10,
+        },
     },
     desert: {
         label:         'wind over sand',
@@ -89,6 +146,17 @@ const TABLE: Record<BiomeId, BiomeAudio> = {
         fadeIn:        1.0,
         fadeOut:       0.8,
         withFifth:     true,
+        // Round 62 — wind gust SFX: low whoosh 150-400Hz every
+        // 3-7s, sawtooth pluck (noisy).
+        sfx: {
+            enabled:        true,
+            intervalMinSec: 3.0,
+            intervalMaxSec: 7.0,
+            freqMin:        150,
+            freqMax:        400,
+            durSec:         0.25,
+            gain:           0.12,
+        },
     },
     ice: {
         label:         'frozen crackle',
@@ -98,6 +166,17 @@ const TABLE: Record<BiomeId, BiomeAudio> = {
         fadeIn:        0.8,
         fadeOut:       1.2,
         withFifth:     false,  // brittle, single voice
+        // Round 62 — cracking SFX: mid brittle crack 800-1600Hz
+        // every 5-12s, square pluck.
+        sfx: {
+            enabled:        true,
+            intervalMinSec: 5.0,
+            intervalMaxSec: 12.0,
+            freqMin:        800,
+            freqMax:        1600,
+            durSec:         0.05,
+            gain:           0.14,
+        },
     },
     space: {
         label:         'deep vacuum',
@@ -107,6 +186,17 @@ const TABLE: Record<BiomeId, BiomeAudio> = {
         fadeIn:        2.0,    // very slow to match the void
         fadeOut:       2.0,
         withFifth:     false,  // single oscillator = thin
+        // Round 62 — silence. Space is the void; no intermittent
+        // SFX either. The drone plays alone. SFX layer is off.
+        sfx: {
+            enabled:        false,
+            intervalMinSec: 999,
+            intervalMaxSec: 999,
+            freqMin:        0,
+            freqMax:        0,
+            durSec:         0,
+            gain:           0,
+        },
     },
     dungeon: {
         label:         'stone echo',
@@ -116,6 +206,17 @@ const TABLE: Record<BiomeId, BiomeAudio> = {
         fadeIn:        1.0,
         fadeOut:       1.5,    // long tail for the "echo" feel
         withFifth:     true,
+        // Round 62 — water drip SFX: mid-low pluck 300-600Hz every
+        // 6-10s, sine pluck with a "drip" feel.
+        sfx: {
+            enabled:        true,
+            intervalMinSec: 6.0,
+            intervalMaxSec: 10.0,
+            freqMin:        300,
+            freqMax:        600,
+            durSec:         0.12,
+            gain:           0.16,
+        },
     },
 };
 

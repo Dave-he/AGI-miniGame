@@ -104,13 +104,102 @@ describe('BiomeAudio', () => {
 
         it('returns a BiomeAudio-shaped object for every entry', () => {
             const required: ReadonlyArray<keyof BiomeAudio> = [
-                'label', 'baseFreq', 'waveform', 'gain', 'fadeIn', 'fadeOut', 'withFifth',
+                'label', 'baseFreq', 'waveform', 'gain', 'fadeIn', 'fadeOut', 'withFifth', 'sfx',
             ];
             for (const id of SUPPORTED_BIOMES) {
                 const a: BiomeAudio = getBiomeAudio(id);
                 for (const k of required) {
                     expect(a).toHaveProperty(k);
                 }
+            }
+        });
+    });
+
+    describe('SFX config (round 62)', () => {
+        it('every biome has a BiomeSfx sub-config', () => {
+            for (const id of SUPPORTED_BIOMES) {
+                const a = getBiomeAudio(id);
+                expect(a.sfx).toBeDefined();
+                expect(typeof a.sfx.enabled).toBe('boolean');
+            }
+        });
+
+        it('intervalMinSec <= intervalMaxSec for every biome', () => {
+            for (const id of SUPPORTED_BIOMES) {
+                const a = getBiomeAudio(id);
+                expect(a.sfx.intervalMinSec).toBeLessThanOrEqual(a.sfx.intervalMaxSec);
+            }
+        });
+
+        it('freqMin < freqMax for every enabled biome', () => {
+            for (const id of SUPPORTED_BIOMES) {
+                const a = getBiomeAudio(id);
+                if (a.sfx.enabled) {
+                    expect(a.sfx.freqMin).toBeLessThan(a.sfx.freqMax);
+                }
+            }
+        });
+
+        it('only space has SFX disabled (the void is silent)', () => {
+            for (const id of SUPPORTED_BIOMES) {
+                const a = getBiomeAudio(id);
+                if (id === 'space') {
+                    expect(a.sfx.enabled).toBe(false);
+                } else {
+                    expect(a.sfx.enabled).toBe(true);
+                }
+            }
+        });
+
+        it('SFX gain is in the sane range (0, 0.3] for every enabled biome', () => {
+            for (const id of SUPPORTED_BIOMES) {
+                const a = getBiomeAudio(id);
+                if (a.sfx.enabled) {
+                    expect(a.sfx.gain).toBeGreaterThan(0);
+                    expect(a.sfx.gain).toBeLessThanOrEqual(0.3);
+                }
+            }
+        });
+
+        it('SFX pluck duration is in the short-event range (0.04, 0.4)', () => {
+            for (const id of SUPPORTED_BIOMES) {
+                const a = getBiomeAudio(id);
+                if (a.sfx.enabled) {
+                    expect(a.sfx.durSec).toBeGreaterThan(0.04);
+                    expect(a.sfx.durSec).toBeLessThan(0.4);
+                }
+            }
+        });
+
+        it('cyberpunk has the highest SFX frequency range (1500-3000Hz buzz)', () => {
+            const cp = getBiomeAudio('cyberpunk');
+            expect(cp.sfx.freqMin).toBeGreaterThanOrEqual(1500);
+        });
+
+        it('desert has the lowest SFX frequency range (150-400Hz wind)', () => {
+            const d = getBiomeAudio('desert');
+            expect(d.sfx.freqMax).toBeLessThanOrEqual(400);
+        });
+
+        it('every enabled biome has a distinct frequency range signature', () => {
+            const seen = new Set<string>();
+            for (const id of SUPPORTED_BIOMES) {
+                const a = getBiomeAudio(id);
+                if (!a.sfx.enabled) continue;
+                const sig = `${a.sfx.freqMin}-${a.sfx.freqMax}`;
+                expect(seen.has(sig)).toBe(false);
+                seen.add(sig);
+            }
+        });
+
+        it('every enabled biome has a distinct interval range signature', () => {
+            const seen = new Set<string>();
+            for (const id of SUPPORTED_BIOMES) {
+                const a = getBiomeAudio(id);
+                if (!a.sfx.enabled) continue;
+                const sig = `${a.sfx.intervalMinSec}-${a.sfx.intervalMaxSec}`;
+                expect(seen.has(sig)).toBe(false);
+                seen.add(sig);
             }
         });
     });

@@ -26,7 +26,7 @@
  * in (no abrupt cut).
  */
 
-import type { BiomeAudio } from './BiomeAudio';
+import type { BiomeAudio, BiomeSfx } from './BiomeAudio';
 import type { BiomeId } from '../world/WfcBiomes';
 
 export type AudioCue =
@@ -55,6 +55,24 @@ export interface AudioService {
      * tests and HUD logs.
      */
     getActiveBiome(): string | null;
+    /**
+     * Round 62 — start the per-biome intermittent SFX loop
+     * (the "events" layer on top of the round 61 ambient drone).
+     * Cancels any in-flight SFX timer from a previous biome
+     * first. When `audio.sfx.enabled` is false, the call is a
+     * no-op (no timer scheduled).
+     */
+    setBiomeSfx(biome: string | BiomeId, audio: BiomeAudio): void;
+    /**
+     * Round 62 — stop the SFX loop (cancels the next pending
+     * timer). Used when leaving a dimension. Idempotent.
+     */
+    stopBiomeSfx(): void;
+    /**
+     * Round 62 — diagnostic: is the SFX loop active for a given
+     * biome? Used by tests to verify dispatch state.
+     */
+    isSfxActive(biome: string | BiomeId): boolean;
 }
 
 export class WebAudioService implements AudioService {
@@ -70,6 +88,16 @@ export class WebAudioService implements AudioService {
      */
     private ambient: {
         gain: GainNode;
+        biome: string;
+    } | null = null;
+    /**
+     * Round 62 — the active SFX loop's setTimeout handle, plus
+     * the biome it was scheduled for. When the biome changes
+     * (or the SFX is stopped) we clear the timeout so no stale
+     * fire happens after the player has moved on.
+     */
+    private sfxTimer: {
+        handle: ReturnType<typeof setTimeout>;
         biome: string;
     } | null = null;
 
@@ -194,6 +222,90 @@ export class WebAudioService implements AudioService {
     getActiveBiome(): string | null {
         return this.ambient ? this.ambient.biome : null;
     }
+
+    /**
+     * Round 62 — start the per-biome intermittent SFX loop.
+     * Cancels any in-flight SFX timer first, then schedules a
+     * new one. When `audio.sfx.enabled` is false, the call
+     * stops the loop and returns. Same-biome calls are a no-op
+     * (we don't want to re-schedule the same timer twice).
+     */
+    setBiomeSfx(biome: string | BiomeId, audio: BiomeAudio): void {
+        // Cancel any in-flight SFX timer first.
+        this.stopBiomeSfx();
+        if (!audio.sfx.enabled) return;
+        // Same-biome idempotency: if a timer is already running
+        // for this biome, do nothing. (The previous line
+        // already cancelled it, so this is just defense in depth.)
+        if (this.sfxTimer && this.sfxTimer.biome === biome) return;
+        const ctx = this.ctx;
+        if (!ctx || !this.masterGain) return;
+        // Schedule the loop. The first SFX fires after a
+        // random delay in [intervalMin, intervalMax]; each fire
+        // re-arms itself with a fresh random delay.
+        const scheduleNext = (): void => {
+            const delayMs = (audio.sfx.intervalMinSec
+                + Math.random() * (audio.sfx.intervalMaxSec - audio.sfx.intervalMinSec)) * 1000;
+            this.sfxTimer = {
+                handle: setTimeout(() => {
+                    this.fireBiomeSfx(audio.sfx);
+                    scheduleNext();
+                }, delayMs),
+                biome: String(biome),
+            };
+        };
+        scheduleNext();
+    }
+
+    /**
+     * Round 62 — internal: fire one SFX pluck using the
+     * biome's config. Picks a random frequency in
+     * [freqMin, freqMax], plays for `durSec` at `gain`. The
+     * pluck is a short oscillator with a quick attack +
+     * exponential decay envelope (mirrors the existing `pluck`
+     * helper but accepts runtime params).
+     */
+    private fireBiomeSfx(sfx: BiomeSfx): void {
+        const ctx = this.ctx;
+        if (!ctx || !this.masterGain) return;
+        if (sfx.freqMin >= sfx.freqMax) return;
+        const freq = sfx.freqMin + Math.random() * (sfx.freqMax - sfx.freqMin);
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        // Use sine for everything — SFX are short and sine
+        // gives the most "event-like" timbre across the
+        // frequency range we use. (The ambient drone already
+        // supplies the waveform character per biome.)
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        const t = ctx.currentTime;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(sfx.gain, t + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + sfx.durSec);
+        osc.connect(g).connect(this.masterGain);
+        osc.start();
+        osc.stop(t + sfx.durSec + 0.01);
+    }
+
+    /**
+     * Round 62 — cancel the SFX loop timer. Idempotent (safe
+     * to call when no loop is running). Used on biome change
+     * and on dimension leave.
+     */
+    stopBiomeSfx(): void {
+        if (!this.sfxTimer) return;
+        clearTimeout(this.sfxTimer.handle);
+        this.sfxTimer = null;
+    }
+
+    /**
+     * Round 62 — diagnostic: is the SFX loop currently active
+     * for the given biome? Used by tests to verify dispatch
+     * state and by the HUD to display "SFX: <biome>".
+     */
+    isSfxActive(biome: string | BiomeId): boolean {
+        return this.sfxTimer !== null && this.sfxTimer.biome === String(biome);
+    }
 }
 
 type Builder = (ctx: AudioContext, out: AudioNode) => void;
@@ -289,10 +401,20 @@ function pad(ctx: AudioContext, out: AudioNode, freq: number, dur: number): void
 export class NullAudioService implements AudioService {
     private muted = false;
     private activeBiome: string | null = null;
+    private activeSfxBiome: string | null = null;
     playCue(_cue: AudioCue): void { /* noop */ }
     setMuted(muted: boolean): void { this.muted = muted; }
     isMuted(): boolean { return this.muted; }
     setBiomeAmbient(biome: string, _audio: BiomeAudio): void { this.activeBiome = biome; }
     stopAmbient(): void { this.activeBiome = null; }
     getActiveBiome(): string | null { return this.activeBiome; }
+    setBiomeSfx(biome: string, audio: BiomeAudio): void {
+        // Mirror the WebAudioService behavior: if SFX is
+        // disabled in the config, don't track the biome.
+        this.activeSfxBiome = audio.sfx.enabled ? biome : null;
+    }
+    stopBiomeSfx(): void { this.activeSfxBiome = null; }
+    isSfxActive(biome: string | BiomeId): boolean {
+        return this.activeSfxBiome === String(biome);
+    }
 }

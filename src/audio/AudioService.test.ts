@@ -71,4 +71,58 @@ describe('AudioService', () => {
             expect(a.getActiveBiome()).toBeNull();
         });
     });
+
+    // Round 62 — per-biome SFX loop.
+    describe('setBiomeSfx (round 62)', () => {
+        test('NullAudioService tracks the SFX-active biome', () => {
+            const a = new NullAudioService();
+            expect(a.isSfxActive('cyberpunk')).toBe(false);
+            a.setBiomeSfx('cyberpunk', getBiomeAudio('cyberpunk'));
+            expect(a.isSfxActive('cyberpunk')).toBe(true);
+        });
+
+        test('NullAudioService stopBiomeSfx clears the SFX state', () => {
+            const a = new NullAudioService();
+            a.setBiomeSfx('forest', getBiomeAudio('forest'));
+            expect(a.isSfxActive('forest')).toBe(true);
+            a.stopBiomeSfx();
+            expect(a.isSfxActive('forest')).toBe(false);
+        });
+
+        test('NullAudioService space SFX stays inactive (enabled=false)', () => {
+            const a = new NullAudioService();
+            a.setBiomeSfx('space', getBiomeAudio('space'));
+            expect(a.isSfxActive('space')).toBe(false);
+        });
+
+        test('NullAudioService isSfxActive is biome-scoped (forest != ice)', () => {
+            const a = new NullAudioService();
+            a.setBiomeSfx('forest', getBiomeAudio('forest'));
+            expect(a.isSfxActive('forest')).toBe(true);
+            expect(a.isSfxActive('ice')).toBe(false);
+        });
+
+        test('NullAudioService setBiomeSfx replaces the active biome', () => {
+            const a = new NullAudioService();
+            a.setBiomeSfx('forest', getBiomeAudio('forest'));
+            a.setBiomeSfx('ice', getBiomeAudio('ice'));
+            expect(a.isSfxActive('forest')).toBe(false);
+            expect(a.isSfxActive('ice')).toBe(true);
+        });
+
+        test('NullAudioService stopBiomeSfx is idempotent', () => {
+            const a = new NullAudioService();
+            a.setBiomeSfx('dungeon', getBiomeAudio('dungeon'));
+            a.stopBiomeSfx();
+            expect(() => a.stopBiomeSfx()).not.toThrow();
+            expect(a.isSfxActive('dungeon')).toBe(false);
+        });
+
+        test('WebAudioService setBiomeSfx does not throw in jsdom (no AudioContext)', () => {
+            const a = new WebAudioService();
+            expect(() => a.setBiomeSfx('cyberpunk', getBiomeAudio('cyberpunk'))).not.toThrow();
+            expect(() => a.stopBiomeSfx()).not.toThrow();
+            expect(a.isSfxActive('cyberpunk')).toBe(false);
+        });
+    });
 });
