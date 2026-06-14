@@ -362,3 +362,213 @@ describe('App — round 55 rollbackToLastGood', () => {
         expect(clearFailedSnapshot).toHaveBeenCalledTimes(1);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 65 — `enterAtom` HUD wiring.
+// The fast-portal-jump path (1-8 keyboard shortcuts) used to skip
+// the persistent-memories state updates that a full `enterNewDimension`
+// would write, leaving the round-49 "↩ 上次离开 #biome" line,
+// round-64 🗺 minimap, and round-47 "🎬 上次维度" summary stale
+// after a keyboard entry. We verify that enterAtom now writes all
+// four HUD state slots and the WorldState mirror fields.
+// ---------------------------------------------------------------------------
+
+describe('App — round 65 enterAtom HUD wiring', () => {
+    let app: App;
+    let planAndLoad: jest.SpyInstance;
+    let renderWfcDungeon: jest.SpyInstance;
+    let spawnNpcWave: jest.SpyInstance;
+    let setBiomeAtmosphere: jest.SpyInstance;
+    let setBiomeAmbient: jest.SpyInstance;
+    let setBiomeSfx: jest.SpyInstance;
+    let setLastBiome: jest.SpyInstance;
+    let setMinimap: jest.SpyInstance;
+    let setLastSceneBlueprint: jest.SpyInstance;
+    let setState: jest.SpyInstance;
+    let updateLastSceneBlueprintFull: jest.SpyInstance;
+
+    function makeBlueprintFor(atomId: string) {
+        return {
+            id: 'dim_test',
+            name: '测试次元',
+            description: 'desc',
+            atomIds: [atomId],
+            atomWeights: { [atomId]: 1 },
+            difficulty: 0.5,
+            rules: [],
+            rewards: [],
+            theme: {
+                name: 'cyber·neon',
+                visualStyle: 'cyberpunk',
+                musicMood: 'pulse',
+                colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1'],
+            },
+            timeLimitSecs: 60,
+            objectives: [],
+        };
+    }
+
+    beforeEach(() => {
+        app = makeApp();
+        // Stub bridge.planAndLoad to return a controlled
+        // blueprint that has both visualStyle + musicMood so
+        // the round-65 themeToScene path activates and pins
+        // the resolved biome.
+        planAndLoad = jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async (cfg: unknown) => {
+                const c = cfg as { forcedAtomId?: string };
+                return {
+                    suggestion: { stage: 'mid', primary: [c.forcedAtomId], secondary: [], excluded: [], rationale: 'test' },
+                    atomIds: c.forcedAtomId ? [c.forcedAtomId] : [],
+                    blueprint: makeBlueprintFor(c.forcedAtomId ?? 'match3'),
+                    modules: [],
+                    seed: 12345,
+                    configSource: 'forced',
+                };
+            });
+        // Stub all the scene / HUD / audio side-effects so
+        // we only assert the round-65 state-update slots.
+        renderWfcDungeon = jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (g: unknown, s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        spawnNpcWave = jest
+            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
+            .mockReturnValue(['mock_npc_a', 'mock_npc_b']);
+        setBiomeAtmosphere = jest
+            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        setBiomeAmbient = jest
+            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        setBiomeSfx = jest
+            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        setLastBiome = jest
+            .spyOn((app as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome')
+            .mockImplementation(() => undefined);
+        setMinimap = jest
+            .spyOn((app as unknown as { hud: { setMinimap: (m: string | null) => void } }).hud, 'setMinimap')
+            .mockImplementation(() => undefined);
+        setLastSceneBlueprint = jest
+            .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
+            .mockImplementation(() => undefined);
+        setState = jest
+            .spyOn((app as unknown as { hud: { setState: (s: unknown) => void } }).hud, 'setState')
+            .mockImplementation(() => undefined);
+        updateLastSceneBlueprintFull = jest
+            .spyOn((app as unknown as { worldState: { updateLastSceneBlueprintFull: (s: unknown) => void } }).worldState, 'updateLastSceneBlueprintFull')
+            .mockImplementation(() => undefined);
+        // Force WASM bridge to null so the TS mirror
+        // for themeToScene runs (deterministic + no
+        // module load in jsdom).
+        (app as unknown as { sceneGenWasm: null }).sceneGenWasm = null;
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('enterAtom_calls_setLastBiome_with_resolved_biome', async () => {
+        // biomeForVisualStyle('cyberpunk') → BIOMES.cyberpunk
+        // (biome.id === 'cyberpunk').
+        await (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3');
+        expect(setLastBiome).toHaveBeenCalledTimes(1);
+        expect(setLastBiome).toHaveBeenCalledWith('cyberpunk');
+    });
+
+    test('enterAtom_calls_setMinimap_with_data_url', async () => {
+        await (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3');
+        expect(setMinimap).toHaveBeenCalledTimes(1);
+        // The round-63 renderMiniMap returns a data URL
+        // (string starting with 'data:image/png') when
+        // called outside jsdom-painter-only paths; the
+        // exact payload isn't asserted (test stays robust
+        // to format changes), only that a string was
+        // pushed.
+        const call = setMinimap.mock.calls[0]?.[0];
+        expect(typeof call).toBe('string');
+    });
+
+    test('enterAtom_calls_setLastSceneBlueprint_with_scene_scalars', async () => {
+        await (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3');
+        expect(setLastSceneBlueprint).toHaveBeenCalledTimes(1);
+        const arg = setLastSceneBlueprint.mock.calls[0]?.[0] as {
+            npcCount: number;
+            bpm: number;
+            eventCount: number;
+            archetypeHintCount: number;
+        };
+        // All four round-47 scalar keys must be present.
+        expect(arg).toHaveProperty('npcCount');
+        expect(arg).toHaveProperty('bpm');
+        expect(arg).toHaveProperty('eventCount');
+        expect(arg).toHaveProperty('archetypeHintCount');
+        // archetypeHintCount and npcCount come from the
+        // themeToScene pipeline when the forced path
+        // resolves; both should be non-zero in the
+        // cyberpunk / pulse resolution.
+        expect(arg.archetypeHintCount).toBeGreaterThan(0);
+        expect(arg.npcCount).toBeGreaterThan(0);
+    });
+
+    test('enterAtom_calls_setState_with_dimension_when_theme_resolves', async () => {
+        await (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3');
+        // setState({dimension: r.blueprint}) is one of the
+        // round-65 additions. Find the call that includes
+        // the `dimension` key (other setState calls in the
+        // app may pass different shapes).
+        const dimensionCall = setState.mock.calls.find(
+            (c) => typeof c[0] === 'object' && c[0] !== null && 'dimension' in c[0],
+        );
+        expect(dimensionCall).toBeDefined();
+    });
+
+    test('enterAtom_updates_worldState_lastBiome_to_resolved_biome', async () => {
+        await (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3');
+        // The round-65 direct-assign to worldState.lastBiome
+        // should reflect the sceneBp.biomeId resolution
+        // (cyberpunk for visualStyle='cyberpunk').
+        const ws = (app as unknown as { worldState: { lastBiome: string | null } }).worldState;
+        expect(ws.lastBiome).toBe('cyberpunk');
+    });
+
+    test('enterAtom_calls_updateLastSceneBlueprintFull_when_themeToScene_resolves', async () => {
+        await (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3');
+        // updateLastSceneBlueprintFull should be called
+        // once the round-65 themeToScene path runs and
+        // returns a non-null sceneBp.
+        expect(updateLastSceneBlueprintFull).toHaveBeenCalledTimes(1);
+    });
+
+    test('enterAtom_uses_keyword_fallback_biome_when_theme_missing', async () => {
+        // Override the mock so the blueprint has no
+        // visualStyle / musicMood — themeToScene should
+        // be skipped, and the keyword-match fallback
+        // ('dungeon' default) should drive the biome.
+        planAndLoad.mockImplementation(async () => ({
+            suggestion: { stage: 'mid', primary: ['match3'], secondary: [], excluded: [], rationale: 'test' },
+            atomIds: ['match3'],
+            blueprint: {
+                ...makeBlueprintFor('match3'),
+                theme: { name: 'plain', visualStyle: undefined as unknown as string, musicMood: undefined as unknown as string, colorPalette: [] },
+            },
+            modules: [],
+            seed: 12345,
+            configSource: 'forced',
+        }));
+        await (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3');
+        // biomeForVisualStyle('dungeon') → BIOMES.dungeon (id 'dungeon')
+        expect(setLastBiome).toHaveBeenCalledWith('dungeon');
+        // Without a sceneBp, updateLastSceneBlueprintFull
+        // is NOT called (skipped to keep fast-portal intent).
+        expect(updateLastSceneBlueprintFull).not.toHaveBeenCalled();
+    });
+
+    test('enterAtom_unknown_atom_returns_early_without_calling_planAndLoad', async () => {
+        await (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('does_not_exist');
+        expect(planAndLoad).not.toHaveBeenCalled();
+        expect(setLastBiome).not.toHaveBeenCalled();
+        expect(setMinimap).not.toHaveBeenCalled();
+    });
+});

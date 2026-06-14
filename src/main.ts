@@ -680,16 +680,80 @@ class App {
             // fall back to atom-style keyword match.
             const seed = r.seed ?? Date.now();
             this.worldState.setLastDimensionSeed(seed);
-            // Use a uniform-ish weight set; the forced path
-            // is a fast portal jump, not a thematically-tuned
-            // scene rollout.
+            // Round 65 — try the full themeToScene pipeline
+            // (when both visualStyle and musicMood are
+            // resolved on the blueprint). This gives us
+            // a proper biomeId (resolves keyword "fantasy"
+            // → "dungeon" by the SceneGen mapping, not the
+            // round-57 keyword fallback) AND the four
+            // round-47 scalars (npcCount / bpm /
+            // eventCount / archetypeHintCount) so a
+            // keyboard jump's persistent-memories block
+            // matches what a normal enterNewDimension would
+            // have written. The WFC dungeon itself stays
+            // uniform (fast portal jump) and we skip the
+            // event chain scheduling (also fast). On
+            // failure or missing theme, fall back to the
+            // round-57 uniform-dungeon + keyword-biome path.
+            const visualStyle = r.blueprint.theme?.visualStyle as
+                'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon' | undefined;
+            const musicMood = r.blueprint.theme?.musicMood as
+                'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse' | undefined;
+            let sceneBp: SceneBlueprint | null = null;
+            if (visualStyle && musicMood) {
+                const outcome = themeToSceneWithFallback(this.sceneGenWasm, {
+                    visualStyle,
+                    musicMood,
+                    difficulty: r.blueprint.difficulty,
+                    seed,
+                });
+                sceneBp = outcome.blueprint;
+                // Pin the resolved biome on the blueprint so
+                // `worldState.setActiveDimension` (already
+                // called by bridge.planAndLoad with `biome
+                // = blueprint.biome === undefined`) actually
+                // carries it forward on the next recovery /
+                // rollback path.
+                r.blueprint.biome = sceneBp.biomeId;
+                this.hud.log(
+                    outcome.source === 'wasm'
+                        ? '[scene] WASM 真出 (round 48)'
+                        : '[scene] WASM 兜底→ TS 镜像 (round 48)',
+                );
+            }
             const dungeon = generateDungeon(10, 10, seed);
-            const visualStyle = r.blueprint.theme?.visualStyle ?? 'dungeon';
-            const biome = biomeForVisualStyle(visualStyle);
+            // Prefer the sceneBp's biomeId when the
+            // themeToScene path ran; otherwise keyword-match
+            // (round-57 fallback).
+            const biome = sceneBp
+                ? biomeForVisualStyle(sceneBp.biomeId)
+                : biomeForVisualStyle(visualStyle ?? 'dungeon');
             this.scene.renderWfcDungeon(dungeon.tiles, 1.0, biome);
             this.scene.setBiomeAtmosphere(getBiomeAtmosphere(biome.id));
             this.audio.setBiomeAmbient(biome.id, getBiomeAudio(biome.id));
             this.audio.setBiomeSfx(biome.id, getBiomeAudio(biome.id));
+            // Round 65 — keep the HUD's persistent-memories
+            // block in sync with keyboard jumps. Without
+            // this, the round-49 "↩ 上次离开 #biome" line,
+            // round-64 🗺 minimap, and round-47 "🎬 上次
+            // 维度: NPC×N · BPM T · M 事件" line all stay
+            // stale after a 1-8 keypress. We mirror the
+            // round-64 + round-47 update sequence from
+            // enterNewDimension.
+            this.worldState.lastBiome = biome.id;
+            this.hud.setLastBiome(biome.id);
+            this.worldState.lastMinimap = renderMiniMap(dungeon.tiles, biome.id);
+            this.hud.setMinimap(this.worldState.lastMinimap);
+            const sceneScalars = {
+                npcCount: sceneBp?.npcCount ?? 0,
+                bpm: sceneBp?.musicBpm ?? 120,
+                eventCount: sceneBp?.eventChain.length ?? 0,
+                archetypeHintCount: sceneBp?.npcArchetypeHints.length ?? 0,
+            };
+            if (sceneBp) {
+                this.worldState.updateLastSceneBlueprintFull(sceneBp);
+            }
+            this.hud.setLastSceneBlueprint(sceneScalars);
             // Spawn a small wave of NPCs (2-4) keyed to the
             // atom's gameplayType.
             const archetypeIds = r.blueprint.atomIds.slice(0, 3);
@@ -698,6 +762,22 @@ class App {
                 `[scene] 快速入口: ${atomId} · biome=${biome.id} · ` +
                 `NPC×${spawned.length} · seed=${seed}`,
             );
+            // Round 65 — emit the standard entrance logs
+            // ("进入次元" / "玩法组合" / "主题") + the
+            // round-25 NarrationEngine intro (3
+            // sentences + optional 4th on mood branch).
+            // The fast-portal-jump path used to skip
+            // these so the keyboard entry felt muted
+            // compared to a full enterNewDimension.
+            this.hud.setState({ dimension: r.blueprint });
+            this.hud.log(`进入次元: ${r.blueprint.name}`);
+            this.hud.log(`玩法组合: ${r.atomIds.join(' + ')}`);
+            this.hud.log(`主题: ${r.blueprint.theme?.visualStyle}`);
+            const intro = this.narration.narrate(r.blueprint, avgMood, this.npcMinds);
+            for (const s of intro.sentences) this.hud.log(`[narr] ${s}`);
+            if (intro.moodBranch && intro.moodBranch !== 'neutral') {
+                this.hud.log(`[narr+mind] mood=${intro.moodBranch} → 4th 句已加入 (NPC 集体情绪驱动)`);
+            }
         } catch (err) {
             this.hud.log(`[kb] enterAtom(${atomId}) 失败: ${(err as Error).message}`);
         }
