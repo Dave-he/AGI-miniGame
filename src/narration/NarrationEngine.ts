@@ -187,11 +187,36 @@ export class NarrationEngine {
     private lastSentenceSource: 'wasm' | 'ts-fallback' | null = null;
 
     /**
+     * Round 68 — optional bench callback, injected by
+     * `App` after construction. The 4th-sentence WASM
+     * call site wraps the `callMood4thSentenceFor` invocations
+     * with this callback so the in-browser wall-clock
+     * `wasm.latency` event covers the narration path too (the
+     * round-67 jest bench deliberately skipped it because the
+     * TS-side mirror wasn't extracted yet). Default is a
+     * no-op wrapper so the class is still testable without
+     * a bench dependency.
+     */
+    private bench: <T>(name: string, fn: () => T) => T = (_name, fn) => fn();
+
+    /**
      * Round 51 — inject the loaded WASM bridge. Called by
      * `App.setSceneGenWasm` after `loadSceneGenWasm` resolves.
      */
     setSceneGenWasm(mod: SceneGenWasmModule | null): void {
         this.wasmMod = mod;
+    }
+
+    /**
+     * Round 68 — inject the bench callback (typically
+     * `Analytics.bench` from the host `App`). Called once in
+     * the `App` constructor right after `new NarrationEngine()`.
+     * The bench wrapper is optional — NarrationEngine defaults
+     * to a no-op wrapper so unit tests can instantiate without
+     * an Analytics dependency.
+     */
+    setBench(bench: <T>(name: string, fn: () => T) => T): void {
+        this.bench = bench;
     }
 
     /**
@@ -267,7 +292,17 @@ export class NarrationEngine {
                 // the branch tag itself goes into the pool
                 // lookup, not the hash key.
                 const branchNumeric = branch === 'fear' ? 0 : branch === 'friendly' ? 1 : 2;
-                const wasmSentence = callMood4thSentenceFor(this.wasmMod, branchNumeric, blueprint.id);
+                // Round 68 — wrap the round-51 WASM 4th-sentence
+                // call with the injected `bench` callback (default
+                // is a no-op in unit tests, `Analytics.bench` in
+                // production) so the in-browser `wasm.latency`
+                // event covers the narration path. The TS-fallback
+                // branch (the `else` below) is intentionally NOT
+                // timed — it's a pure JS function with no FFI
+                // cost, and including it would dilute the latency
+                // histogram with sub-microsecond noise.
+                const wasmSentence = this.bench('mood4thSentenceFor',
+                    () => callMood4thSentenceFor(this.wasmMod, branchNumeric, blueprint.id));
                 if (wasmSentence !== null) {
                     sentences.push(wasmSentence);
                     this.lastSentenceSource = 'wasm';

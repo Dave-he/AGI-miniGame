@@ -257,6 +257,17 @@ class App {
         this.replay = new SessionReplay(this.analytics, 200);
         this.replay.startRecording();
         this.narration = new NarrationEngine();
+        // Round 68 — inject the in-browser `wasm.latency`
+        // bench wrapper into the narration engine so the
+        // round-51 `callMood4thSentenceFor` call site emits
+        // an event alongside the two `themeToScene` call
+        // sites instrumented in this round. Default
+        // `setBench` is a no-op (covered in
+        // NarrationEngine.test.ts) so the no-App path
+        // (used in unit tests) keeps working.
+        this.narration.setBench(
+            <T>(name: string, fn: () => T) => this.analytics.bench(name, fn),
+        );
         // Round 20 — the AGI's "memory" of visited dimensions.
         this.vault = new DimensionVault();
         // Round 21 — per-NPC memory + disposition. Mirrors the engine's
@@ -497,8 +508,13 @@ class App {
             // to the TS mirror. `themeToSceneWithFallback` always
             // returns a blueprint, so `sceneBp` is non-null after
             // this line. The `source` field lets us log which
-            // branch ran.
-            const outcome = themeToSceneWithFallback(this.sceneGenWasm, themeInput);
+            // branch ran. Round 68 — `analytics.bench` wraps
+            // the call with `performance.now()` and emits a
+            // `wasm.latency` event (the in-browser wall-clock
+            // baseline the round-67 jest bench cannot measure
+            // because jest never loads a real .wasm module).
+            const outcome = this.analytics.bench('themeToScene',
+                () => themeToSceneWithFallback(this.sceneGenWasm, themeInput));
             sceneBp = outcome.blueprint;
             this.hud.log(
                 outcome.source === 'wasm'
@@ -727,12 +743,18 @@ class App {
                 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse' | undefined;
             let sceneBp: SceneBlueprint | null = null;
             if (visualStyle && musicMood) {
-                const outcome = themeToSceneWithFallback(this.sceneGenWasm, {
-                    visualStyle,
-                    musicMood,
-                    difficulty: r.blueprint.difficulty,
-                    seed,
-                });
+                // Round 68 — same `analytics.bench` wrapper as
+                // the round-48 `enterNewDimension` path, so the
+                // in-browser wall-clock baseline covers both
+                // the slow-path (full `enterNewDimension`) and
+                // the fast-path (`enterAtom` keyboard shortcut).
+                const outcome = this.analytics.bench('themeToScene',
+                    () => themeToSceneWithFallback(this.sceneGenWasm, {
+                        visualStyle,
+                        musicMood,
+                        difficulty: r.blueprint.difficulty,
+                        seed,
+                    }));
                 sceneBp = outcome.blueprint;
                 // Pin the resolved biome on the blueprint so
                 // `worldState.setActiveDimension` (already

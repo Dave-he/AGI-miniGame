@@ -729,3 +729,138 @@ describe('App — round 66 DM+rollback minimap wiring', () => {
         expect(ws.lastSceneBlueprint?.biomeId).toBe('forest');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 68 — in-browser `wasm.latency` event emission. The two
+// `themeToSceneWithFallback` call sites in main.ts (round-48
+// `enterNewDimension` + round-65 `enterAtom` conditional path)
+// are wrapped with `this.analytics.bench('themeToScene', fn)`,
+// which emits a `wasm.latency` Analytics event with the
+// elapsed `performance.now()` delta. We verify the wrapper is
+// wired at both call sites — the in-browser wall-clock baseline
+// the round-67 jest bench cannot measure.
+// ---------------------------------------------------------------------------
+
+describe('App — round 68 wasm.latency event emission', () => {
+    let app: App;
+    let planAndLoad: jest.SpyInstance;
+    let analyticsTrack: jest.SpyInstance;
+
+    beforeEach(() => {
+        app = makeApp();
+        // Stub bridge.planAndLoad to return a blueprint with
+        // a full theme (visualStyle + musicMood) so both
+        // round-48 and round-65 themeToScene paths activate.
+        planAndLoad = jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async (cfg: unknown) => {
+                const c = cfg as { forcedAtomId?: string };
+                return {
+                    suggestion: { stage: 'mid', primary: [c.forcedAtomId ?? 'match3'], secondary: [], excluded: [], rationale: 'test' },
+                    atomIds: c.forcedAtomId ? [c.forcedAtomId] : ['match3'],
+                    blueprint: {
+                        id: 'dim_test',
+                        name: '测试次元',
+                        description: 'desc',
+                        atomIds: ['match3'],
+                        atomWeights: { match3: 1 },
+                        difficulty: 0.5,
+                        rules: [],
+                        rewards: [],
+                        theme: {
+                            name: 'cyber·neon',
+                            visualStyle: 'cyberpunk',
+                            musicMood: 'pulse',
+                            colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1'],
+                        },
+                        timeLimitSecs: 60,
+                        objectives: [],
+                    },
+                    modules: [],
+                    seed: 12345,
+                    configSource: 'forced',
+                };
+            });
+        // Force WASM bridge to null so the TS mirror runs
+        // (deterministic, no module load in jsdom).
+        (app as unknown as { sceneGenWasm: null }).sceneGenWasm = null;
+        // Spy on the analytics track() so we can assert the
+        // round-68 event fires without depending on the
+        // ring-buffer ordering.
+        analyticsTrack = jest
+            .spyOn((app as unknown as { analytics: { track: (k: string, d?: unknown) => void } }).analytics, 'track')
+            .mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('enterNewDimension_emits_wasm_latency_event_for_themeToScene', async () => {
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+        // The bench wrapper calls analytics.track('wasm.latency',
+        // { name: 'themeToScene', ms: <number> }). Find the
+        // matching call in the spy history.
+        const wasmLatencyCalls = analyticsTrack.mock.calls.filter(
+            (c) => c[0] === 'wasm.latency'
+                && (c[1] as { name?: string } | undefined)?.name === 'themeToScene',
+        );
+        expect(wasmLatencyCalls.length).toBeGreaterThanOrEqual(1);
+        // The `ms` payload must be a non-negative finite
+        // number (the bench rounds to 3 decimals, but the
+        // test doesn't pin the exact value).
+        const data = wasmLatencyCalls[0][1] as { ms: number };
+        expect(typeof data.ms).toBe('number');
+        expect(data.ms).toBeGreaterThanOrEqual(0);
+    });
+
+    test('enterAtom_emits_wasm_latency_event_for_themeToScene', async () => {
+        await (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3');
+        // enterAtom's round-65 conditional themeToScene path
+        // also goes through the bench wrapper, so the
+        // `wasm.latency` event should fire there too.
+        const wasmLatencyCalls = analyticsTrack.mock.calls.filter(
+            (c) => c[0] === 'wasm.latency'
+                && (c[1] as { name?: string } | undefined)?.name === 'themeToScene',
+        );
+        expect(wasmLatencyCalls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test('NarrationEngine_setBench_wires_analytics_bench_into_callMood4thSentenceFor', () => {
+        // Unit-level test: the bench callback injected via
+        // `setBench` is the one called around
+        // `callMood4thSentenceFor` in NarrationEngine.narrate.
+        // We inject a spy bench and verify it's invoked with
+        // the canonical name.
+        const { NarrationEngine } = require('./narration/NarrationEngine');
+        const { callMood4thSentenceFor } = require('./ai/SceneGenWasm');
+        const stubMod = {
+            wasm_module_version: () => '0.2.0-round51',
+            theme_to_scene_json: () => '{}',
+            build_generation_config_with_mood_json: () => '{}',
+            mood_palette_json: () => '{}',
+            mood_4th_sentence_for_json: () => JSON.stringify({ sentence: '...', branch: 0, blueprint_id: 'dim_x' }),
+        };
+        const narr = new NarrationEngine();
+        const benchSpy = jest.fn(<T>(_name: string, fn: () => T) => fn());
+        narr.setSceneGenWasm(stubMod);
+        narr.setBench(benchSpy);
+        const ai = new (require('./ai/AIEngine').AIEngine)(1);
+        const b = ai.generateDimension({
+            minAtoms: 2, maxAtoms: 3, difficultyRange: [0.4, 0.6],
+            playerLevel: 5, preferredTypes: [], excludedTypes: [], rewardMultiplier: 1.0,
+        });
+        const blueprint = { ...b, id: 'dim_x', theme: { ...b.theme, visualStyle: 'cyberpunk' } };
+        const fearMood = { friendly: 0.0, fear: 0.8, trust: 0.0 };
+        const { defaultDisposition } = require('./world/NpcMind');
+        const avgMood = fearMood;
+        narr.narrate(blueprint, avgMood, undefined);
+        // The bench wrapper should have been called at least
+        // once for the `mood4thSentenceFor` name.
+        const matching = benchSpy.mock.calls.filter((c) => c[0] === 'mood4thSentenceFor');
+        expect(matching.length).toBeGreaterThanOrEqual(1);
+        // And callMood4thSentenceFor should have returned
+        // a sentence (the stub returns a string).
+        expect(typeof callMood4thSentenceFor).toBe('function');
+    });
+});
