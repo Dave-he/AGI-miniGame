@@ -12,6 +12,7 @@ import type { WorldEventDraft } from '../ai/SmartWorldAI';
 import type { I18n } from '../i18n/I18n';
 import type { NpcDisposition } from '../world/NpcMind';
 import type { WasmLatencySummary } from '../analytics/WasmLatencyStats';
+import type { EventStep } from '../ai/SceneGen';
 
 export interface HUDState {
     dimension: DimensionBlueprint | null;
@@ -101,6 +102,17 @@ export interface HUDState {
      * events).
      */
     wasmLatencyStats?: WasmLatencySummary | null;
+    /**
+     * Round 73 — the round-72 lastSceneEventChain full
+     * timeline. When set (and non-empty), the HUD renders
+     * a `⏰` row in the round-51 memories block showing
+     * the next scheduled event ("next: <kind> in <delay>s")
+     * and a compact list of all events. The 3-5 chain
+     * comes from `themeToScene` (non-DM) or
+     * `synthesizeDmEventChain` (DM, round 71). Null when
+     * no dimension has been entered yet.
+     */
+    lastSceneEventChain?: EventStep[] | null;
 }
 
 export class HUD {
@@ -273,6 +285,43 @@ export class HUD {
             this.state = { ...this.state, wasmLatencyStats: null };
         } else {
             this.state = { ...this.state, wasmLatencyStats: stats };
+        }
+        this.render();
+    }
+
+    /**
+     * Round 73 — push the round-72 lastSceneEventChain full
+     * timeline into the HUD. The non-DM path gets the chain
+     * from `SceneBlueprint.eventChain`; the DM path gets it
+     * from `synthesizeDmEventChain` (round 71); the rollback
+     * path restores it from `backup.blueprint.eventChain`.
+     *
+     * The HUD renders a `⏰` row in the round-51 memories
+     * block showing the next scheduled event (smallest
+     * `delaySecs`) plus a compact list of all events. The
+     * row stays hidden when the chain is null or empty.
+     *
+     * Passing `null` clears the row (e.g. on a hard reset
+     * or when the App's loadFromJSON path found a save that
+     * pre-dates round 72 with no fallback chain).
+     *
+     * The array is defensive-cloned so a caller that mutates
+     * the source after storing it (the round-49 snapshot
+     * pattern) doesn't leak into the HUD. Mirrors the
+     * round-72 WorldState setter.
+     */
+    setLastSceneEventChain(chain: EventStep[] | null): void {
+        if (!chain) {
+            this.state = { ...this.state, lastSceneEventChain: null };
+        } else {
+            this.state = {
+                ...this.state,
+                lastSceneEventChain: chain.map(e => ({
+                    kind: e.kind,
+                    delaySecs: e.delaySecs,
+                    payload: e.payload,
+                })),
+            };
         }
         this.render();
     }
@@ -560,8 +609,21 @@ export class HUD {
         const wasmOn = (s.wasmLatencyStats?.perFn
             ? Object.keys(s.wasmLatencyStats.perFn).length > 0
             : false);
+        // Round 73 — the event-chain row is "on" when the
+        // chain is a non-empty array. An empty array (e.g. a
+        // round-49 partial save where the loader didn't have
+        // a chain to recover) shouldn't pull the row in.
+        const chainOn = Array.isArray(s.lastSceneEventChain)
+            && (s.lastSceneEventChain as EventStep[]).length > 0;
 
-        const count = (biomeOn ? 1 : 0) + (speakerOn ? 1 : 0) + (snapshotOn ? 1 : 0) + (moodOn ? 1 : 0) + (sceneOn ? 1 : 0) + (minimapOn ? 1 : 0) + (wasmOn ? 1 : 0);
+        const count = (biomeOn ? 1 : 0)
+            + (speakerOn ? 1 : 0)
+            + (snapshotOn ? 1 : 0)
+            + (moodOn ? 1 : 0)
+            + (sceneOn ? 1 : 0)
+            + (minimapOn ? 1 : 0)
+            + (wasmOn ? 1 : 0)
+            + (chainOn ? 1 : 0);
         if (count === 0) return '';
 
         const emojiOrder: string[] = [];
@@ -572,6 +634,7 @@ export class HUD {
         if (sceneOn) emojiOrder.push('🎬');
         if (minimapOn) emojiOrder.push('🗺');
         if (wasmOn) emojiOrder.push('⚡');
+        if (chainOn) emojiOrder.push('⏰');
 
         // sessionStorage may be absent in non-browser test envs;
         // guard with a typeof check before reading. The key
@@ -593,6 +656,22 @@ export class HUD {
                 ([name, stat]) => `· <b>${escapeHtml(name)}</b>: median <b>${stat.medianMs}</b>ms · p95 <b>${stat.p95Ms}</b>ms · max <b>${stat.maxMs}</b>ms (×${stat.count})`,
             );
             wasmRows = `<div class="hud-wasm-latency">⚡ WASM 延迟 <span style="opacity:0.7">(${s.wasmLatencyStats.totalSamples} 样本)</span><br><span style="font-size:0.85em">${lines.join('<br>')}</span></div>`;
+        }
+
+        // Round 73 — build the event-chain row. The chain
+        // is already delay-sorted (both `themeToScene` and
+        // `synthesizeDmEventChain` guarantee this), so the
+        // first entry is the next event. We show "next:
+        // <kind> in <delaySecs>s" as the headline and a
+        // compact list of all events underneath.
+        let chainRows = '';
+        if (chainOn && s.lastSceneEventChain) {
+            const chain = s.lastSceneEventChain as EventStep[];
+            const next = chain[0];
+            const allLines = chain.map((e) =>
+                `· t+<b>${e.delaySecs}</b>s <b>${escapeHtml(e.kind)}</b>`,
+            );
+            chainRows = `<div class="hud-event-chain">⏰ next: <b>${escapeHtml(next.kind)}</b> in <b>${next.delaySecs}</b>s <span style="opacity:0.7">(${chain.length} 事件)</span><br><span style="font-size:0.85em">${allLines.join('<br>')}</span></div>`;
         }
 
         return `
@@ -617,6 +696,7 @@ export class HUD {
                     ? `<div class="hud-scene-blueprint">🎬 上次维度: NPC×<b>${s.lastSceneNpcCount ?? '—'}</b> · BPM <b>${s.lastSceneBpm ?? '—'}</b> · <b>${s.lastSceneEventCount ?? '—'}</b> 事件 · <b>${s.lastSceneArchetypeHintCount ?? '—'}</b> archetype</div>`
                     : ''}
                 ${wasmRows}
+                ${chainRows}
             </details>
         `;
     }

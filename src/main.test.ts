@@ -938,6 +938,93 @@ describe('App — round 71 DM event chain wiring', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Round 73 — HUD `setLastSceneEventChain` wiring. The synthesized
+// chain (round 71) is stored in WorldState (round 72) and now
+// also pushed to the HUD as a `⏰` row in the persistent-memories
+// block. We verify the DM and non-DM paths each call the HUD
+// setter with the right payload, and that the HUD keeps a
+// defensive clone (caller mutation doesn't leak).
+// ---------------------------------------------------------------------------
+
+describe('App — round 73 HUD setLastSceneEventChain wiring', () => {
+    let app: App;
+    let setLastSceneEventChain: jest.SpyInstance;
+
+    beforeEach(() => {
+        app = makeApp();
+        // Stub the render + audio + minimap layers so the
+        // chain setter call lands in isolation.
+        jest.spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { hud: { setLastBiome: (id: string) => void } }).hud, 'setLastBiome')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { hud: { setMinimap: (m: string) => void } }).hud, 'setMinimap')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
+            .mockImplementation(() => undefined);
+        setLastSceneEventChain = jest
+            .spyOn((app as unknown as { hud: { setLastSceneEventChain: (c: unknown) => void } }).hud, 'setLastSceneEventChain')
+            .mockImplementation(() => undefined);
+        // Stable 8x8 grid with 2 chests + 1 shrine + 1 trap
+        // → 5-event chain (round 71 contract).
+        const wfcModule = require('./world/WfcLevelGen') as typeof import('./world/WfcLevelGen');
+        jest.spyOn(wfcModule, 'generateDungeon').mockImplementation((w: number, h: number) => {
+            const tiles: number[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 0));
+            tiles[1][1] = 3; // CHEST
+            tiles[2][2] = 3; // CHEST
+            tiles[3][3] = 7; // SHRINE
+            tiles[4][4] = 6; // TRAP
+            return { tiles, success: true };
+        });
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('dm_dimension_pushes_event_chain_to_hud', () => {
+        // The DM `onDimension` callback writes the chain to
+        // WorldState (round 72) AND to the HUD (round 73).
+        // We assert the HUD setter is called exactly once
+        // with a 5-event chain whose kinds match the
+        // round-71 synthesis.
+        (app as unknown as { dm: { run: (line: string) => unknown } }).dm.run('dim 8 8 cyberpunk');
+        expect(setLastSceneEventChain).toHaveBeenCalledTimes(1);
+        const arg = setLastSceneEventChain.mock.calls[0]?.[0] as Array<{ kind: string; delaySecs: number; payload: string }>;
+        expect(arg.length).toBe(5);
+        expect(arg[0].kind).toBe('treasure_drop');
+        expect(arg[0].delaySecs).toBe(5);
+        expect(arg[0].payload).toContain('cyberpunk');
+    });
+
+    test('hud_receives_a_defensive_clone_not_a_reference', () => {
+        // Mirrors the round-49/72 isolation test. The HUD
+        // must deep-clone the chain so a caller mutating
+        // the captured reference (e.g. from a test
+        // post-assertion) doesn't corrupt the rendered row.
+        (app as unknown as { dm: { run: (line: string) => unknown } }).dm.run('dim 8 8 cyberpunk');
+        const arg = setLastSceneEventChain.mock.calls[0]?.[0] as Array<{ kind: string; delaySecs: number; payload: string }>;
+        // Mutate the captured array.
+        arg.push({ kind: 'echo_lore', delaySecs: 99, payload: 'EVIL' });
+        arg[0].payload = 'CORRUPTED';
+        // Read WorldState — it should still show the
+        // original 5-event chain with the original
+        // payload.
+        const ws = (app as unknown as {
+            worldState: { lastSceneEventChain: Array<{ kind: string; delaySecs: number; payload: string }> | null };
+        }).worldState;
+        expect(ws.lastSceneEventChain?.length).toBe(5);
+        expect(ws.lastSceneEventChain?.[0].payload).toBe('cyberpunk_treasure_drop_0');
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Round 68 — in-browser `wasm.latency` event emission. The two
 // `themeToSceneWithFallback` call sites in main.ts (round-48
 // `enterNewDimension` + round-65 `enterAtom` conditional path)

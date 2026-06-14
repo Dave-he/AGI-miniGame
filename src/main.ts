@@ -299,6 +299,15 @@ class App {
                 // extension), so the DM path's manual call
                 // keeps the two paths symmetric.
                 this.worldState.setLastSceneEventChain(dmEventChain);
+                // Round 73 — push the chain into the HUD so
+                // the persistent-memories block can render
+                // the `⏰ next: <kind> in <delay>s` hint. The
+                // non-DM path's `enterNewDimension` /
+                // `enterAtom` flows pipe this through
+                // `setLastSceneBlueprintFull` → round-49
+                // helper (see below), so the HUD sees the
+                // same chain either way.
+                this.hud.setLastSceneEventChain(dmEventChain);
             },
         });
         this.replay = new SessionReplay(this.analytics, 200);
@@ -621,6 +630,13 @@ class App {
                 };
                 this.worldState.updateLastSceneBlueprintFull(sceneBp);
                 this.hud.setLastSceneBlueprint(sceneScalars);
+                // Round 73 — push the full event-chain timeline
+                // into the HUD so the persistent-memories
+                // block renders the `⏰ next: <kind> in <delay>s`
+                // hint. `updateLastSceneBlueprintFull` already
+                // stores the chain in WorldState (round 72);
+                // the HUD just needs its own copy.
+                this.hud.setLastSceneEventChain(sceneBp.eventChain);
                 // Push the event chain into the world for downstream
                 // consumers (SmartWorldAI / God console). Round 39 —
                 // the chain is now actually *scheduled* (delays in
@@ -849,6 +865,14 @@ class App {
                 this.worldState.updateLastSceneBlueprintFull(sceneBp);
             }
             this.hud.setLastSceneBlueprint(sceneScalars);
+            // Round 73 — push the full event-chain timeline
+            // into the HUD. `sceneBp` may be null on a
+            // round-49 fast-portal path; fall back to an
+            // empty chain so the HUD row stays hidden
+            // (the `Array.isArray + length > 0` guard in
+            // `renderPersistentMemories` handles the empty
+            // case).
+            this.hud.setLastSceneEventChain(sceneBp?.eventChain ?? null);
             // Spawn a small wave of NPCs (2-4) keyed to the
             // atom's gameplayType.
             const archetypeIds = r.blueprint.atomIds.slice(0, 3);
@@ -1331,6 +1355,12 @@ class App {
                 // non-DM path syncs this automatically via
                 // `updateLastSceneBlueprintFull`.
                 this.worldState.setLastSceneEventChain(backup.blueprint.eventChain);
+                // Round 73 — push the chain into the HUD so the
+                // rolled-back scene's `⏰ next: <kind> in
+                // <delay>s` line reflects the events that
+                // survived the rollback. Mirrors the DM-path
+                // HUD write above.
+                this.hud.setLastSceneEventChain(backup.blueprint.eventChain);
             }
             this.worldState.setLastDimensionSeed(backup.seed);
             this.worldState.lastBiome = backup.biome;

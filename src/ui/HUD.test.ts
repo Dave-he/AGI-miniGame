@@ -4,6 +4,7 @@
 
 import { HUD } from '../ui/HUD';
 import { I18n } from '../i18n/I18n';
+import type { EventStep } from '../ai/SceneGen';
 
 function makeHud() {
     document.body.innerHTML = '<div id="hud"></div>';
@@ -765,5 +766,121 @@ describe('HUD — round 69 setWasmLatencyStats', () => {
         // The wasm row should be present in the body.
         const row = root.querySelector('.hud-wasm-latency');
         expect(row).not.toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 73 — `setLastSceneEventChain` + `⏰` row in the
+// persistent-memories block. Mirrors the round-69 wasm-latency
+// pattern (new emoji + new field in HUDState + new row HTML).
+// The chain is rendered as a "next: <kind> in <delay>s" headline
+// with a compact list of all events underneath.
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 73 setLastSceneEventChain', () => {
+    const SAMPLE_CHAIN: EventStep[] = [
+        { kind: 'spawn_wave',    delaySecs: 5,  payload: 'forest_spawn_wave_2' },
+        { kind: 'echo_lore',     delaySecs: 13, payload: 'forest_echo_lore_4' },
+        { kind: 'treasure_drop', delaySecs: 21, payload: 'forest_treasure_drop_0' },
+    ];
+
+    test('renders_⏰_row_with_next_event_headline', () => {
+        // The chain is already delay-sorted (both
+        // `themeToScene` and `synthesizeDmEventChain`
+        // guarantee this), so the first entry is the next
+        // event. The row's textContent should mention
+        // "next: spawn_wave in 5s" as the headline.
+        const { hud, root } = makeHud();
+        hud.setLastSceneEventChain(SAMPLE_CHAIN);
+        const row = root.querySelector('.hud-event-chain');
+        expect(row).not.toBeNull();
+        expect(row!.textContent).toContain('next:');
+        expect(row!.textContent).toContain('spawn_wave');
+        expect(row!.textContent).toContain('5s');
+    });
+
+    test('renders_full_chain_as_compact_list', () => {
+        // Below the headline, all 3 events should appear as
+        // "· t+<delay>s <kind>" lines. The delay format is
+        // t+5s / t+13s / t+21s to match the round-39
+        // event-log convention.
+        const { hud, root } = makeHud();
+        hud.setLastSceneEventChain(SAMPLE_CHAIN);
+        const row = root.querySelector('.hud-event-chain')!;
+        expect(row.textContent).toContain('t+5s');
+        expect(row.textContent).toContain('t+13s');
+        expect(row.textContent).toContain('t+21s');
+        expect(row.textContent).toContain('echo_lore');
+        expect(row.textContent).toContain('treasure_drop');
+    });
+
+    test('adds_⏰_to_emoji_strip_and_increments_count', () => {
+        // The round-51 `<details>` summary should grow from
+        // 0 emojis (default) to 1 (⏰) when only the chain
+        // row is set. The count is "1 条记忆" in zh-CN.
+        const { hud, root } = makeHud();
+        hud.setLastSceneEventChain(SAMPLE_CHAIN);
+        const summary = root.querySelector('.hud-memories > summary')!;
+        expect(summary.textContent).toContain('⏰');
+        // Count "1 条记忆" should be present.
+        expect(summary.textContent).toContain('1');
+    });
+
+    test('does_not_render_⏰_row_when_chain_is_null', () => {
+        // Default HUD (no chain set) should NOT pull the row
+        // in, and the emoji strip should not include ⏰.
+        const { hud, root } = makeHud();
+        const row = root.querySelector('.hud-event-chain');
+        expect(row).toBeNull();
+        const summary = root.querySelector('.hud-memories > summary');
+        if (summary) {
+            expect(summary.textContent).not.toContain('⏰');
+        }
+    });
+
+    test('does_not_render_⏰_row_when_chain_is_empty_array', () => {
+        // A round-49 partial save where the loader didn't
+        // have a chain to recover should leave the row
+        // hidden (matches the round-69 zero-counts
+        // contract).
+        const { hud, root } = makeHud();
+        hud.setLastSceneEventChain([]);
+        const row = root.querySelector('.hud-event-chain');
+        expect(row).toBeNull();
+    });
+
+    test('clears_⏰_row_when_setLastSceneEventChain_called_with_null', () => {
+        // Round a chain in, then clear it — the row should
+        // vanish and the emoji strip should drop ⏰.
+        const { hud, root } = makeHud();
+        hud.setLastSceneEventChain(SAMPLE_CHAIN);
+        expect(root.querySelector('.hud-event-chain')).not.toBeNull();
+        hud.setLastSceneEventChain(null);
+        expect(root.querySelector('.hud-event-chain')).toBeNull();
+        const summary = root.querySelector('.hud-memories > summary');
+        if (summary) {
+            expect(summary.textContent).not.toContain('⏰');
+        }
+    });
+
+    test('defensive_clone_prevents_caller_mutation_from_leaking', () => {
+        // Mirrors the round-72 WorldState setter — the
+        // HUD must deep-clone the chain so a caller
+        // mutating the source array doesn't affect the
+        // rendered row.
+        const { hud, root } = makeHud();
+        const source: EventStep[] = [
+            { kind: 'spawn_wave', delaySecs: 5, payload: '0_0' },
+        ];
+        hud.setLastSceneEventChain(source);
+        // Mutate after the call.
+        source[0].payload = 'MUTATED';
+        source.push({ kind: 'echo_lore', delaySecs: 13, payload: 'evil' });
+        // The rendered row should still show the original
+        // 1-event chain with the original payload.
+        const row = root.querySelector('.hud-event-chain')!;
+        expect(row.textContent).toContain('spawn_wave');
+        expect(row.textContent).not.toContain('MUTATED');
+        expect(row.textContent).not.toContain('evil');
     });
 });
