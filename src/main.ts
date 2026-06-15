@@ -52,6 +52,7 @@ import { PlayerHealth } from './player/PlayerHealth';
 import { DmMode } from './dm/DmMode';
 import { SessionReplay } from './analytics/SessionReplay';
 import { NpcFactory } from './ai/NpcFactory';
+import { ActionDebouncer } from './utils/ActionDebouncer';
 import { NarrationEngine } from './narration/NarrationEngine';
 import { WebAudioService, NullAudioService } from './audio/AudioService';
 import { GameAudio } from './audio/GameAudio';
@@ -192,82 +193,53 @@ class App {
      */
     private isEntering = false;
     /**
-     * Round 104 — time-based debounce for `loadGame`.
-     * Carries the timestamp of the most recent
-     * `loadGame` body completion. A rapid double-tap
-     * on the load button (`#btn-load`, line 1951) or
-     * the L keyboard shortcut (line 2019) within
-     * `LOAD_DEBOUNCE_MS` of the last load is short-
-     * circuited to a no-op with a Chinese-localized
-     * log line. Closes the round-103 rejected design
-     * gap: a `try/finally` in-flight guard doesn't
-     * work for synchronous `loadGame` (the `finally`
-     * releases the guard before the second call
-     * arrives), but a 500ms time-based debounce DOES
-     * — it survives sequential test calls because the
-     * second call sees a fresh `Date.now()` outside
-     * the debounce window only when the user actually
-     * waited. The most visible side effect of the
-     * un-debounced dual call is the round-50 event-
-     * chain `setTimeout` schedule being doubled
-     * (line 1824) — every event in the saved event
-     * chain would fire TWICE, doubling the per-event
-     * `npcMinds.broadcast('witnessed_event',
-     * weight=0.3)` calls.
+     * Round 108 — time-based debounce for `loadGame`,
+     * consolidating the round-104 inline
+     * `lastLoadAt` field into a single
+     * `ActionDebouncer` instance. The class
+     * encapsulates `lastFiredAt` +
+     * `windowMs` + the Chinese-skip-message
+     * formatting, so the per-action App
+     * code reduces from a 6-line debounce
+     * block (check `if (this.lastLoadAt > 0
+     * && now - this.lastLoadAt < ...)` +
+     * log + return) to a single
+     * `if (!this.debouncerLoadGame.check()) return;`
+     * line. The 500ms window matches the
+     * round-104 human-double-click tuning.
+     * The stamp is placed at END of body
+     * (round-104 contract) — "a failure
+     * mid-body still counts as completed
+     * so the user can't spam-retry past a
+     * broken load." See `ActionDebouncer`
+     * JSDoc for the stamp-position-asymmetry
+     * rationale.
      */
-    private lastLoadAt = 0;
+    private debouncerLoadGame: ActionDebouncer;
     /**
-     * Round 106 — time-based debounce for `saveGame`,
-     * mirroring the round-104 `lastLoadAt` field.
-     * A rapid double-tap on the save button
-     * (`#btn-save`, line 2030) or the S keyboard
-     * shortcut (line 2087) within
-     * `SAVE_DEBOUNCE_MS` of the last save is
-     * short-circuited to a no-op with a Chinese-
-     * localized log line. Closes the round-106
-     * gap: two rapid save clicks would otherwise
-     * double-call `analytics.track('save.persisted',
-     * { ok })` (corrupting the round-50 telemetry
-     * gate's per-dimension save count) and
-     * double-call `tutorial?.notify('save-persisted')`
-     * (showing the "已保存" tutorial notification
-     * twice in a row). The debounce window is
-     * the same 500ms as the loadGame debounce —
-     * they share the same human-double-click
-     * (~200-300ms) + round-50 telemetry gate
-     * (~50ms) tuning. A future round-107+ could
-     * consolidate both into a single
-     * `ActionDebouncer` helper if more debounced
-     * actions are added.
+     * Round 108 — time-based debounce for
+     * `saveGame`, consolidating the
+     * round-106 inline `lastSaveAt` field.
+     * Same 500ms window as `loadGame`.
+     * The stamp is placed at END of body
+     * (round-106 contract).
      */
-    private lastSaveAt = 0;
+    private debouncerSaveGame: ActionDebouncer;
     /**
-     * Round 107 — time-based debounce for
-     * `rollWorldEvent`, mirroring the round-104
-     * `lastLoadAt` and round-106 `lastSaveAt`
-     * fields. A rapid double-tap on the
-     * event-roll button (`#btn-event`,
-     * line 2082) or the E keyboard shortcut
-     * (line 2155) within `EVENT_DEBOUNCE_MS`
-     * of the last roll is short-circuited to
-     * a no-op with a Chinese-localized log
-     * line. Closes the round-107 gap: two
-     * rapid event rolls would otherwise
-     * double-schedule the
-     * `setTimeout(clearNpcDialogue, 4000)` at
-     * line 1213 (the second clearNpcDialogue
-     * would clear a different NPC's line that
-     * the first roll hadn't yet cleared — a
-     * visible "two NPCs talking at once" UX
-     * bug), AND would call
-     * `setNpcDialogue(idx, evt.npcLine)` twice
-     * (one dialogue would overwrite the
-     * other). The 4000ms dialogue timer is
-     * LONGER than the 500ms debounce window,
-     * so the second call's setTimeout would
-     * fire mid-first-dialogue.
+     * Round 108 — time-based debounce for
+     * `rollWorldEvent`, consolidating the
+     * round-107 inline `lastEventAt`
+     * field. Same 500ms window. The stamp
+     * is placed at BEGINNING of body
+     * (round-107 contract) — "even a
+     * null-returning `if (!evt) return;`
+     * counts as called once so the user
+     * can't spam-roll to flood the
+     * logs." See `ActionDebouncer` JSDoc
+     * for the stamp-position-asymmetry
+     * rationale.
      */
-    private lastEventAt = 0;
+    private debouncerRollWorldEvent: ActionDebouncer;
     /**
      * Round 104 — debounce window for `loadGame` in
      * milliseconds. A second `loadGame` call within
@@ -280,6 +252,19 @@ class App {
      * gives margin on both sides. A future round-105+
      * could expose this as a debug knob in the help
      * overlay (`settings.debounceMs`) for fine-tuning.
+     *
+     * Round 108 — kept as a `private static readonly`
+     * (not folded into a single `ACTION_DEBOUNCE_MS`
+     * constant) because the 3 per-action constants
+     * are referenced by main.test.ts (the round-104
+     * after-window test uses `(app as unknown as
+     * { LOAD_DEBOUNCE_MS: number }).LOAD_DEBOUNCE_MS`
+     * to advance `Date.now()` past the window). A
+     * future round-109+ could fold them into a
+     * single `ACTION_DEBOUNCE_MS` constant + update
+     * the test casts to `(app as unknown as {
+     * debouncerLoadGame: { windowSizeMs: number } })
+     * .debouncerLoadGame.windowSizeMs`.
      */
     private static readonly LOAD_DEBOUNCE_MS = 500;
     /**
@@ -303,7 +288,12 @@ class App {
      * 3 debounced actions now share the same
      * 500ms window — a future round-108+
      * could consolidate into a single
-     * `ActionDebouncer` helper.
+     * `ActionDebouncer` helper. (Round 108
+     * did consolidate — see the 3
+     * `debouncer*` fields above. The
+     * constants are kept for the
+     * main.test.ts round-104/106/107
+     * after-window tests.)
      */
     private static readonly EVENT_DEBOUNCE_MS = 500;
 
@@ -580,6 +570,32 @@ class App {
             onLevelUp: (oldL, newL) => this.hud.log(`升级 Lv ${oldL} → ${newL}`),
             onTalentLearned: (t) => this.hud.log(`习得天赋：${t.name}`),
         });
+        // Round 108 — instantiate the 3 time-based debouncers.
+        // The constructor wires up the debounce window,
+        // action name (used in the Chinese skip log line),
+        // and the round tag (used as the version marker
+        // in the skip log line). The `logFn` is captured
+        // here via `this.hud.log.bind(this.hud)` so the
+        // debouncer's log line is rendered in the same
+        // place as the rest of the orchestrator's output.
+        this.debouncerLoadGame = new ActionDebouncer(
+            App.LOAD_DEBOUNCE_MS,
+            'loadGame',
+            'round 104',
+            (line) => this.hud.log(line),
+        );
+        this.debouncerSaveGame = new ActionDebouncer(
+            App.SAVE_DEBOUNCE_MS,
+            'saveGame',
+            'round 106',
+            (line) => this.hud.log(line),
+        );
+        this.debouncerRollWorldEvent = new ActionDebouncer(
+            App.EVENT_DEBOUNCE_MS,
+            'rollWorldEvent',
+            'round 107',
+            (line) => this.hud.log(line),
+        );
         this.economy = new EconomyPanel(refs.economyRoot, this.worldState);
         this.epochPanel = new EpochPanel(refs.epochRoot, this.epoch, () => this.triggerCollapse(), this.i18n);
         // Round 54 — wire the rollback callback into the
@@ -1241,37 +1257,31 @@ class App {
 
     /** Demo: roll a world event. */
     rollWorldEvent(): void {
-        // Round 107 — time-based debounce.
-        // Mirrors the round-104 `lastLoadAt` /
-        // round-106 `lastSaveAt` pattern for
-        // the event-roll surface. A rapid
-        // double-tap on `#btn-event`
-        // (line 2082) or the E key (line 2155)
-        // within 500ms of the last roll is
-        // short-circuited to a no-op. Closes
-        // the double-setTimeout(
-        // clearNpcDialogue) and the
-        // two-NPCs-talking-at-once UX bug.
-        const now = Date.now();
-        if (this.lastEventAt > 0 && now - this.lastEventAt < App.EVENT_DEBOUNCE_MS) {
-            this.hud.log(
-                `[orchestrator] 距上次 rollWorldEvent 仅 ${now - this.lastEventAt}ms`
-                + ` < ${App.EVENT_DEBOUNCE_MS}ms 窗口，跳过本次调用 (round 107 防御)`,
-            );
-            return;
-        }
-        // Round 107 — stamp the debounce anchor
-        // BEFORE the body runs (round-104
-        // loadGame / round-106 saveGame stamp
-        // AFTER the body, but rollWorldEvent
+        // Round 108 — debounce check delegated to
+        // the `ActionDebouncer` instance. The
+        // 500ms window + the actionName +
+        // the round tag are all baked into the
+        // debouncer's constructor (line 575),
+        // so the App code reduces to a single
+        // guard line. The Chinese skip log
+        // line is emitted by the debouncer's
+        // `check()` method.
+        if (!this.debouncerRollWorldEvent.check()) return;
+        // Round 108 — stamp BEFORE the body.
+        // The stamp-position asymmetry (vs
+        // loadGame/saveGame's stamp-at-END)
+        // is preserved as a caller-side
+        // choice. The reason: rollWorldEvent
         // has an early `if (!evt) return;`
-        // path that would prevent the stamp
-        // from being set on a null event).
-        // Stamping up-front means even a
-        // null-returning rollEvent counts as
-        // "called once" so the player can't
-        // spam-roll to flood logs.
-        this.lastEventAt = Date.now();
+        // path on a null event. Stamping
+        // up-front means even a null-
+        // returning rollEvent counts as
+        // "called once" so the player
+        // can't spam-roll to flood logs.
+        // See `ActionDebouncer` JSDoc for
+        // the stamp-position-asymmetry
+        // rationale.
+        this.debouncerRollWorldEvent.stamp();
         const evt = this.ai.worldAI.rollEvent(this.worldState.player.level, 0);
         if (!evt) return;
         this.hud.setState({ worldEvent: evt });
@@ -1388,39 +1398,29 @@ class App {
     }
 
     saveGame(): void {
-        // Round 106 — time-based debounce.
-        // Mirrors the round-104 `lastLoadAt` /
-        // `LOAD_DEBOUNCE_MS` pattern for the
-        // save surface. A rapid double-tap on
-        // `#btn-save` (line 2030) or the S key
-        // (line 2087) within 500ms of the last
-        // save is short-circuited to a no-op
-        // with a Chinese-localized log line.
-        // Closes the double-analytics-tracking
-        // gap (`save.persisted` would be
-        // emitted twice) and the double-
-        // tutorial-notify gap (`save-persisted`
-        // would show the "已保存" banner twice).
-        const now = Date.now();
-        if (this.lastSaveAt > 0 && now - this.lastSaveAt < App.SAVE_DEBOUNCE_MS) {
-            this.hud.log(
-                `[orchestrator] 距上次 saveGame 仅 ${now - this.lastSaveAt}ms`
-                + ` < ${App.SAVE_DEBOUNCE_MS}ms 窗口，跳过本次调用 (round 106 防御)`,
-            );
-            return;
-        }
+        // Round 108 — debounce check delegated to
+        // the `ActionDebouncer` instance. The
+        // 500ms window + the actionName +
+        // the round tag are all baked into the
+        // debouncer's constructor (line 568),
+        // so the App code reduces to a single
+        // guard line. The Chinese skip log
+        // line is emitted by the debouncer's
+        // `check()` method.
+        if (!this.debouncerSaveGame.check()) return;
         const ok = this.save.persist();
         this.hud.log(ok ? '[存档] 已保存' : '[存档] 保存失败');
         this.analytics.track('save.persisted', { ok });
         this.tutorial?.notify('save-persisted');
-        // Round 106 — stamp the debounce anchor
-        // AFTER the body runs (mirrors the
-        // round-104 loadGame pattern). A failure
-        // mid-body (full disk, private browsing)
-        // still counts as "completed" so the
-        // user can't spam-retry past a broken
-        // save.
-        this.lastSaveAt = Date.now();
+        // Round 108 — stamp AFTER the body runs.
+        // The stamp-at-end position is preserved
+        // from round-106: "a failure mid-body
+        // (full disk, private browsing) still
+        // counts as completed so the user can't
+        // spam-retry past a broken save." See
+        // `ActionDebouncer` JSDoc for the
+        // stamp-position-asymmetry rationale.
+        this.debouncerSaveGame.stamp();
     }
 
     /**
@@ -1806,26 +1806,22 @@ class App {
     }
 
     loadGame(): void {
-        // Round 104 — time-based debounce. The
-        // round-103 `try/finally` in-flight guard
-        // didn't work for `loadGame` (synchronous
-        // body — the finally releases the guard
-        // before the second call arrives). A
-        // 500ms time-based debounce is the correct
-        // pattern: the second call sees a fresh
-        // `Date.now()` inside the debounce window
-        // and short-circuits. Closes the gap on
-        // round-50 event-chain `setTimeout` double-
-        // scheduling (line 1824) and the visible
-        // "⚡ replay" duplication.
-        const now = Date.now();
-        if (this.lastLoadAt > 0 && now - this.lastLoadAt < App.LOAD_DEBOUNCE_MS) {
-            this.hud.log(
-                `[orchestrator] 距上次 loadGame 仅 ${now - this.lastLoadAt}ms`
-                + ` < ${App.LOAD_DEBOUNCE_MS}ms 窗口，跳过本次调用 (round 104 防御)`,
-            );
-            return;
-        }
+        // Round 108 — debounce check delegated to
+        // the `ActionDebouncer` instance. The
+        // 500ms window + the actionName +
+        // the round tag are all baked into the
+        // debouncer's constructor (line 560),
+        // so the App code reduces to a single
+        // guard line. The Chinese skip log
+        // line is emitted by the debouncer's
+        // `check()` method. The round-104
+        // rationale (round-103 `try/finally`
+        // in-flight guard didn't work for
+        // sync `loadGame`; time-based debounce
+        // is the correct pattern) is unchanged
+        // — only the implementation has been
+        // consolidated.
+        if (!this.debouncerLoadGame.check()) return;
         const ok = this.save.restore();
         this.hud.log(ok ? '[读档] 已恢复' : '[读档] 没有可恢复的存档');
         if (ok) {
@@ -2091,16 +2087,19 @@ class App {
         }
         this.renderAllPanels();
         this.renderAllPanels();
-        // Round 104 — stamp the debounce anchor
-        // AFTER the body runs, so a failure mid-
-        // body (corrupt save, jsdom Three.js
-        // missing, etc.) still counts as a
-        // "completed load" and the user can't
-        // spam retry. The dual-call window is
-        // specifically about preventing the
-        // silent side-effect duplication, not
-        // about retry-after-failure.
-        this.lastLoadAt = Date.now();
+        // Round 108 — stamp AFTER the body runs.
+        // The stamp-at-end position is preserved
+        // from round-104: "a failure mid-body
+        // (corrupt save, jsdom Three.js missing,
+        // etc.) still counts as a completed load
+        // and the user can't spam retry. The
+        // dual-call window is specifically about
+        // preventing the silent side-effect
+        // duplication, not about retry-after-
+        // failure." See `ActionDebouncer` JSDoc
+        // for the stamp-position-asymmetry
+        // rationale.
+        this.debouncerLoadGame.stamp();
     }
 }
 
