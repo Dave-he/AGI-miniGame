@@ -225,6 +225,58 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
 ];
 
 /**
+ * Round 120 — concentrated
+ * panel-toggle subset of
+ * `BINDING_DESCRIPTIONS`. The
+ * 8 keys that toggle the
+ * always-visible + on-demand
+ * panel overlays (rounds
+ * 112-119) are listed here
+ * separately so the help
+ * overlay (rendered when
+ * the player presses `?`)
+ * can show them in a
+ * dedicated visually-
+ * distinct section. The
+ * player can scan the
+ * 8-row block instead of
+ * hunting through the full
+ * 24-row `BINDING_DESCRIPTIONS`
+ * list.
+ *
+ * The 8 keys are the
+ * round-112-119 panel-toggle
+ * shortcuts in QWERTY
+ * order. The labels are
+ * short (one Chinese word
+ * + 1-2 descriptors) so the
+ * section reads as a
+ * quick-reference card.
+ *
+ * Kept in `KeyboardShortcuts.ts`
+ * (rather than `main.ts`)
+ * so the contract is
+ * co-located with the
+ * source-of-truth routing
+ * table. Any future toggle
+ * addition (round-120+
+ * G / D / Z etc.) would
+ * add one row here + the
+ * corresponding BINDING_DESCRIPTIONS
+ * row.
+ */
+export const PANEL_TOGGLE_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }> = [
+    { key: 'P', action: '设置 (声音/语言/防抖窗口)' },
+    { key: 'Q', action: '统计面板' },
+    { key: 'W', action: '进度面板' },
+    { key: 'T', action: '教程面板' },
+    { key: 'F', action: '档案库面板' },
+    { key: 'M', action: 'NPC 心智面板' },
+    { key: 'V', action: '成就面板' },
+    { key: 'B', action: '生物群系图鉴' },
+];
+
+/**
  * Round 59 — mouse / pointer bindings, rendered as a second
  * section in the help overlay (separated from the keyboard list
  * by a visual divider). These are not routed by `routeKey` —

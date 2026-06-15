@@ -31,7 +31,7 @@ import { SaveSystem } from './world/SaveSystem';
 import { AIEngine, BalanceTuner } from './ai/AIEngine';
 import { NPCDialogueAI, NPCProfile } from './ai/NPCDialogueAI';
 import { AIBridge, ATOM_MANIFEST } from './gameplay/AIBridge';
-import { routeKey, BINDING_DESCRIPTIONS, MOUSE_BINDINGS } from './input/KeyboardShortcuts';
+import { routeKey, BINDING_DESCRIPTIONS, MOUSE_BINDINGS, PANEL_TOGGLE_DESCRIPTIONS } from './input/KeyboardShortcuts';
 import { GameplayManager, SynthesisModule, CardModule } from './gameplay/GameplayManager';
 import { DslExecutor } from './scene/DslExecutor';
 import { HotReloadController } from './scene/HotReloadController';
@@ -2779,6 +2779,37 @@ async function bootstrap(): Promise<void> {
                 keyEl.textContent = d.key;
                 const actEl = document.createElement('div');
                 actEl.className = 'kb-help-action';
+                actEl.textContent = d.action;
+                body.appendChild(keyEl);
+                body.appendChild(actEl);
+            }
+            // Round 120 — Section 3:
+            // the 8 panel-toggle
+            // keys (P / Q / W + T /
+            // F / M + V + B), shown
+            // in a dedicated visually-
+            // distinct section. The
+            // player can scan this
+            // 8-row block instead of
+            // hunting through the
+            // full BINDING_DESCRIPTIONS
+            // list. Uses a distinct
+            // CSS class
+            // (.kb-help-section-toggle)
+            // so the section reads
+            // as a quick-reference
+            // card with a cyan
+            // border.
+            const toggleHeader = document.createElement('div');
+            toggleHeader.className = 'kb-help-section kb-help-section-toggle';
+            toggleHeader.textContent = '面板开关 (8 键)';
+            body.appendChild(toggleHeader);
+            for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
+                const keyEl = document.createElement('div');
+                keyEl.className = 'kb-help-key kb-help-key-toggle';
+                keyEl.textContent = d.key;
+                const actEl = document.createElement('div');
+                actEl.className = 'kb-help-action kb-help-action-toggle';
                 actEl.textContent = d.action;
                 body.appendChild(keyEl);
                 body.appendChild(actEl);

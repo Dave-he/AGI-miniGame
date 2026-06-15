@@ -420,6 +420,32 @@
         padding-top: 0;
         border-top: none;
       }
+      /* Round 120 — concentrated
+         panel-toggle section in
+         the help overlay. Uses
+         a cyan border + accent
+         color so the 8 panel-
+         toggle keys (P / Q / W +
+         T / F / M + V + B) read
+         as a distinct quick-
+         reference card. The
+         player can scan this
+         8-row block without
+         hunting through the
+         full BINDING_DESCRIPTIONS
+         list. */
+      .kb-help-section-toggle {
+        color: var(--neon-cyan, #4ecdc4) !important;
+        border-top: 1px solid rgba(78, 205, 196, 0.5) !important;
+        margin-top: 12px !important;
+      }
+      .kb-help-key-toggle {
+        color: var(--neon-cyan, #4ecdc4) !important;
+      }
+      .kb-help-action-toggle {
+        color: var(--neon-cyan, #4ecdc4) !important;
+        opacity: 0.85;
+      }
       .kb-help-key {
         color: var(--neon-pink, #ff66cc);
         font-weight: 700;

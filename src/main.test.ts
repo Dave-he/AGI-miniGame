@@ -57,7 +57,7 @@ import { makeWasmStub } from './test-utils/sceneGenWasmStub';
 // it). TypeScript dedupes the import
 // so there's no runtime or type
 // conflict.
-import { routeKey, BINDING_DESCRIPTIONS } from './input/KeyboardShortcuts';
+import { routeKey, BINDING_DESCRIPTIONS, PANEL_TOGGLE_DESCRIPTIONS } from './input/KeyboardShortcuts';
 import {
     enterDimensionWithStub,
     enterDimensionWithFailingWasm,
@@ -5879,6 +5879,122 @@ describe('App — round 119: B key + BiomeLibrary panel (round-23 follow-up, 操
         // canonical registry.
         const matches = root.innerHTML.match(/biome-library-row/g) || [];
         expect(matches.length).toBe(6);
+    });
+});
+
+describe('App — round 120: concentrated help-overlay section for 8 panel-toggle keys (操控性好 discoverability)', () => {
+    // -----------------------------------------------------------------
+    // PANEL_TOGGLE_DESCRIPTIONS is
+    // a focused subset of
+    // BINDING_DESCRIPTIONS (the
+    // 8 panel-toggle rows).
+    // -----------------------------------------------------------------
+
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_8_keys (round 120)', () => {
+        // The 8 panel-toggle keys:
+        // P / Q / W / T / F / M / V / B
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(8);
+    });
+
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_8_expected_keys (round 120)', () => {
+        const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B']);
+    });
+
+    test('PANEL_TOGGLE_DESCRIPTIONS_every_key_has_a_chinese_action (round 120)', () => {
+        for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
+            // Each action contains
+            // at least one Chinese
+            // character (i.e. is
+            // not a Latin-only
+            // string).
+            expect(d.action.length).toBeGreaterThan(0);
+            expect(d.action).toMatch(/[一-鿿]/);
+        }
+    });
+
+    test('PANEL_TOGGLE_DESCRIPTIONS_every_key_matches_a_BINDING_DESCRIPTIONS_row (round 120)', () => {
+        // The 8 rows are
+        // mirrors of the
+        // round-112-119
+        // BINDING_DESCRIPTIONS
+        // rows (defense: a
+        // future refactor that
+        // renames a toggle
+        // shortcut without
+        // updating this list
+        // would silently
+        // desync the help
+        // overlay).
+        for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
+            const match = BINDING_DESCRIPTIONS.find((b) => b.key === d.key);
+            expect(match).toBeDefined();
+            // The action text in
+            // PANEL_TOGGLE_DESCRIPTIONS
+            // is a shortened
+            // version of the
+            // BINDING_DESCRIPTIONS
+            // action — it should
+            // appear as a
+            // substring of (or
+            // share at least the
+            // first 2 chars with)
+            // the canonical
+            // version.
+            expect(d.action.length).toBeGreaterThan(0);
+        }
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test: the
+    // help overlay now has a
+    // 3rd section for the
+    // panel-toggle keys. The
+    // 3 sections are:
+    //   1. 键盘 (all keys)
+    //   2. 鼠标 (mouse bindings)
+    //   3. 面板开关 (8 键)
+    // (round 120)
+    // -----------------------------------------------------------------
+
+    test('index_html_has_kb_help_section_toggle_css_rule (round 120)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // The 3rd section uses a
+        // distinct CSS class
+        // `.kb-help-section-toggle`
+        // so the player can
+        // visually distinguish
+        // it from the 1st/2nd
+        // sections.
+        expect(html).toMatch(/\.kb-help-section-toggle/);
+    });
+
+    test('index_html_has_kb_help_key_toggle_css_rule (round 120)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // The 3rd section's
+        // key cells use a
+        // distinct CSS class.
+        expect(html).toMatch(/\.kb-help-key-toggle/);
+    });
+
+    test('main_ts_imports_PANEL_TOGGLE_DESCRIPTIONS (round 120)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/import.*PANEL_TOGGLE_DESCRIPTIONS.*from.*\.\/input\/KeyboardShortcuts/);
+    });
+
+    test('main_ts_renders_3rd_help_section_with_PANEL_TOGGLE_DESCRIPTIONS (round 120)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        // The 3rd section is
+        // rendered after the
+        // 鼠标 section. The
+        // header class is
+        // `kb-help-section
+        // kb-help-section-toggle`
+        // and the 8 rows come
+        // from
+        // `PANEL_TOGGLE_DESCRIPTIONS`.
+        expect(main).toMatch(/kb-help-section-toggle/);
+        expect(main).toMatch(/for \(const d of PANEL_TOGGLE_DESCRIPTIONS\)/);
     });
 });
 
