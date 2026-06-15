@@ -48,6 +48,7 @@ import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
 import { TutorialOverlay } from './ui/TutorialOverlay';
 import { renderStatsPanel, StatsPanelHandle } from './ui/StatsPanel';
 import { GodConsole } from './ui/GodConsole';
+import { SettingsPanel, type DebounceWindow } from './ui/SettingsPanel';
 import { PlayerHealth } from './player/PlayerHealth';
 import { DmMode } from './dm/DmMode';
 import { SessionReplay } from './analytics/SessionReplay';
@@ -88,6 +89,19 @@ interface AppRefs {
     godRoot?: HTMLElement;
     vaultRoot?: HTMLElement;
     npcMindRoot?: HTMLElement;
+    /**
+     * Round 111 — optional root for the
+     * SettingsPanel (audio / difficulty /
+     * language / debounce window). The
+     * panel is constructed only if the
+     * host page provides a DOM node with
+     * `id="settings-root"`. The keyboard
+     * shortcut `?` opens the keyboard
+     * help overlay; settings panel can
+     * be opened via a future `P` key
+     * (round-112+ candidate).
+     */
+    settingsRoot?: HTMLElement;
 }
 
 /**
@@ -159,6 +173,26 @@ class App {
     private health: PlayerHealth;
     private dm: DmMode;
     private godConsole: GodConsole | null = null;
+    /**
+     * Round 111 — settings panel instance
+     * (audio / difficulty / language /
+     * debounce window). Created in the
+     * constructor only if `refs.settingsRoot`
+     * is provided. The debounce window
+     * knob calls `applySettings(ms)` which
+     * fans out to all 4 ActionDebouncer
+     * instances via `setWindowMs(ms)`.
+     */
+    private settingsPanel: SettingsPanel | null = null;
+    /**
+     * Round 111 — current debounce window
+     * (mirrors the SettingsPanel's
+     * `is-active` state). Default is
+     * `App.ACTION_DEBOUNCE_MS` (500).
+     * Surfaced via `getCurrentDebounceWindow()`
+     * for the SettingsPanel's getter.
+     */
+    private currentDebounceWindowMs: 0 | 500 | 1000 | 2000 = 500;
     private replay: SessionReplay;
     private narration: NarrationEngine;
     private vault: DimensionVault;
@@ -565,6 +599,31 @@ class App {
         if (refs.godRoot) {
             this.godConsole = new GodConsole(refs.godRoot, this.dm, {
                 onResult: (r) => this.hud.log(`[DM] ${r.cmd.kind} → ${r.ok ? 'ok' : r.error}`),
+            });
+        }
+        // Round 111 — SettingsPanel construction.
+        // Created only if the host page provides a
+        // `settings-root` DOM node. The 2 hooks
+        // (onDebounceChange, getCurrentDebounce)
+        // are wired so the panel can both
+        // read the App's current debounce
+        // state (for the `is-active`
+        // highlight) and push changes back
+        // into the App. The
+        // `getCurrentDebounce` returns the
+        // live `currentDebounceWindowMs`
+        // field; `onDebounceChange` calls
+        // `applyDebounceSettings(ms)` which
+        // fans out to all 4 debouncers.
+        // Difficulty hooks are omitted (the
+        // App has no global difficulty
+        // concept — each dimension rolls
+        // its own) so the difficulty row
+        // is hidden in the panel.
+        if (refs.settingsRoot) {
+            this.settingsPanel = new SettingsPanel(refs.settingsRoot, this.i18n, this.audio, {
+                onDebounceChange: (ms) => this.applyDebounceSettings(ms),
+                getCurrentDebounce: () => this.currentDebounceWindowMs,
             });
         }
         if (refs.vaultRoot) {
@@ -1207,6 +1266,37 @@ class App {
         } catch (err) {
             this.hud.log(`[kb] enterAtom(${atomId}) 失败: ${(err as Error).message}`);
         }
+    }
+
+    /**
+     * Round 111 — apply a new debounce window
+     * to all 4 `ActionDebouncer` instances.
+     * Called by the SettingsPanel's
+     * `onDebounceChange` hook. The
+     * `currentDebounceWindowMs` field is
+     * updated FIRST so a follow-up render
+     * reflects the new state (the
+     * `getCurrentDebounce` getter reads
+     * from it). The 4 debouncers are
+     * mutated in-place via
+     * `setWindowMs(ms)`. The previous
+     * stamp is NOT reset — a window-shrink
+     * (500 → 0) allows the next call
+     * immediately.
+     *
+     * Logs a Chinese line so the player
+     * sees the change is live (the panel
+     * re-renders, but the visual feedback
+     * is in the HUD).
+     */
+    applyDebounceSettings(ms: DebounceWindow): void {
+        this.currentDebounceWindowMs = ms;
+        this.debouncerLoadGame.setWindowMs(ms);
+        this.debouncerSaveGame.setWindowMs(ms);
+        this.debouncerRollWorldEvent.setWindowMs(ms);
+        this.debouncerEnterAtom.setWindowMs(ms);
+        const msLabel = ms === 0 ? '关闭' : `${ms}ms`;
+        this.hud.log(`[settings] 防抖窗口已更新为 ${msLabel} (4 个动作同步)`);
     }
 
     /**

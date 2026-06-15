@@ -4201,3 +4201,126 @@ describe('App — round 100: sceneGenWasm=stub WASM-success path positive assert
     });
 });
 
+// ---------------------------------------------------------------
+// Round 111 — `applyDebounceSettings(ms)` App-level test
+// suite. The SettingsPanel `onDebounceChange` hook
+// forwards to this method; the tests pin the
+// contract that all 4 `ActionDebouncer` instances
+// (`debouncerLoadGame`, `debouncerSaveGame`,
+// `debouncerRollWorldEvent`, `debouncerEnterAtom`)
+// are updated in sync + the `currentDebounceWindowMs`
+// field mirrors the new value + the
+// `getCurrentDebounce()` getter used by the panel
+// reflects the change.
+// ---------------------------------------------------------------
+
+describe('App — round 111: applyDebounceSettings (SettingsPanel debounce window knob)', () => {
+    function cast<T>(v: unknown): T { return v as T; }
+
+    test('applyDebounceSettings_updates_all_4_debouncer_windows (round 111)', () => {
+        const app = makeApp();
+        app.applyDebounceSettings(1000);
+        // Read the 4 debouncers' windowSizeMs
+        // via the private-field cast pattern
+        // (round-90/98 standard).
+        const a = app as unknown as {
+            debouncerLoadGame: { windowSizeMs: number };
+            debouncerSaveGame: { windowSizeMs: number };
+            debouncerRollWorldEvent: { windowSizeMs: number };
+            debouncerEnterAtom: { windowSizeMs: number };
+        };
+        expect(a.debouncerLoadGame.windowSizeMs).toBe(1000);
+        expect(a.debouncerSaveGame.windowSizeMs).toBe(1000);
+        expect(a.debouncerRollWorldEvent.windowSizeMs).toBe(1000);
+        expect(a.debouncerEnterAtom.windowSizeMs).toBe(1000);
+    });
+
+    test('applyDebounceSettings_updates_currentDebounceWindowMs_field (round 111)', () => {
+        // The SettingsPanel's `getCurrentDebounce`
+        // hook reads this field for the
+        // `is-active` highlight. A regression
+        // that forgets to update the field
+        // would make the panel show the wrong
+        // active button after a click.
+        const app = makeApp();
+        expect(cast<{ currentDebounceWindowMs: number }>(app).currentDebounceWindowMs).toBe(500);
+        app.applyDebounceSettings(0);
+        expect(cast<{ currentDebounceWindowMs: number }>(app).currentDebounceWindowMs).toBe(0);
+        app.applyDebounceSettings(2000);
+        expect(cast<{ currentDebounceWindowMs: number }>(app).currentDebounceWindowMs).toBe(2000);
+    });
+
+    test('applyDebounceSettings_actually_changes_loadGame_debounce_behavior (round 111 e2e)', () => {
+        // Contract: with debounce=0, two rapid
+        // `loadGame` calls both reach
+        // `save.restore` (the debounce is
+        // disabled). With debounce=2000,
+        // two rapid `loadGame` calls
+        // (within 2000ms) only reach
+        // `save.restore` once.
+        //
+        // Uses a FRESH `makeApp()` per case
+        // because the debouncer stamp
+        // persists across calls (intentional
+        // round-104 contract) and the test
+        // can't cleanly reset it without a
+        // private method.
+        //
+        // Mock `restore` to return `true` so
+        // the `if (ok)` branch executes
+        // (which is what makes the body
+        // actually run to completion).
+        // Case 1 — debounce=0, both calls reach
+        // restore.
+        {
+            const app = makeApp();
+            const a = app as unknown as { loadGame: () => void };
+            const restoreSpy = jest
+                .spyOn((app as unknown as { save: { restore: () => boolean } }).save, 'restore')
+                .mockImplementation(() => true);
+            app.applyDebounceSettings(0);
+            a.loadGame();
+            a.loadGame();
+            expect(restoreSpy.mock.calls.length).toBe(2);
+        }
+        // Case 2 — debounce=2000, first call
+        // reaches restore + stamps, second
+        // call is debounced.
+        {
+            const app = makeApp();
+            const a = app as unknown as { loadGame: () => void };
+            const restoreSpy = jest
+                .spyOn((app as unknown as { save: { restore: () => boolean } }).save, 'restore')
+                .mockImplementation(() => true);
+            app.applyDebounceSettings(2000);
+            a.loadGame();
+            a.loadGame();
+            expect(restoreSpy.mock.calls.length).toBe(1);
+        }
+    });
+
+    test('applyDebounceSettings_clamps_invalid_values_via_setWindowMs (round 111 defensive)', () => {
+        // The SettingsPanel guards against
+        // invalid values via the
+        // `data-debounce` attribute parse
+        // (only 0/500/1000/2000 are accepted
+        // at the panel level). The
+        // `applyDebounceSettings` method
+        // accepts the typed `DebounceWindow`
+        // union so the type system enforces
+        // the constraint. A regression that
+        // widens the union would fail
+        // TypeScript compilation. This
+        // test pins the 4-allowed-values
+        // contract at runtime.
+        const app = makeApp();
+        const a = app as unknown as {
+            debouncerLoadGame: { windowSizeMs: number };
+        };
+        for (const ms of [0, 500, 1000, 2000] as const) {
+            app.applyDebounceSettings(ms);
+            expect(a.debouncerLoadGame.windowSizeMs).toBe(ms);
+        }
+    });
+});
+

@@ -205,4 +205,88 @@ describe('ActionDebouncer (round 108)', () => {
         expect(d1000.windowSizeMs).toBe(1000);
         expect(d250.windowSizeMs).toBe(250);
     });
+
+    // ---------------------------------------------------------------
+    // Round 111 — setWindowMs(ms) runtime setter tests.
+    // The SettingsPanel "action debounce window" knob
+    // (round 111) calls this method on all 4 App
+    // debouncers via `app.applySettings()`. The setter
+    // must:
+    //   1. Update `windowSizeMs` immediately
+    //   2. Take effect on the next `check()` call
+    //      (a window-shrink must allow the next call
+    //      even if `lastFiredAt` is recent)
+    //   3. Clamp negative / NaN values to 0 (defensive
+    //      against stale SettingsPanel config)
+    // ---------------------------------------------------------------
+
+    test('setWindowMs_updates_windowSizeMs_immediately (round 111)', () => {
+        // Contract: the getter reflects the
+        // new value synchronously after
+        // setWindowMs. A regression that
+        // requires a `stamp()` call to
+        // propagate the new window would
+        // fail this test.
+        const log = jest.fn();
+        const d = new ActionDebouncer(500, 'loadGame', 'round 104', log);
+        expect(d.windowSizeMs).toBe(500);
+        d.setWindowMs(1000);
+        expect(d.windowSizeMs).toBe(1000);
+        d.setWindowMs(0);
+        expect(d.windowSizeMs).toBe(0);
+    });
+
+    test('setWindowMs_shrink_allows_next_call_even_when_recently_stamped (round 111)', () => {
+        // Contract: a window-shrink must
+        // take effect on the next
+        // `check()` call. A regression
+        // that caches the old window in
+        // a local variable inside
+        // `check()` would fail this
+        // test.
+        const log = jest.fn();
+        const d = new ActionDebouncer(500, 'saveGame', 'round 106', log);
+        d.stamp();
+        // Within the 500ms window —
+        // the second check is debounced.
+        expect(d.check()).toBe(false);
+        // Shrink the window to 0 — the
+        // next check is allowed
+        // immediately, even though
+        // `lastFiredAt` is recent.
+        d.setWindowMs(0);
+        expect(d.check()).toBe(true);
+        // The window-shrink to 0 also
+        // suppresses the next debounce
+        // log line.
+        expect(d.check()).toBe(true);
+        expect(log).toHaveBeenCalledTimes(1); // only the first within-window check logged
+    });
+
+    test('setWindowMs_clamps_negative_and_nan_to_zero (round 111 defensive)', () => {
+        // Defensive: a SettingsPanel
+        // bug that passes a stale
+        // config value (e.g. an
+        // unparseable number) must
+        // not silently break the
+        // debounce contract. Negative
+        // / NaN / Infinity are all
+        // clamped to 0 (no debounce).
+        // `Number.isFinite()` returns
+        // false for Infinity, NaN, and
+        // non-numbers — the safest
+        // fallback is "no debounce"
+        // (the user explicitly disabled
+        // the debounce window).
+        const log = jest.fn();
+        const d = new ActionDebouncer(500, 'rollWorldEvent', 'round 107', log);
+        d.setWindowMs(-100);
+        expect(d.windowSizeMs).toBe(0);
+        d.setWindowMs(NaN);
+        expect(d.windowSizeMs).toBe(0);
+        d.setWindowMs(Infinity);
+        expect(d.windowSizeMs).toBe(0);
+        d.setWindowMs('not a number' as unknown as number);
+        expect(d.windowSizeMs).toBe(0);
+    });
 });

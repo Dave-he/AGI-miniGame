@@ -64,6 +64,11 @@ export const CATALOG: Record<Locale, Record<string, string>> = {
         'settings.diff.easy':    '简单',
         'settings.diff.normal':  '普通',
         'settings.diff.hard':    '困难',
+        'settings.debounce':     '防抖窗口',
+        'settings.debounce.0':   '关闭',
+        'settings.debounce.500': '500ms (默认)',
+        'settings.debounce.1000':'1000ms',
+        'settings.debounce.2000':'2000ms',
 
         'stats.title':           '统计',
         'stats.counters':        '计数器',
@@ -123,6 +128,11 @@ export const CATALOG: Record<Locale, Record<string, string>> = {
         'settings.diff.easy':    'Easy',
         'settings.diff.normal':  'Normal',
         'settings.diff.hard':    'Hard',
+        'settings.debounce':     'Debounce window',
+        'settings.debounce.0':   'Off',
+        'settings.debounce.500': '500ms (default)',
+        'settings.debounce.1000':'1000ms',
+        'settings.debounce.2000':'2000ms',
 
         'stats.title':           'Stats',
         'stats.counters':        'Counters',

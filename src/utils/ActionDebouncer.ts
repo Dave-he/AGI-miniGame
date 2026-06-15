@@ -71,7 +71,7 @@ export class ActionDebouncer {
      * The `windowMs` is the debounce window.
      */
     constructor(
-        private readonly windowMs: number,
+        private windowMs: number,
         private readonly actionName: string,
         private readonly roundTag: string,
         private readonly logFn: (line: string) => void,
@@ -125,5 +125,34 @@ export class ActionDebouncer {
      */
     get windowSizeMs(): number {
         return this.windowMs;
+    }
+
+    /**
+     * Round 111 — runtime window setter. Mutates the
+     * debounce window in-place. The next `check()` call
+     * will use the new value. The previous stamp's
+     * `lastFiredAt` is NOT reset, so a window-shrink
+     * (e.g. 500ms → 0ms) can immediately allow the
+     * next call (the prior stamp is older than the
+     * 0ms window, so `now - lastFiredAt >= windowMs`
+     * evaluates to true on the next check). The
+     * 4th use case: the SettingsPanel "action
+     * debounce window" knob calls this on all 4
+     * App debouncers via `app.applySettings()`.
+     *
+     * Non-finite values (NaN, Infinity) and negative
+     * values are clamped to 0 (no debounce). This is
+     * defensive: a SettingsPanel bug that passes a
+     * stale config value shouldn't silently break the
+     * debounce contract. `Number.isFinite()` returns
+     * false for Infinity, NaN, and non-numbers, so
+     * the clamp is the safest fallback.
+     */
+    setWindowMs(ms: number): void {
+        if (Number.isFinite(ms) && ms >= 0) {
+            this.windowMs = ms;
+        } else {
+            this.windowMs = 0;
+        }
     }
 }
