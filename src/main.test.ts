@@ -2728,3 +2728,252 @@ describe('App — round 94: Esc/abandon end-to-end chain (操控性好)', () => 
         expect(routeKey('Esc')).toEqual({ kind: 'abandon' });
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 97 — App-level e2e test for sceneGenWasm=null TS-mirror
+// fallback path (auto-generated logic).
+//
+// Round 48's SceneGenWasm.test.ts covers the wrapper level
+// (loader throws, loader returns null, version mismatch).
+// The App-level integration — what happens when
+// `app.sceneGenWasm` is null at the moment
+// `enterNewDimension` runs — is untested at integration
+// level. `themeToSceneWithFallback` always returns a
+// blueprint (TS mirror as fallback), so the game should
+// still work end-to-end. A regression that accidentally
+// threw on null WASM (e.g. `if (!this.sceneGenWasm)
+// throw ...`) would crash the entire dimension-enter flow
+// in production for any user whose browser blocked the
+// .wasm fetch.
+//
+// The tests below drive `enterNewDimension` with
+// `sceneGenWasm = null` and assert the round-48
+// progressive enhancement gate is observable at the
+// App level (the HUD logs the "TS 兜底" branch, the
+// side-effect spies are still called, no throw escapes).
+// ---------------------------------------------------------------------------
+
+describe('App — round 97: sceneGenWasm=null TS-mirror fallback path (auto-generated logic)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    /** Drive a full `enterNewDimension` with `sceneGenWasm=null`. */
+    async function enterNewDimensionWithNullWasm(app: App): Promise<void> {
+        // Stub the bridge to return a successful result so
+        // we isolate the WASM-null branch. Without this
+        // stub, the bridge would call into a real
+        // AIBridge.planAndLoad which goes through
+        // GameplayManager and AIEngine — out of scope for
+        // this test.
+        jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async () => ({
+                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'r97 null wasm' },
+                atomIds: ['tower_defense'],
+                blueprint: {
+                    id: 'dim_r97_null_wasm',
+                    name: 'r97 null wasm fixture',
+                    description: 'r97 null wasm',
+                    atomIds: ['tower_defense'],
+                    atomWeights: { tower_defense: 1 },
+                    difficulty: 0.5,
+                    rules: [],
+                    rewards: [],
+                    theme: { name: 'r97_null_wasm_theme', visualStyle: 'fantasy', musicMood: 'cheerful', colorPalette: ['#fff'] },
+                    timeLimitSecs: 60,
+                    objectives: [],
+                },
+                modules: [],
+                seed: 1,
+                configSource: 'wasm',
+            }));
+        // The round-97 hot path: explicitly null out the
+        // WASM module to simulate loadSceneGenWasm returning
+        // null (network error, .wasm 404, version mismatch,
+        // etc.). The existing enterDimensionWithStub helper
+        // requires a non-null wasm stub, so we drive
+        // enterNewDimension directly here.
+        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = null;
+        // The TS-mirror path still requires the side-effect
+        // surface (scene / audio / npcMinds / HUD setters) to
+        // be stubbed. Same pattern as
+        // enterDimensionHelpers.installSideEffectStubs +
+        // installHudSetterStubs. We replicate the surface
+        // here (don't import the private installSideEffectStubs
+        // — that helper is round-90 internal).
+        jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
+            .mockReturnValue(['mock_npc_a']);
+        jest
+            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn(app as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition')
+            .mockImplementation(() => undefined);
+        const hud = (app as unknown as {
+            hud: {
+                setLastBiome: (b: string | null) => void;
+                setMinimap: (m: string | null) => void;
+                setLastSceneBlueprint: (s: unknown) => void;
+                setLastSceneEventChain: (c: unknown) => void;
+                setNpcMindsSnapshot: (s: unknown) => void;
+                hideRecoveryBanner: () => void;
+                setBackupAvailable: (b: boolean) => void;
+            };
+        }).hud;
+        jest.spyOn(hud, 'setLastBiome').mockImplementation(() => undefined);
+        jest.spyOn(hud, 'setMinimap').mockImplementation(() => undefined);
+        jest.spyOn(hud, 'setLastSceneBlueprint').mockImplementation(() => undefined);
+        jest.spyOn(hud, 'setLastSceneEventChain').mockImplementation(() => undefined);
+        jest.spyOn(hud, 'setNpcMindsSnapshot').mockImplementation(() => undefined);
+        jest.spyOn(hud, 'hideRecoveryBanner').mockImplementation(() => undefined);
+        jest.spyOn(hud, 'setBackupAvailable').mockImplementation(() => undefined);
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+    }
+
+    test('enterNewDimension_with_null_wasm_does_not_throw', async () => {
+        // Defense in depth: a regression that hard-codes
+        // `if (!this.sceneGenWasm) throw new Error(...)` at
+        // the call site would crash the entire dimension-
+        // enter flow in production for any user whose
+        // browser blocked the .wasm fetch. The TS-mirror
+        // fallback is the round-48 progressive enhancement
+        // gate — it must be observably safe at the App
+        // level.
+        const app = makeApp();
+        await expect(enterNewDimensionWithNullWasm(app)).resolves.not.toThrow();
+    });
+
+    test('enterNewDimension_with_null_wasm_logs_TS_fallback_branch', async () => {
+        // The round-48 source-of-truth is the HUD log line:
+        // '[scene] WASM 真出 (round 48)' (WASM succeeded)
+        // vs '[scene] WASM 兜底→ TS 镜像 (round 48)'
+        // (TS-mirror fallback). The `themeToSceneWithFallback`
+        // function returns `{ source: 'wasm' | 'ts-fallback' }`
+        // which the main.ts:611-615 log branch reads from.
+        //
+        // A regression that hard-codes the success log
+        // (e.g. `this.hud.log('[scene] WASM 真出')`
+        // without checking `outcome.source`) would
+        // silently misreport the branch in production and
+        // the round-68 in-browser latency analytics would
+        // collect garbage data.
+        //
+        // **Disambiguation**: the `WASM 真出` substring
+        // also appears in round-51 log lines ([gen-config],
+        // [palette], [4th]). The round-48 log is uniquely
+        // tagged with the `[scene]` prefix — we pin that
+        // exact prefix so a regression that drops the
+        // [scene] tag (collapsing the round-48 vs
+        // round-51 distinction) fails this test.
+        const app = makeApp();
+        const logSpy = jest
+            .spyOn((app as unknown as { hud: { log: (s: string) => void } }).hud, 'log')
+            .mockImplementation(() => undefined);
+        await enterNewDimensionWithNullWasm(app);
+        const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        // The TS-mirror branch's log marker — uniquely
+        // tagged with `[scene]` (round-48 prefix) so the
+        // regex doesn't match the round-51 [gen-config]
+        // or [palette] or [4th] tags. Pin the literal
+        // substring so a future "let me just say
+        // 'fallback' instead of '兜底'" refactor fails
+        // this test and the player-facing log stays
+        // consistent with the round-48 design.
+        expect(lines).toMatch(/\[scene\] WASM 兜底.*TS 镜像/);
+        // And the round-48 success branch's log must NOT
+        // appear (defense against the regression
+        // mentioned above). The round-51 [gen-config]
+        // success log is allowed — it's a different
+        // WASM call (buildGenerationConfigWithMood, not
+        // themeToScene).
+        expect(lines).not.toMatch(/\[scene\] WASM 真出/);
+    });
+
+    test('enterNewDimension_with_null_wasm_still_calls_side_effect_spy_chain', async () => {
+        // The TS-mirror path must not skip any of the
+        // round-50 wiring: scene.renderWfcDungeon,
+        // scene.spawnNpcWave, scene.setBiomeAtmosphere,
+        // audio.setBiomeAmbient, audio.setBiomeSfx,
+        // npcMinds.loadFromSnapshots, npcMinds.clear,
+        // syncNpcDisposition, HUD setters. A regression
+        // that puts these behind `if (this.sceneGenWasm)`
+        // would silently break the round-60-90 visual /
+        // audio / NPC integration for the null-WASM
+        // branch — the most common real-world scenario
+        // (most users don't have the .wasm in cache).
+        const app = makeApp();
+        const renderSpy = jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        const npcSpy = jest
+            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
+            .mockReturnValue(['mock_npc_a']);
+        const atmSpy = jest
+            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        const audioSpy = jest
+            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        const sfxSpy = jest
+            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        // `setLastSceneBlueprint` is the round-66 HUD
+        // setter that `enterNewDimension` writes after
+        // the scene blueprint resolves. (The
+        // `setLastBiome` setter is only written by
+        // `enterAtom` and `loadGame` — not by the main
+        // `enterNewDimension` flow. We pick
+        // `setLastSceneBlueprint` because it IS
+        // written by the main flow and is the
+        // round-66 source-of-truth for the HUD
+        // persistent-memories block.)
+        const sceneBlueprintSpy = jest
+            .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
+            .mockImplementation(() => undefined);
+        const vaultRecord = jest
+            .spyOn((app as unknown as { vault: { record: (b: unknown, o: string, t: number) => void } }).vault, 'record')
+            .mockImplementation(() => undefined);
+        await enterNewDimensionWithNullWasm(app);
+        // Every spy must have been called at least once.
+        // The exact call count depends on the flow; we
+        // assert >= 1 to allow for future refactors that
+        // add or remove a wire-up, but never zero — zero
+        // would mean the round-50 wiring silently broke.
+        expect(renderSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+        expect(npcSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+        expect(atmSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+        expect(audioSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+        expect(sfxSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+        expect(sceneBlueprintSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+        // vault.record is the round-50 telemetry gate —
+        // the most critical side-effect. A regression
+        // that skipped it on the TS-mirror path would
+        // make the vault stats invisible to the AI.
+        expect(vaultRecord.mock.calls.length).toBeGreaterThanOrEqual(1);
+        const [, outcome] = vaultRecord.mock.calls[0];
+        // The TS-mirror path's first call to vault.record
+        // is the 'completed' visit (the visit itself
+        // succeeded; the WASM was just not used). Pin the
+        // outcome string so a regression that passes
+        // 'failed' or 'abandoned' fails this test.
+        expect(outcome).toBe('completed');
+    });
+});
+
