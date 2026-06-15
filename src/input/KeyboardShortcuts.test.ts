@@ -165,33 +165,40 @@ describe('KeyboardShortcuts', () => {
             // direction: for every description, routeKey
             // must return a non-null action.
             //
-            // **Documentation convention**: BINDING_DESCRIPTIONS
-            // uses human-readable names for some keys
-            // ('Space' for the spacebar, even though
-            // KeyboardEvent.key produces a literal ' '
-            // character). routeKey accepts ' ' and
-            // 'Spacebar' but not 'Space' (the human-
-            // readable form is not a real ev.key). We
-            // skip 'Space' here with a comment, plus
-            // the backtick/tilde compound key (round
-            // 95) which the alias test below pins
-            // explicitly.
+            // Round 96 — the 'Space' skip was removed.
+            // routeKey now handles ' ' (literal ev.key),
+            // 'Space' (BINDING_DESCRIPTIONS doc label),
+            // AND 'Spacebar' (legacy alias). Every
+            // BINDING_DESCRIPTIONS row is now routable.
+            // The only remaining skip is the backtick/
+            // tilde compound (round 95) which the
+            // alias test below pins explicitly.
             for (const d of BINDING_DESCRIPTIONS) {
                 // Skip the round-95 backtick/tilde
                 // compound (the alias test below pins
                 // both ` and ~ routing).
                 if (d.key === '`/~') continue;
-                // Skip 'Space' — the help overlay
-                // displays the human-readable name
-                // 'Space' but routeKey handles the
-                // literal space character ' ' and
-                // 'Spacebar' (the legacy alias).
-                // 'Space' is a documentation label, not
-                // an ev.key.
-                if (d.key === 'Space') continue;
                 const action = routeKey(d.key);
                 expect(action).not.toBeNull();
             }
+        });
+
+        it('spacebar ev.key has three alias forms (round 96)', () => {
+            // Round 96 — the spacebar ev.key is a
+            // literal ' ' character (the actual key the
+            // browser produces), but the help overlay
+            // displays the human-readable label 'Space'
+            // and 'Spacebar' is the round-57 legacy
+            // alias. All three forms now route to
+            // { kind: 'reroll' } so the round-95 reverse
+            // coverage test can pass without skip
+            // clauses. The 'Space' case is never
+            // triggered in modern browsers (ev.key is
+            // always ' ') but it closes the
+            // documentation-vs-ev.key contract gap.
+            expect(routeKey(' ')).toEqual({ kind: 'reroll' });
+            expect(routeKey('Space')).toEqual({ kind: 'reroll' });
+            expect(routeKey('Spacebar')).toEqual({ kind: 'reroll' });
         });
 
         it('documents the backtick/tilde alias relationship in the key field (round 95)', () => {

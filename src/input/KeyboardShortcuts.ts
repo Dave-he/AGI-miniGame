@@ -20,6 +20,8 @@
  *   8 — enter shooting
  *   Esc     — abandon current dimension
  *   Space   — re-roll a fresh random dimension
+ *            (round 96: ev.key ' ', 'Space' doc label,
+ *             'Spacebar' legacy alias all route)
  *   ?       — toggle help overlay
  *   S       — save game
  *   L       — load game
@@ -140,7 +142,18 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'Escape':
         case 'Esc':
             return { kind: 'abandon' };
+        // Round 96 — the spacebar ev.key is a literal
+        // ' ' character, but BINDING_DESCRIPTIONS
+        // displays the human-readable label 'Space'.
+        // We accept all three forms (' ', 'Space',
+        // 'Spacebar') so the round-95 reverse
+        // coverage test can pin every BINDING_DESCRIPTIONS
+        // row as routable. The 'Space' case is never
+        // triggered in modern browsers (ev.key is
+        // always ' ') but it closes the documentation-
+        // vs-ev.key contract gap.
         case ' ':
+        case 'Space':
         case 'Spacebar':
             return { kind: 'reroll' };
         case '?':
