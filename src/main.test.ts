@@ -3460,7 +3460,7 @@ describe('App — round 103: loadGame in-flight guard (rejected, see comments ab
         (app as unknown as { loadGame: () => void }).loadGame();
         // Advance `Date.now()` past the 500ms debounce
         // window so the second call runs.
-        const future = Date.now() + (app as unknown as { LOAD_DEBOUNCE_MS: number }).LOAD_DEBOUNCE_MS + 100;
+        const future = Date.now() + (app as unknown as { ACTION_DEBOUNCE_MS: number }).ACTION_DEBOUNCE_MS + 100;
         const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(future);
         (app as unknown as { loadGame: () => void }).loadGame();
         nowSpy.mockRestore();
@@ -3549,7 +3549,7 @@ describe('App — round 104: loadGame time-based debounce', () => {
         // Advance `Date.now()` past the 500ms
         // debounce window so the second call
         // runs.
-        const future = Date.now() + (app as unknown as { LOAD_DEBOUNCE_MS: number }).LOAD_DEBOUNCE_MS + 100;
+        const future = Date.now() + (app as unknown as { ACTION_DEBOUNCE_MS: number }).ACTION_DEBOUNCE_MS + 100;
         const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(future);
         (app as unknown as { loadGame: () => void }).loadGame();
         nowSpy.mockRestore();
@@ -3666,7 +3666,7 @@ describe('App — round 106: saveGame time-based debounce', () => {
         // Advance `Date.now()` past the 500ms
         // debounce window so the second call
         // runs.
-        const future = Date.now() + (app as unknown as { SAVE_DEBOUNCE_MS: number }).SAVE_DEBOUNCE_MS + 100;
+        const future = Date.now() + (app as unknown as { ACTION_DEBOUNCE_MS: number }).ACTION_DEBOUNCE_MS + 100;
         const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(future);
         (app as unknown as { saveGame: () => void }).saveGame();
         nowSpy.mockRestore();
@@ -3792,7 +3792,7 @@ describe('App — round 107: rollWorldEvent time-based debounce', () => {
         // Advance `Date.now()` past the 500ms
         // debounce window so the second call
         // runs.
-        const future = Date.now() + (app as unknown as { EVENT_DEBOUNCE_MS: number }).EVENT_DEBOUNCE_MS + 100;
+        const future = Date.now() + (app as unknown as { ACTION_DEBOUNCE_MS: number }).ACTION_DEBOUNCE_MS + 100;
         const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(future);
         (app as unknown as { rollWorldEvent: () => void }).rollWorldEvent();
         nowSpy.mockRestore();
@@ -3993,11 +3993,13 @@ describe('App — round 109: enterAtom time-based debounce', () => {
         (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3').catch(() => undefined);
         // Advance `Date.now()` past the 500ms
         // debounce window so the second call
-        // runs. Uses the `ENTER_ATOM_DEBOUNCE_MS`
-        // static constant for symmetry with
+        // runs. Uses the `ACTION_DEBOUNCE_MS`
+        // static constant (round 110 folded
+        // the 4 per-action constants into
+        // a single one) for symmetry with
         // round-104/106/107 after-window
         // tests.
-        const future = Date.now() + (app as unknown as { ENTER_ATOM_DEBOUNCE_MS: number }).ENTER_ATOM_DEBOUNCE_MS + 100;
+        const future = Date.now() + (app as unknown as { ACTION_DEBOUNCE_MS: number }).ACTION_DEBOUNCE_MS + 100;
         const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(future);
         (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3').catch(() => undefined);
         nowSpy.mockRestore();
