@@ -2544,6 +2544,28 @@ async function bootstrap(): Promise<void> {
     // closes the round-111
     // SettingsPanel.
     bind('btn-settings',  () => app.toggleSettings());
+    // Round 116 — 6 mouse-button
+    // counterparts to the
+    // round-113/114/115 panel-toggle
+    // keyboard shortcuts (Q / W / T /
+    // F / M / V). Each button routes
+    // to the same `app.toggleX()`
+    // method that the bootstrap
+    // keydown switch dispatches —
+    // so the keyboard and mouse
+    // entry points are fully
+    // symmetric. 7-button toggle
+    // cluster (⚙ settings P +
+    // 📊 stats Q + ⏳ progression W
+    // + 📖 tutorial T + 📚 vault F
+    // + 🧠 npc-mind M + 🏅
+    // achievements V).
+    bind('btn-stats',         () => app.toggleStatsPanel());
+    bind('btn-progression',   () => app.toggleProgression());
+    bind('btn-tutorial',      () => app.toggleTutorial());
+    bind('btn-vault',         () => app.toggleVault());
+    bind('btn-npc-mind',      () => app.toggleNpcMind());
+    bind('btn-achievements',  () => app.toggleAchievements());
     bind('btn-complete',  () => app.completeRun(2500, [
         { itemId: 'gold', quantity: 100 },
         { itemId: 'gem',  quantity: 5 },

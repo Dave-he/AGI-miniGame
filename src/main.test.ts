@@ -5346,3 +5346,138 @@ describe('App — round 115: V key + achievements panel (round-22 follow-up, 操
     });
 });
 
+describe('App — round 116: 6 mouse-button counterparts to panel-toggle keyboard shortcuts (操控性好)', () => {
+    // No afterEach DOM cleanup
+    // needed — round-116 is
+    // file-content only (no
+    // runtime DOM mutations).
+
+    // -----------------------------------------------------------------
+    // File-content test 1 — 6 new
+    // buttons in the controls bar.
+    // Each button id must match
+    // the pattern used in the
+    // bind() call (e.g.
+    // bind('btn-stats', ...)).
+    // -----------------------------------------------------------------
+
+    test('index_html_has_6_toggle_buttons_in_controls_bar (round 116)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // 6 new button ids — mirror
+        // of the round-112
+        // btn-settings id pattern.
+        // Each id must exist so the
+        // round-116 bind() calls
+        // can find the button.
+        expect(html).toMatch(/id="btn-stats"/);
+        expect(html).toMatch(/id="btn-progression"/);
+        expect(html).toMatch(/id="btn-tutorial"/);
+        expect(html).toMatch(/id="btn-vault"/);
+        expect(html).toMatch(/id="btn-npc-mind"/);
+        expect(html).toMatch(/id="btn-achievements"/);
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test 2 — 6 data-key
+    // attributes so mouse-only
+    // players can learn the
+    // keyboard shortcut by
+    // reading the button label.
+    // -----------------------------------------------------------------
+
+    test('index_html_toggle_buttons_have_keyboard_key_badges (round 116)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // data-key="Q" for stats
+        expect(html).toMatch(/id="btn-stats"[^>]*data-key="Q"/);
+        // data-key="W" for progression
+        expect(html).toMatch(/id="btn-progression"[^>]*data-key="W"/);
+        // data-key="T" for tutorial
+        expect(html).toMatch(/id="btn-tutorial"[^>]*data-key="T"/);
+        // data-key="F" for vault
+        expect(html).toMatch(/id="btn-vault"[^>]*data-key="F"/);
+        // data-key="M" for npc-mind
+        expect(html).toMatch(/id="btn-npc-mind"[^>]*data-key="M"/);
+        // data-key="V" for achievements
+        expect(html).toMatch(/id="btn-achievements"[^>]*data-key="V"/);
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test 3 — .toggle-btn
+    // CSS rule exists so the 6
+    // buttons + btn-settings form
+    // a visually distinct
+    // 7-button cluster.
+    // -----------------------------------------------------------------
+
+    test('index_html_has_toggle_btn_css_rule (round 116)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // .toggle-btn selector + a
+        // unique property (cyan
+        // gradient) so we know it's
+        // not just the .ctl rule
+        // match.
+        expect(html).toMatch(/\.toggle-btn/);
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test 4 — 6 bind()
+    // calls in main.ts. Each
+    // bind() routes to the
+    // correct toggle method,
+    // mirroring the bootstrap
+    // keydown switch dispatch
+    // for symmetry. A future
+    // refactor that renames any
+    // of the 6 buttons without
+    // updating the corresponding
+    // bind() call would silently
+    // break the mouse entry
+    // point.
+    // -----------------------------------------------------------------
+
+    test('main_ts_has_6_bind_calls_for_toggle_buttons (round 116)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'main.ts'), 'utf-8');
+        // 6 new bind() calls — each
+        // must route to the
+        // corresponding toggle
+        // method.
+        expect(main).toMatch(/bind\('btn-stats'.*toggleStatsPanel/);
+        expect(main).toMatch(/bind\('btn-progression'.*toggleProgression/);
+        expect(main).toMatch(/bind\('btn-tutorial'.*toggleTutorial/);
+        expect(main).toMatch(/bind\('btn-vault'.*toggleVault/);
+        expect(main).toMatch(/bind\('btn-npc-mind'.*toggleNpcMind/);
+        expect(main).toMatch(/bind\('btn-achievements'.*toggleAchievements/);
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test 5 — 6
+    // button labels embed the
+    // keyboard-key badge in
+    // parentheses so the player
+    // can discover the shortcut
+    // without reading the help
+    // overlay.
+    // -----------------------------------------------------------------
+
+    test('index_html_toggle_button_labels_contain_keyboard_shortcut (round 116)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // The 6 button labels each
+        // contain the keyboard-key
+        // shortcut in parentheses.
+        // This is a soft contract
+        // — a future i18n pass may
+        // move the (Q) suffix
+        // elsewhere — but for now
+        // we lock the visible text
+        // so a player can see "📊
+        // 统计 (Q)" and know the
+        // shortcut.
+        expect(html).toMatch(/📊 统计 \(Q\)/);
+        expect(html).toMatch(/⏳ 进度 \(W\)/);
+        expect(html).toMatch(/📖 教程 \(T\)/);
+        expect(html).toMatch(/📚 档案库 \(F\)/);
+        expect(html).toMatch(/🧠 NPC 心智 \(M\)/);
+        expect(html).toMatch(/🏅 成就 \(V\)/);
+    });
+});
+

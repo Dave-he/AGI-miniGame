@@ -286,6 +286,17 @@
         box-shadow: 0 0 12px rgba(255, 102, 204, 0.4);
       }
       .ctl:hover { filter: brightness(1.15); }
+      /* Round 116 — .toggle-btn: the 6 mouse
+         counterparts to the round-112/113/114/
+         115 panel-toggle keyboard shortcuts
+         (Q / W / T / F / M / V). Slightly
+         different background to visually group
+         the 6 buttons + btn-settings into a
+         7-button "panel-toggle" cluster. */
+      .toggle-btn {
+        background: linear-gradient(135deg, var(--neon-cyan), var(--neon-violet));
+        box-shadow: 0 0 12px rgba(78, 205, 196, 0.4);
+      }
 
       /* vault (round 20) */
       .vault-panel .vault-title { font-size: 11px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
@@ -468,6 +479,24 @@
            the P key shortcut. Opens the
            round-111 SettingsPanel. -->
       <button class="ctl" id="btn-settings">⚙ 设置</button>
+      <!-- Round 116 — 6 mouse-button counterparts
+           to the round-112/113/114/115 keyboard
+           shortcuts. The 6 buttons mirror the
+           btn-settings pattern (id = `btn-X`,
+           label = `<emoji> <name>`) and route to
+           the same `app.toggleX()` methods that
+           the bootstrap keydown switch dispatches.
+           The keyboard badge (P / Q / W / T / F /
+           M / V) is shown in the button label so
+           mouse-only players can still learn the
+           shortcut by hovering. 7-button toggle
+           bar in the controls section. -->
+      <button class="ctl toggle-btn" id="btn-stats" data-key="Q">📊 统计 (Q)</button>
+      <button class="ctl toggle-btn" id="btn-progression" data-key="W">⏳ 进度 (W)</button>
+      <button class="ctl toggle-btn" id="btn-tutorial" data-key="T">📖 教程 (T)</button>
+      <button class="ctl toggle-btn" id="btn-vault" data-key="F">📚 档案库 (F)</button>
+      <button class="ctl toggle-btn" id="btn-npc-mind" data-key="M">🧠 NPC 心智 (M)</button>
+      <button class="ctl toggle-btn" id="btn-achievements" data-key="V">🏅 成就 (V)</button>
       <button class="ctl" id="btn-complete">完成试炼</button>
       <button class="ctl" id="btn-save">存档</button>
       <button class="ctl" id="btn-load">读档</button>
