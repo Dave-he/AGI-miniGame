@@ -172,6 +172,34 @@
           color: #f66;
           background: rgba(255, 102, 102, 0.12);
       }
+      /* Round 130 — session-stats section
+         above the debouncer rows. Two-column
+         grid (label + value), distinct cyan
+         accent to separate from the gray
+         debouncer rows below. */
+      .debug-overlay-extras {
+          display: grid;
+          grid-template-columns: max-content 1fr;
+          column-gap: 10px;
+          row-gap: 2px;
+          padding: 4px 0 6px 0;
+          border-bottom: 1px dashed rgba(102, 255, 255, 0.25);
+          margin-bottom: 6px;
+      }
+      .debug-overlay-extras-row {
+          display: contents;
+      }
+      .debug-overlay-extras-label {
+          color: #6cf;
+          font-size: 12px;
+          text-align: right;
+      }
+      .debug-overlay-extras-value {
+          color: #ffd166;
+          font-size: 12px;
+          text-align: left;
+          font-weight: 600;
+      }
       .settings-panel {
         background: rgba(11, 11, 34, 0.92);
         border: 1px solid var(--neon-cyan, #4ecdc4);

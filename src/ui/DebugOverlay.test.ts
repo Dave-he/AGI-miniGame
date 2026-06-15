@@ -2,7 +2,7 @@
  * DebugOverlay tests.
  */
 
-import { renderDebugOverlay, type DebugOverlayDebouncerInfo } from './DebugOverlay';
+import { renderDebugOverlay, type DebugOverlayDebouncerInfo, type DebugOverlayExtraStats } from './DebugOverlay';
 import { ActionDebouncer } from '../utils/ActionDebouncer';
 
 function makeDebouncer(
@@ -143,5 +143,158 @@ describe('DebugOverlay', () => {
             expect(row.querySelector('.debug-overlay-action')?.textContent).toBe(expectedLabels[i]);
             expect(row.querySelector('.debug-overlay-round')?.textContent).toBe(expectedRoundTags[i]);
         });
+    });
+
+    // ---------------------------------------------------------------
+    // Round 130 — optional `extras` session-stats
+    // section. When passed, the panel renders
+    // player level + current biome + session
+    // duration + last action label/ago. When
+    // omitted, the section is absent (preserves
+    // the round-128 minimal layout).
+    // ---------------------------------------------------------------
+
+    test('extras_omitted_means_no_session_stats_section (round 130 opt-in)', () => {
+        document.body.innerHTML = '<div id="d"></div>';
+        const root = document.getElementById('d')!;
+        const deb = makeDebouncer('loadGame', 'round 104', 500);
+        renderDebugOverlay(root, [{ debouncer: deb, chineseLabel: '读取存档' }]);
+        // The .debug-overlay-extras wrapper should NOT
+        // be rendered when `extras` is undefined.
+        expect(root.querySelector('.debug-overlay-extras')).toBeNull();
+        // The 4 debouncer rows should still render.
+        expect(root.querySelectorAll('.debug-overlay-row').length).toBe(1);
+    });
+
+    test('extras_renders_player_level_as_lv_n (round 130)', () => {
+        document.body.innerHTML = '<div id="d"></div>';
+        const root = document.getElementById('d')!;
+        const deb = makeDebouncer('loadGame', 'round 104', 500);
+        const extras: DebugOverlayExtraStats = {
+            playerLevel: 7,
+            currentBiome: 'cyberpunk',
+            sessionStartedAt: Date.now() - 60_000,
+        };
+        renderDebugOverlay(root, [{ debouncer: deb, chineseLabel: '读取存档' }], extras);
+        const values = Array.from(root.querySelectorAll('.debug-overlay-extras-value')).map(n => n.textContent);
+        expect(values).toContain('Lv 7');
+    });
+
+    test('extras_renders_current_biome_id_or_em_dash_for_null (round 130)', () => {
+        document.body.innerHTML = '<div id="d"></div>';
+        const root = document.getElementById('d')!;
+        const deb = makeDebouncer('loadGame', 'round 104', 500);
+        // null biome (pre-first-visit) → em-dash.
+        renderDebugOverlay(root, [{ debouncer: deb, chineseLabel: '读取存档' }], {
+            playerLevel: 1,
+            currentBiome: null,
+            sessionStartedAt: Date.now() - 100,
+        });
+        const values = Array.from(root.querySelectorAll('.debug-overlay-extras-value')).map(n => n.textContent);
+        // The biome cell renders em-dash for null.
+        expect(values).toContain('—');
+    });
+
+    test('extras_renders_session_duration_as_min_sec (round 130)', () => {
+        document.body.innerHTML = '<div id="d"></div>';
+        const root = document.getElementById('d')!;
+        const deb = makeDebouncer('loadGame', 'round 104', 500);
+        // 90s = 1m 30s
+        const startedAt = Date.now() - 90_000;
+        renderDebugOverlay(root, [{ debouncer: deb, chineseLabel: '读取存档' }], {
+            playerLevel: 1,
+            currentBiome: 'ice',
+            sessionStartedAt: startedAt,
+        });
+        const values = Array.from(root.querySelectorAll('.debug-overlay-extras-value')).map(n => n.textContent);
+        // Allow a 1-2s drift in the exact seconds count
+        // (test ran for some time between startedAt and now).
+        const sessionCell = values.find(v => v && /^\d+m \d+s$/.test(v));
+        expect(sessionCell).toBeTruthy();
+        // First char should be '1' (1m elapsed for 90s).
+        expect(sessionCell![0]).toBe('1');
+    });
+
+    test('extras_renders_last_action_as_em_dash_when_no_debouncer_fired (round 130)', () => {
+        // Without a stamp() on any debouncer, msSinceLastFire
+        // is Infinity for all of them → pickLastAction returns
+        // null → both "last action" cells show em-dash.
+        document.body.innerHTML = '<div id="d"></div>';
+        const root = document.getElementById('d')!;
+        const deb1 = makeDebouncer('loadGame',       'round 104', 500);
+        const deb2 = makeDebouncer('saveGame',       'round 106', 500);
+        renderDebugOverlay(root, [
+            { debouncer: deb1, chineseLabel: '读取存档' },
+            { debouncer: deb2, chineseLabel: '保存游戏' },
+        ], {
+            playerLevel: 1,
+            currentBiome: 'forest',
+            sessionStartedAt: Date.now() - 30_000,
+        });
+        const values = Array.from(root.querySelectorAll('.debug-overlay-extras-value')).map(n => n.textContent);
+        // Em-dash appears at least twice (last action + last action ago).
+        expect(values.filter(v => v === '—').length).toBeGreaterThanOrEqual(2);
+    });
+
+    test('extras_derives_last_action_from_most_recently_fired_debouncer (round 130)', () => {
+        // Stamp 2 debouncers at different times. The most
+        // recently fired one (smallest msSinceLastFire)
+        // wins the "last action" cell.
+        document.body.innerHTML = '<div id="d"></div>';
+        const root = document.getElementById('d')!;
+        const deb1 = makeDebouncer('loadGame', 'round 104', 500);
+        const deb2 = makeDebouncer('enterAtom', 'round 109', 500);
+        // Stamp deb1 first (longer ago) + deb2 second (more recent).
+        deb1.stamp();
+        // Tiny gap to ensure deb2's stamp is strictly newer.
+        const delay = (ms: number) => { const end = Date.now() + ms; while (Date.now() < end) { /* spin */ } };
+        delay(10);
+        deb2.stamp();
+        renderDebugOverlay(root, [
+            { debouncer: deb1, chineseLabel: '读取存档' },
+            { debouncer: deb2, chineseLabel: '进入 atom' },
+        ], {
+            playerLevel: 1,
+            currentBiome: 'forest',
+            sessionStartedAt: Date.now() - 30_000,
+        });
+        const values = Array.from(root.querySelectorAll('.debug-overlay-extras-value')).map(n => n.textContent);
+        // enterAtom (deb2) is the most recent → "enterAtom" appears in the
+        // "last action" cell.
+        expect(values).toContain('enterAtom');
+    });
+
+    test('refresh_re_renders_extras_with_updated_session_duration (round 130)', () => {
+        document.body.innerHTML = '<div id="d"></div>';
+        const root = document.getElementById('d')!;
+        const deb = makeDebouncer('loadGame', 'round 104', 500);
+        const startedAt = Date.now() - 5_000;
+        const handle = renderDebugOverlay(root, [{ debouncer: deb, chineseLabel: '读取存档' }], {
+            playerLevel: 3,
+            currentBiome: 'desert',
+            sessionStartedAt: startedAt,
+        });
+        const initialValues = Array.from(root.querySelectorAll('.debug-overlay-extras-value')).map(n => n.textContent);
+        expect(initialValues).toContain('Lv 3');
+        expect(initialValues).toContain('desert');
+        // Refresh — the section should still be there.
+        handle.refresh();
+        const refreshedValues = Array.from(root.querySelectorAll('.debug-overlay-extras-value')).map(n => n.textContent);
+        expect(refreshedValues).toContain('Lv 3');
+        expect(refreshedValues).toContain('desert');
+    });
+
+    test('extras_escapeHtml_prevents_script_injection_in_biome_id (round 130 security)', () => {
+        document.body.innerHTML = '<div id="d"></div>';
+        const root = document.getElementById('d')!;
+        const deb = makeDebouncer('loadGame', 'round 104', 500);
+        renderDebugOverlay(root, [{ debouncer: deb, chineseLabel: '读取存档' }], {
+            playerLevel: 1,
+            currentBiome: '<script>alert(1)</script>',
+            sessionStartedAt: Date.now() - 100,
+        });
+        // No <script> or <img> element should be created.
+        expect(root.querySelectorAll('script').length).toBe(0);
+        expect(root.querySelectorAll('img').length).toBe(0);
     });
 });

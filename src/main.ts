@@ -343,6 +343,14 @@ class App {
      */
     private debugOverlayHandle: DebugOverlayHandle | null = null;
     private debugOverlayTimer: ReturnType<typeof setInterval> | null = null;
+    /**
+     * Round 130 — `Date.now()` snapshot taken
+     * at App construction. Surfaced to the
+     * DebugOverlay's "session duration" cell
+     * so QA can see how long the App has been
+     * running without a reload.
+     */
+    private sessionStartedAt: number = Date.now();
     /** Monotonic turn counter for NpcMemoryEntry.turn. */
     private npcTurn = 0;
     /**
@@ -959,8 +967,25 @@ class App {
                 { debouncer: this.debouncerRollWorldEvent, chineseLabel: '世界事件' },
                 { debouncer: this.debouncerEnterAtom,      chineseLabel: '进入 atom' },
             ];
-            this.debugOverlayHandle = renderDebugOverlay(refs.debugOverlayRoot, debouncerInfos);
-            this.debugOverlayTimer = setInterval(() => this.debugOverlayHandle?.refresh(), 200);
+            // Round 130 — pass the optional `extras`
+            // session-stats section. The "last action"
+            // cells are derived from the debouncers
+            // themselves (no separate field needed in
+            // the App). `sessionStartedAt` is captured
+            // at construction so the panel can show
+            // "how long has this App been running?".
+            this.debugOverlayHandle = renderDebugOverlay(
+                refs.debugOverlayRoot,
+                debouncerInfos,
+                {
+                    playerLevel: this.progression.level,
+                    currentBiome: this.worldState.lastBiome,
+                    sessionStartedAt: this.sessionStartedAt,
+                },
+            );
+            this.debugOverlayTimer = setInterval(() => {
+                this.debugOverlayHandle?.refresh();
+            }, 200);
         }
         this.economy = new EconomyPanel(refs.economyRoot, this.worldState);
         this.epochPanel = new EpochPanel(refs.epochRoot, this.epoch, () => this.triggerCollapse(), this.i18n);

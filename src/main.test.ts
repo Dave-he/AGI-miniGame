@@ -7065,16 +7065,25 @@ describe('App — round 128: D-key DebugOverlay panel (4 debouncer stats)', () =
         expect(html).toMatch(/id="btn-debug-overlay"[^>]*>[\s\S]*?\(D\)/);
     });
 
-    test('index_html_has_debug_overlay_css_rules (round 128)', () => {
+    test('index_html_has_debug_overlay_css_rules (round 128+130)', () => {
         // The CSS rule for the
         // panel exists in the
         // stylesheet. Without
         // it the panel would
         // render unstyled.
+        // Round 130 adds the
+        // `.debug-overlay-extras`
+        // session-stats section
+        // (label + value grid
+        // above the debouncer
+        // rows).
         const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
         expect(html).toMatch(/#debug-overlay-root\[hidden\]\s*\{\s*display:\s*none;\s*\}/);
         expect(html).toMatch(/\.debug-overlay-panel\s*\{/);
         expect(html).toMatch(/\.debug-overlay-row\s*\{/);
+        expect(html).toMatch(/\.debug-overlay-extras\s*\{/);
+        expect(html).toMatch(/\.debug-overlay-extras-label\s*\{/);
+        expect(html).toMatch(/\.debug-overlay-extras-value\s*\{/);
     });
 
     test('main_ts_passes_4_debouncers_to_renderDebugOverlay (round 128)', () => {
@@ -7098,6 +7107,79 @@ describe('App — round 128: D-key DebugOverlay panel (4 debouncer stats)', () =
         expect(main).toMatch(/this\.debouncerSaveGame[\s\S]*?chineseLabel:\s*'保存游戏'/);
         expect(main).toMatch(/this\.debouncerRollWorldEvent[\s\S]*?chineseLabel:\s*'世界事件'/);
         expect(main).toMatch(/this\.debouncerEnterAtom[\s\S]*?chineseLabel:\s*'进入 atom'/);
+    });
+
+    // -----------------------------------------------------------------
+    // Round 130 — DebugOverlay panel
+    // enhancements. The panel now
+    // surfaces an optional `extras`
+    // session-stats section: player
+    // level (Lv N), current biome
+    // (or em-dash), session duration
+    // (Xm Ys), last action label
+    // (derived from the most-recently-
+    // fired debouncer), and the time
+    // since that action.
+    // -----------------------------------------------------------------
+
+    test('App_exposes_sessionStartedAt_for_DebugOverlay_session_duration (round 130)', () => {
+        // The `sessionStartedAt` field is set at
+        // construction time and is a positive
+        // integer (Date.now() ms). A regression
+        // that accidentally typed it as a string
+        // (e.g. "0") would break the duration
+        // cell.
+        const app = makeApp();
+        const started = cast<{ sessionStartedAt: unknown }>(app).sessionStartedAt;
+        expect(typeof started).toBe('number');
+        expect(started as number).toBeGreaterThan(0);
+    });
+
+    test('DebugOverlay_panel_renders_extras_section_when_wired (round 130)', () => {
+        // After round 130 wiring, the
+        // App passes `extras` to
+        // `renderDebugOverlay`, so the
+        // panel should contain the
+        // `.debug-overlay-extras` wrapper.
+        const app = makeApp();
+        const handle = cast<{ debugOverlayHandle: { refresh: () => void } | null }>(app).debugOverlayHandle;
+        expect(handle).not.toBeNull();
+        // Refresh once so the panel picks up the
+        // current worldState.lastBiome.
+        handle?.refresh();
+        // Find the debug-overlay root in the
+        // document and check for the extras section.
+        const root = document.getElementById('debug-overlay-root');
+        expect(root).not.toBeNull();
+        expect(root!.querySelector('.debug-overlay-extras')).not.toBeNull();
+    });
+
+    test('DebugOverlay_extras_section_shows_Lv_N_with_player_level (round 130)', () => {
+        const app = makeApp();
+        const handle = cast<{ debugOverlayHandle: { refresh: () => void } | null }>(app).debugOverlayHandle;
+        handle?.refresh();
+        const root = document.getElementById('debug-overlay-root')!;
+        const values = Array.from(root.querySelectorAll('.debug-overlay-extras-value')).map(n => n.textContent);
+        // progression.level starts at 1 → "Lv 1"
+        // (the makeApp() fixture creates a fresh
+        // Progression with level 1).
+        expect(values).toContain('Lv 1');
+    });
+
+    test('main_ts_passes_extras_session_stats_to_renderDebugOverlay (round 130 file-content)', () => {
+        // Regression: the App's
+        // `renderDebugOverlay` call MUST
+        // pass the 3-field `extras`
+        // object (playerLevel +
+        // currentBiome + sessionStartedAt).
+        // A regression that dropped the
+        // 3rd arg would silently fall back
+        // to the no-extras layout (no
+        // Lv/biome/duration cells).
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/playerLevel:\s*this\.progression\.level/);
+        expect(main).toMatch(/currentBiome:\s*this\.worldState\.lastBiome/);
+        expect(main).toMatch(/sessionStartedAt:\s*this\.sessionStartedAt/);
     });
 });
 
