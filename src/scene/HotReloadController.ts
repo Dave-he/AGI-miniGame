@@ -51,6 +51,32 @@ export class HotReloadController {
     private chargeStart: number = 0;
     private lastApplies: number[] = [];
     private rejectCount: number = 0;
+    /**
+     * Round 133 — the
+     * currently-active
+     * `DslRule`. Set
+     * inside `begin()` once
+     * the rule has parsed
+     * + passed the
+     * action-count sanity
+     * check; cleared back
+     * to `null` after
+     * `applyNow()` returns
+     * (or when the
+     * controller is
+     * cancelled). The
+     * round-133
+     * `DslCodex` panel
+     * reads this via a
+     * getter (`getActiveRule()`)
+     * so the panel can
+     * show the AGI's most
+     * recently generated
+     * rule without having
+     * to subscribe to the
+     * event stream.
+     */
+    private activeRule: DslRule | null = null;
 
     constructor(exec: DslExecutor, cfg: HotReloadConfig = DEFAULT_HOT_RELOAD_CONFIG) {
         this.exec = exec;
@@ -65,6 +91,27 @@ export class HotReloadController {
     getState(): HotReloadState { return this.state; }
     getCharge(): number { return this.charge; }
     getRejectCount(): number { return this.rejectCount; }
+    /**
+     * Round 133 — getter
+     * for the currently-
+     * active `DslRule`.
+     * Returns `null` when
+     * no rule is active
+     * (i.e. before
+     * `begin()` is called
+     * or after the
+     * controller has
+     * applied the rule
+     * and reset back to
+     * `idle`). The
+     * `DslCodex` panel
+     * reads this via a
+     * callback so the
+     * panel updates the
+     * moment `begin()`
+     * stores the rule.
+     */
+    getActiveRule(): DslRule | null { return this.activeRule; }
 
     /** Begin a hot-reload. Returns true if accepted, false if rate-limited. */
     begin(dsl: string): boolean {
@@ -92,6 +139,18 @@ export class HotReloadController {
         this.state = 'compiling';
         this.charge = 0;
         this.chargeStart = performance.now();
+        // Round 133 — store
+        // the parsed rule so
+        // the DslCodex panel
+        // can read it via
+        // `getActiveRule()`.
+        // Stored BEFORE the
+        // emit (so any
+        // listener that
+        // inspects the rule
+        // sees a consistent
+        // state).
+        this.activeRule = rule;
         this.emit({ state: 'compiling', charge: 0, dsl, rule });
 
         // Compile phase
@@ -133,6 +192,14 @@ export class HotReloadController {
         }
         this.state = 'idle';
         this.charge = 0;
+        // Round 133 — clear
+        // the active rule
+        // when the compile is
+        // cancelled so the
+        // DslCodex panel
+        // doesn't show a
+        // zombie rule.
+        this.activeRule = null;
         this.emit({ state: 'idle', charge: 0 });
     }
 

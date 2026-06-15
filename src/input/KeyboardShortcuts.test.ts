@@ -99,7 +99,38 @@ describe('KeyboardShortcuts', () => {
             expect(routeKey('~')).toEqual({ kind: 'toggle-dm-console' });
         });
 
-        it.each(['0', '9', 'a', 'x', 'F1', 'Tab', 'Enter', 'ArrowUp'])(
+        it('routes K/k to toggle-dsl-codex (round 133)', () => {
+            // Round 133 — K key
+            // toggles the
+            // `#dsl-codex-root`
+            // panel (the
+            // round-133
+            // `renderDslCodexPanel`
+            // showing the AGI's
+            // most recently
+            // generated /
+            // hot-reloaded
+            // `DslRule` as a
+            // small codex). K
+            // is mnemonic-
+            // friendly for
+            // "DSL Knowledge"
+            // (or just "Codex
+            // K") and was free
+            // in the panel-
+            // toggle group.
+            // Case-insensitive
+            // (US QWERTY +
+            // most international
+            // layouts produce
+            // the same physical
+            // letter in both
+            // shift states).
+            expect(routeKey('K')).toEqual({ kind: 'toggle-dsl-codex' });
+            expect(routeKey('k')).toEqual({ kind: 'toggle-dsl-codex' });
+        });
+
+        it.each(['0', '9', 'a', 'j', 'F1', 'Tab', 'Enter', 'ArrowUp'])(
             'returns null for unbound key "%s"',
             (key) => {
                 // Round 91 — backtick/tilde is now bound
@@ -109,6 +140,12 @@ describe('KeyboardShortcuts', () => {
                 // Round 132 — z / Z is now bound to
                 // toggle-event-log, so it's removed
                 // from the unbound set too. (X / x
+                // replaces it as the generic unbound
+                // letter test.)
+                //
+                // Round 133 — k / K is now bound to
+                // toggle-dsl-codex, so it's removed
+                // from the unbound set too. (J / j
                 // replaces it as the generic unbound
                 // letter test.)
                 expect(routeKey(key)).toBeNull();
@@ -281,32 +318,40 @@ describe('KeyboardShortcuts', () => {
     // helpers (by key / by method /
     // by kind) all return the
     // expected method names.
+    // Round 132 widened to 13
+    // (Z-EventLog). Round 133
+    // widened to 14 (K-DslCodex).
     // ---------------------------------------------------------------
 
-    describe('PANEL_TOGGLE_BINDINGS table (round 131/132)', () => {
-        it('has exactly 13 rows', () => {
+    describe('PANEL_TOGGLE_BINDINGS table (round 131/132/133)', () => {
+        it('has exactly 14 rows', () => {
             // Round 132 widened
             // the table from 12
             // → 13 rows (added
             // the Z-key
             // EventLog panel).
-            expect(PANEL_TOGGLE_BINDINGS.length).toBe(13);
+            // Round 133 widened
+            // the table from 13
+            // → 14 rows (added
+            // the K-key
+            // DslCodex panel).
+            expect(PANEL_TOGGLE_BINDINGS.length).toBe(14);
         });
 
-        it('lists the 13 expected keys in QWERTY order', () => {
+        it('lists the 14 expected keys in QWERTY order', () => {
             const keys = PANEL_TOGGLE_BINDINGS.map((b) => b.key);
-            expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z']);
+            expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z', 'K']);
         });
 
-        it('has unique key / methodName / panelId / buttonId across all 13 rows', () => {
+        it('has unique key / methodName / panelId / buttonId across all 14 rows', () => {
             const keys = PANEL_TOGGLE_BINDINGS.map((b) => b.key);
             const methods = PANEL_TOGGLE_BINDINGS.map((b) => b.methodName);
             const panels = PANEL_TOGGLE_BINDINGS.map((b) => b.panelId);
             const buttons = PANEL_TOGGLE_BINDINGS.map((b) => b.buttonId);
-            expect(new Set(keys).size).toBe(13);
-            expect(new Set(methods).size).toBe(13);
-            expect(new Set(panels).size).toBe(13);
-            expect(new Set(buttons).size).toBe(13);
+            expect(new Set(keys).size).toBe(14);
+            expect(new Set(methods).size).toBe(14);
+            expect(new Set(panels).size).toBe(14);
+            expect(new Set(buttons).size).toBe(14);
         });
 
         it('every row has a non-empty Chinese label and action', () => {
@@ -402,12 +447,12 @@ describe('KeyboardShortcuts', () => {
         });
 
         it('PANEL_TOGGLE_DESCRIPTIONS is now a projection of PANEL_TOGGLE_BINDINGS', () => {
-            // The 13 help-overlay
+            // The 14 help-overlay
             // rows are
             // `{key, action}`
             // projections of the
             // table.
-            expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(13);
+            expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(14);
             for (let i = 0; i < PANEL_TOGGLE_BINDINGS.length; i++) {
                 const b = PANEL_TOGGLE_BINDINGS[i];
                 const d = PANEL_TOGGLE_DESCRIPTIONS[i];
@@ -429,6 +474,9 @@ describe('KeyboardShortcuts', () => {
             // Round 132: Z key.
             expect(panelToggleBindingByKey('z')?.methodName).toBe('toggleEventLog');
             expect(panelToggleBindingByKey('Z')?.methodName).toBe('toggleEventLog');
+            // Round 133: K key.
+            expect(panelToggleBindingByKey('k')?.methodName).toBe('toggleDslCodex');
+            expect(panelToggleBindingByKey('K')?.methodName).toBe('toggleDslCodex');
         });
 
         it('panelToggleBindingByKey returns undefined for unknown keys', () => {
@@ -444,21 +492,26 @@ describe('KeyboardShortcuts', () => {
             // this test now uses
             // a different letter
             // (X) + the empty
-            // string.)
-            expect(panelToggleBindingByKey('x')).toBeUndefined();
-            expect(panelToggleBindingByKey('X')).toBeUndefined();
+            // string. Round 133
+            // promoted K to a
+            // real binding too,
+            // so we use J now as
+            // the defensive
+            // unknown.)
+            expect(panelToggleBindingByKey('j')).toBeUndefined();
+            expect(panelToggleBindingByKey('J')).toBeUndefined();
             expect(panelToggleBindingByKey('1')).toBeUndefined();
             expect(panelToggleBindingByKey('')).toBeUndefined();
         });
 
-        it('panelToggleBindingByMethod resolves all 13 method names', () => {
-            // The 13 public
+        it('panelToggleBindingByMethod resolves all 14 method names', () => {
+            // The 14 public
             // method names on
             // App are all
             // resolvable via
             // the helper. This
             // is the contract
-            // the 13 wrapper
+            // the 14 wrapper
             // methods rely on
             // (each calls
             // `this.toggleByMethod(name)`).
@@ -475,8 +528,8 @@ describe('KeyboardShortcuts', () => {
             expect(panelToggleBindingByMethod('')).toBeUndefined();
         });
 
-        it('panelToggleBindingByButton resolves all 13 button ids', () => {
-            // The 13 mouse-button
+        it('panelToggleBindingByButton resolves all 14 button ids', () => {
+            // The 14 mouse-button
             // ids are all
             // resolvable via
             // the helper. The
@@ -491,7 +544,7 @@ describe('KeyboardShortcuts', () => {
             }
         });
 
-        it('panelToggleMethodByKind maps the 13 KeyboardAction kinds to method names', () => {
+        it('panelToggleMethodByKind maps the 14 KeyboardAction kinds to method names', () => {
             // The bootstrap
             // keydown switch
             // `default` arm
@@ -503,7 +556,7 @@ describe('KeyboardShortcuts', () => {
             // to a method name
             // (e.g.
             // 'toggleSettings').
-            // All 13 panel-
+            // All 14 panel-
             // toggle kinds must
             // round-trip.
             const expected: ReadonlyArray<[string, string]> = [
@@ -520,6 +573,7 @@ describe('KeyboardShortcuts', () => {
                 ['toggle-epoch',              'toggleEpoch'],
                 ['toggle-debug-overlay',      'toggleDebugOverlay'],
                 ['toggle-event-log',          'toggleEventLog'],
+                ['toggle-dsl-codex',          'toggleDslCodex'],
             ];
             for (const [kind, methodName] of expected) {
                 expect(panelToggleMethodByKind(kind)).toBe(methodName);

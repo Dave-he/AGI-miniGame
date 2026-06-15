@@ -102,6 +102,15 @@ import { renderDebugOverlay, DebugOverlayHandle, type DebugOverlayDebouncerInfo 
 // events, etc). 13th panel-
 // toggle.
 import { renderEventLogPanel, EventLogPanelHandle } from './ui/EventLogPanel';
+// Round 133 — the K-key
+// DslCodex panel showing
+// the AGI's most recently
+// generated / hot-reloaded
+// `DslRule` (the round-15/16
+// `MemeCompiler` output) as
+// a small codex. 14th
+// panel-toggle.
+import { renderDslCodexPanel, DslCodexPanelHandle } from './ui/DslCodexPanel';
 // Round 48 — `themeToScene` itself is no longer called from main.ts;
 // the WASM bridge below wraps it. The `ThemeInput` type alias is
 // still needed to type the input to the bridge.
@@ -177,6 +186,16 @@ interface AppRefs {
      * panel.
      */
     eventLogRoot?: HTMLElement;
+    /**
+     * Round 133 — optional root
+     * for the DslCodex panel
+     * (the AGI's most recently
+     * generated / hot-reloaded
+     * `DslRule`). The K key
+     * shortcut is the primary
+     * way to open the panel.
+     */
+    dslCodexRoot?: HTMLElement;
     /**
      * Round 111 — optional root for the
      * SettingsPanel (audio / difficulty /
@@ -384,6 +403,50 @@ class App {
      */
     private eventLogHandle: EventLogPanelHandle | null = null;
     private eventLogTimer: ReturnType<typeof setInterval> | null = null;
+    /**
+     * Round 133 — handle for
+     * the 14th panel-toggle
+     * K shortcut's content.
+     * The panel renders the
+     * AGI's most recently
+     * generated / hot-reloaded
+     * `DslRule` (the
+     * round-15/16
+     * `MemeCompiler` output)
+     * as a small codex. Null
+     * when the mount point is
+     * not provided.
+     */
+    private dslCodexHandle: DslCodexPanelHandle | null = null;
+    /**
+     * Round 133 — the most
+     * recently accepted
+     * `DslRule` from a
+     * `hotReloadFromMemes`
+     * call. The DslCodex
+     * panel reads this via
+     * a callback (so the
+     * panel updates
+     * automatically when
+     * the field is
+     * mutated). Null when
+     * no hot-reload has
+     * happened yet.
+     */
+    private currentDslRule: import('./dsl/MemeCompiler').DslRule | null = null;
+    /**
+     * Round 133 — the outcome
+     * of the most recent
+     * `hotReloadFromMemes`
+     * call. The DslCodex
+     * panel surfaces this as
+     * a "已接受" / "被拒绝"
+     * status badge in the
+     * title. 'none' when no
+     * hot-reload has been
+     * attempted.
+     */
+    private lastDslOutcome: 'accepted' | 'rejected' | 'none' = 'none';
     /**
      * Round 130 — `Date.now()` snapshot taken
      * at App construction. Surfaced to the
@@ -1067,6 +1130,43 @@ class App {
             this.eventLogTimer = setInterval(() => {
                 this.eventLogHandle?.refresh();
             }, 1000);
+        }
+        // Round 133 — wire the
+        // DslCodex panel. The
+        // panel renders the
+        // AGI's most recently
+        // generated / hot-
+        // reloaded `DslRule`
+        // (the round-15/16
+        // `MemeCompiler` output)
+        // as a small codex
+        // showing the source
+        // DSL + the parsed AST
+        // breakdown. The 14th
+        // panel-toggle (K key +
+        // btn-dsl-codex mouse
+        // button) opens this
+        // panel via the
+        // round-117 `togglePanel`
+        // helper. The panel
+        // itself is built at
+        // runtime by
+        // `renderDslCodexPanel`
+        // and reads `this.currentDslRule`
+        // + `this.lastDslOutcome`
+        // via callbacks (so the
+        // panel updates
+        // immediately when
+        // `hotReloadFromMemes`
+        // mutates either
+        // field).
+        if (refs.dslCodexRoot) {
+            this.dslCodexHandle = renderDslCodexPanel(
+                refs.dslCodexRoot,
+                () => this.currentDslRule,
+                () => this.lastDslOutcome,
+                this.i18n,
+            );
         }
         this.economy = new EconomyPanel(refs.economyRoot, this.worldState);
         this.epochPanel = new EpochPanel(refs.epochRoot, this.epoch, () => this.triggerCollapse(), this.i18n);
@@ -1994,6 +2094,45 @@ class App {
     toggleEventLog(): void { this.toggleByMethod('toggleEventLog'); }
 
     /**
+     * Round 133 — K key
+     * counterpart. Toggles
+     * the `#dsl-codex-root`
+     * panel (the round-133
+     * `renderDslCodexPanel`
+     * showing the AGI's most
+     * recently generated /
+     * hot-reloaded `DslRule`
+     * — the round-15/16
+     * `MemeCompiler` output —
+     * as a small codex with
+     * the source DSL + the
+     * parsed AST breakdown +
+     * a "已接受" / "被拒绝"
+     * status badge) via the
+     * round-117 `togglePanel`
+     * helper. The 14th panel
+     * in the round-131 data-
+     * driven
+     * `PANEL_TOGGLE_BINDINGS`
+     * table. K is mnemonic-
+     * friendly for "DSL
+     * Knowledge" (or just
+     * "Codex K") and was free
+     * in the panel-toggle
+     * group, no pre-existing
+     * K mapping in routeKey.
+     * Sits naturally next to
+     * the QWERTY row housing
+     * the other toggle keys
+     * (P/Q/W/T/F/M/V/B/G/N/O/D
+     * /Z — K is row 2 of the
+     * QWERTY home row, so it
+     * fits the established
+     * pattern).
+     */
+    toggleDslCodex(): void { this.toggleByMethod('toggleDslCodex'); }
+
+    /**
      * Round 117 — shared panel-toggle
      * helper. The 7 panel-toggle
      * methods (toggleSettings /
@@ -2183,17 +2322,49 @@ class App {
         const dsl = completion.dsl ?? compileFallback(memes).toString();
         this.hud.log(`[AGI] 回复 DSL: ${dsl} (${completion.provider})`);
         const accepted = this.hot.begin(dsl);
+        // Round 133 — the
+        // DslCodex panel
+        // surfaces the
+        // outcome of every
+        // hot-reload. We
+        // update the
+        // `currentDslRule`
+        // + `lastDslOutcome`
+        // fields + call
+        // `refresh()` so the
+        // K-key panel
+        // reflects the
+        // latest state
+        // immediately (no
+        // setInterval
+        // needed — the
+        // panel is purely
+        // event-driven).
         if (accepted) {
+            this.currentDslRule = this.hot.getActiveRule() ?? null;
+            this.lastDslOutcome = 'accepted';
             this.hud.log('[HotReload] 开始编译，护盾激活…');
             this.unlistenHot = this.hot.on(ev => this.onHotEvent(ev));
         } else {
+            // Rejection: keep
+            // the previous
+            // rule visible
+            // (so the player
+            // can see what
+            // was last
+            // accepted) but
+            // flip the status
+            // badge to
+            // "被拒绝".
+            this.lastDslOutcome = 'rejected';
             this.hud.log('[HotReload] 拒绝：频率限制或格式错误');
         }
+        this.dslCodexHandle?.refresh();
     }
 
     private unlistenHot?: () => void;
 
-    private onHotEvent(ev: { state: string; charge?: number; reason?: string }): void {
+    private onHotEvent(ev: { state: string; charge?: number; reason?: string; rule?: import('./dsl/MemeCompiler').DslRule }): void {
         // Forward to the audio service.
         if (ev.state === 'applied' || ev.state === 'rejected' || ev.state === 'shielded' || ev.state === 'compiling') {
             this.audio.fireHotReload(ev.state as 'compiling' | 'shielded' | 'applied' | 'rejected');
@@ -2216,6 +2387,32 @@ class App {
             });
             this.epochPanel.render();
         }
+        // Round 133 — keep
+        // `currentDslRule` in
+        // sync with the event
+        // stream. The
+        // `begin()` path
+        // already sets it
+        // (via
+        // `getActiveRule()`),
+        // but the `applied`
+        // + `rejected`
+        // events also carry
+        // the rule so the
+        // DslCodex panel
+        // stays current even
+        // if a future
+        // refactor changes
+        // the begin→active
+        // flow. We re-render
+        // the panel on every
+        // event so the
+        // status badge flips
+        // in real time.
+        if (ev.rule !== undefined && ev.rule !== null) {
+            this.currentDslRule = ev.rule;
+        }
+        this.dslCodexHandle?.refresh();
     }
 
     /** Demo: roll a world event. */
@@ -3081,6 +3278,7 @@ async function bootstrap(): Promise<void> {
     const biomeLibraryRoot = document.getElementById('biome-library-root') as HTMLElement | null;
     const debugOverlayRoot = document.getElementById('debug-overlay-root') as HTMLElement | null;
     const eventLogRoot = document.getElementById('event-log-root') as HTMLElement | null;
+    const dslCodexRoot = document.getElementById('dsl-codex-root') as HTMLElement | null;
     if (!canvas || !hudRoot || !progRoot || !econRoot || !epochRoot) {
         console.error('Missing required DOM roots');
         return;
@@ -3101,6 +3299,7 @@ async function bootstrap(): Promise<void> {
         biomeLibraryRoot: biomeLibraryRoot ?? undefined,
         debugOverlayRoot: debugOverlayRoot ?? undefined,
         eventLogRoot: eventLogRoot ?? undefined,
+        dslCodexRoot: dslCodexRoot ?? undefined,
     });
     (window as any).__AGI__ = app;
     await app.start();
@@ -3229,9 +3428,11 @@ async function bootstrap(): Promise<void> {
             // as a quick-reference
             // card with a cyan
             // border.
+            // Round 132 — Z (13th).
+            // Round 133 — K (14th).
             const toggleHeader = document.createElement('div');
             toggleHeader.className = 'kb-help-section kb-help-section-toggle';
-            toggleHeader.textContent = '面板开关 (13 键)';
+            toggleHeader.textContent = '面板开关 (14 键)';
             body.appendChild(toggleHeader);
             for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
                 const keyEl = document.createElement('div');

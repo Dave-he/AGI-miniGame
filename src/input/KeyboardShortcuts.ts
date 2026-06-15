@@ -109,7 +109,34 @@ export type KeyboardAction =
     // data-driven
     // `PANEL_TOGGLE_BINDINGS`
     // table.
-    | { kind: 'toggle-event-log' };
+    | { kind: 'toggle-event-log' }
+    // Round 133 — K key toggles
+    // the DslCodex panel
+    // (`#dsl-codex-root`,
+    // populated by round-133
+    // `renderDslCodexPanel`).
+    // The panel renders the
+    // AGI's most recently
+    // generated / hot-
+    // reloaded `DslRule`
+    // (the round-15/16
+    // `MemeCompiler` output)
+    // as a small codex
+    // showing the source
+    // DSL + the parsed AST
+    // breakdown. K is
+    // mnemonic-friendly
+    // (K for "Codex") +
+    // was free in the
+    // panel-toggle group
+    // (no pre-existing K
+    // mapping in routeKey).
+    // 14th entry in the
+    // round-131 data-
+    // driven
+    // `PANEL_TOGGLE_BINDINGS`
+    // table.
+    | { kind: 'toggle-dsl-codex' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -390,6 +417,29 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // existing Z mapping
     // in routeKey).
     { key: 'Z',    action: '切换事件日志面板 (50 条最近事件)' },
+    // Round 133 — the K key
+    // toggles the DslCodex
+    // panel
+    // (`#dsl-codex-root`).
+    // The panel renders
+    // the AGI's most
+    // recently generated
+    // / hot-reloaded
+    // `DslRule` (the
+    // round-15/16
+    // `MemeCompiler`
+    // output) as a
+    // codex. K is
+    // mnemonic-friendly
+    // (K for "Codex")
+    // + was free in the
+    // panel-toggle group.
+    // The 14th entry in
+    // the round-131 data-
+    // driven
+    // `PANEL_TOGGLE_BINDINGS`
+    // table.
+    { key: 'K',    action: '切换 DSL 法典面板 (最近生成的规则)' },
 ];
 
 /**
@@ -601,6 +651,51 @@ export const PANEL_TOGGLE_BINDINGS: ReadonlyArray<PanelToggleBinding> = [
     // + button) follows
     // automatically.
     { key: 'Z', kind: 'toggle-event-log',        panelId: 'event-log-root',     label: '事件日志',         action: '事件日志面板 (50 条最近事件)', methodName: 'toggleEventLog',         buttonId: 'btn-event-log' },
+    // Round 133 — K key toggles
+    // the DslCodex panel
+    // (`#dsl-codex-root`,
+    // populated by round-133
+    // `renderDslCodexPanel`).
+    // The panel renders the
+    // AGI's most recently
+    // generated / hot-
+    // reloaded `DslRule`
+    // (the round-15/16
+    // `MemeCompiler` output)
+    // as a small codex
+    // showing the source DSL
+    // + the parsed AST
+    // breakdown. K is
+    // mnemonic-friendly
+    // (K for "Codex") +
+    // the K letter was
+    // free in the panel-
+    // toggle group. The
+    // status badge in the
+    // title surfaces the
+    // round-48 hot-reload
+    // outcome (accepted /
+    // rejected by
+    // frequency-limit /
+    // format-error). This
+    // is the 14th entry in
+    // the round-131 data-
+    // driven `PANEL_TOGGLE_BINDINGS`
+    // table. Adding it
+    // required exactly 1
+    // row here + 1 entry
+    // in the `routeKey`
+    // switch + 1 entry in
+    // the `KeyboardAction`
+    // union. Everything
+    // else (wrapper method
+    // body + bind() entry
+    // + BINDING_DESCRIPTIONS
+    // row + help-overlay
+    // 14th row + mount
+    // point + button)
+    // follows automatically.
+    { key: 'K', kind: 'toggle-dsl-codex',        panelId: 'dsl-codex-root',     label: 'DSL 法典',         action: 'DSL 法典面板 (最近生成的规则)', methodName: 'toggleDslCodex',         buttonId: 'btn-dsl-codex' },
 ];
 
 /**
@@ -938,6 +1033,30 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'z':
         case 'Z':
             return { kind: 'toggle-event-log' };
+        // Round 133 — K key toggles
+        // the DslCodex panel
+        // (`#dsl-codex-root`). The
+        // panel is the keyboard
+        // counterpart to the
+        // round-133
+        // `btn-dsl-codex` mouse
+        // button. Both routes (K
+        // keyboard + btn-dsl-codex
+        // mouse) call
+        // `app.toggleDslCodex()`
+        // which uses the
+        // round-117 `togglePanel`
+        // helper. The case-
+        // insensitive mirror
+        // matches the round-85
+        // R / round-91 ` /
+        // round-112 P /
+        // round-128 D /
+        // round-132 Z
+        // conventions.
+        case 'k':
+        case 'K':
+            return { kind: 'toggle-dsl-codex' };
         default:
             return null;
     }

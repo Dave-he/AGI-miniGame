@@ -754,6 +754,20 @@
          in the round-131 data-driven
          `PANEL_TOGGLE_BINDINGS` table. -->
     <div class="panel" id="event-log-root" hidden></div>
+    <!-- Round 133 — dsl-codex-root: home for the
+         round-133 `renderDslCodexPanel` panel
+         showing the AGI's most recently
+         generated / hot-reloaded `DslRule` (the
+         round-15/16 `MemeCompiler` output) as a
+         small codex with the source DSL + the
+         parsed AST breakdown + a "已接受" / "被拒绝"
+         status badge. Hidden by default; the K
+         key + the `btn-dsl-codex` mouse button
+         toggle the `hidden` attribute via
+         App.toggleDslCodex(). The 14th panel in
+         the round-131 data-driven
+         `PANEL_TOGGLE_BINDINGS` table. -->
+    <div class="panel" id="dsl-codex-root" hidden></div>
 
     <!-- Round 57 — keyboard help overlay. Hidden by default;
          toggle with the ? key. The body is populated at runtime
@@ -846,6 +860,25 @@
            shortcut from the `(Z)` label
            inside the button. -->
       <button class="ctl toggle-btn" id="btn-event-log" data-key="Z">📋 事件 (Z)</button>
+      <!-- Round 133 — 14th panel-toggle
+           mouse button. K key counterpart
+           for the round-133 DslCodex panel
+           (`#dsl-codex-root`, showing the
+           AGI's most recently generated /
+           hot-reloaded `DslRule` as a small
+           codex with the source DSL +
+           parsed AST + accepted/rejected
+           status badge). K is mnemonic-
+           friendly for "DSL Knowledge" (or
+           just "Codex K") and was free in
+           the panel-toggle group, no pre-
+           existing K mapping in routeKey.
+           Sits naturally next to the QWERTY
+           row housing the other toggle
+           keys. Mouse-only players learn
+           the K shortcut from the `(K)`
+           label inside the button. -->
+      <button class="ctl toggle-btn" id="btn-dsl-codex" data-key="K">📖 DSL 法典 (K)</button>
       <button class="ctl" id="btn-complete">完成试炼</button>
       <button class="ctl" id="btn-save">存档</button>
       <button class="ctl" id="btn-load">读档</button>

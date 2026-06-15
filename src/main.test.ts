@@ -82,6 +82,7 @@ interface AppRefsLike {
     settingsRoot?: HTMLElement;
     debugOverlayRoot?: HTMLElement;
     eventLogRoot?: HTMLElement;
+    dslCodexRoot?: HTMLElement;
 }
 
 function makeRefs(): AppRefsLike {
@@ -159,6 +160,31 @@ function makeRefs(): AppRefsLike {
     eventLogRoot.id = 'event-log-root';
     eventLogRoot.setAttribute('hidden', '');
     document.body.appendChild(eventLogRoot);
+    // Round 133 — add the
+    // dsl-codex-root so the
+    // round-133 App-level
+    // tests can exercise
+    // the
+    // `renderDslCodexPanel`
+    // handle (the handle
+    // is constructed only
+    // if the mount point
+    // is provided; null
+    // otherwise). The
+    // `hidden` attribute
+    // is set so the panel
+    // starts collapsed —
+    // the K key (or the
+    // round-133
+    // `btn-dsl-codex` mouse
+    // button) toggles it
+    // open via the
+    // round-117
+    // `togglePanel` helper.
+    const dslCodexRoot = document.createElement('div');
+    dslCodexRoot.id = 'dsl-codex-root';
+    dslCodexRoot.setAttribute('hidden', '');
+    document.body.appendChild(dslCodexRoot);
     return {
         canvas,
         hudRoot,
@@ -170,6 +196,7 @@ function makeRefs(): AppRefsLike {
         settingsRoot,
         debugOverlayRoot,
         eventLogRoot,
+        dslCodexRoot,
     };
 }
 
@@ -6300,9 +6327,9 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
     // (or renames it) is caught.
     // -----------------------------------------------------------------
 
-    test('App_still_exposes_all_13_toggle_methods_after_round_132_extension (round 131/132)', () => {
+    test('App_still_exposes_all_14_toggle_methods_after_round_133_extension (round 131/132/133)', () => {
         const app = makeApp();
-        // All 13 public method
+        // All 14 public method
         // names are preserved
         // through the round-131
         // data-driven refactor +
@@ -6310,6 +6337,10 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
         // extension (added
         // toggleEventLog for
         // the Z-key EventLog
+        // panel) + the round-133
+        // extension (added
+        // toggleDslCodex for
+        // the K-key DslCodex
         // panel). The 7 from
         // round-117
         // (toggleSettings ...
@@ -6324,7 +6355,10 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
         // toggleDebugOverlay),
         // plus the round-132
         // 13th wrapper
-        // (toggleEventLog).
+        // (toggleEventLog),
+        // plus the round-133
+        // 14th wrapper
+        // (toggleDslCodex).
         const expectedMethods = [
             'toggleSettings',
             'toggleStatsPanel',
@@ -6339,6 +6373,7 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
             'toggleEpoch',
             'toggleDebugOverlay',
             'toggleEventLog',
+            'toggleDslCodex',
         ];
         for (const m of expectedMethods) {
             const fn = (app as unknown as Record<string, unknown>)[m];
@@ -6346,13 +6381,13 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
         }
     });
 
-    test('toggleByMethod_routes_13_method_names_to_correct_mount_points (round 131/132)', () => {
+    test('toggleByMethod_routes_14_method_names_to_correct_mount_points (round 131/132/133)', () => {
         // Spot-check that the
         // private toggleByMethod
         // dispatch (called by
-        // the 13 wrappers) hits
+        // the 14 wrappers) hits
         // the right mount point
-        // for each of the 13
+        // for each of the 14
         // entries. The data
         // comes from
         // `PANEL_TOGGLE_BINDINGS`,
@@ -6363,7 +6398,7 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
         // the wrong hidden
         // attribute.
         const app = makeApp();
-        // 13 (panelId, methodName)
+        // 14 (panelId, methodName)
         // pairs from the table.
         const pairs: ReadonlyArray<[string, string]> = [
             ['settings-root',       'toggleSettings'],
@@ -6379,6 +6414,7 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
             ['epoch-root',          'toggleEpoch'],
             ['debug-overlay-root',  'toggleDebugOverlay'],
             ['event-log-root',      'toggleEventLog'],
+            ['dsl-codex-root',      'toggleDslCodex'],
         ];
         for (const [panelId, methodName] of pairs) {
             // Ensure the mount
@@ -6693,22 +6729,25 @@ describe('App — round 120: concentrated help-overlay section for 8 panel-toggl
     // 12-key QWERTY order (round 128 added D).
     // -----------------------------------------------------------------
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_13_keys (round 120/121/128/132)', () => {
-        // The 13 panel-toggle
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_14_keys (round 120/121/128/132/133)', () => {
+        // The 14 panel-toggle
         // keys: P / Q / W / T /
         // F / M / V / B / G / N
-        // / O / D / Z (round-128
-        // D extension for the
-        // DebugOverlay panel;
-        // round-132 Z extension
-        // for the EventLog
+        // / O / D / Z / K
+        // (round-128 D extension
+        // for the DebugOverlay
+        // panel; round-132 Z
+        // extension for the
+        // EventLog panel;
+        // round-133 K extension
+        // for the DslCodex
         // panel).
-        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(13);
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(14);
     });
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_lists_13_expected_keys (round 120/121/128/132)', () => {
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_14_expected_keys (round 120/121/128/132/133)', () => {
         const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
-        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z']);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z', 'K']);
     });
 
     test('PANEL_TOGGLE_DESCRIPTIONS_every_key_has_a_chinese_action (round 120)', () => {
@@ -6873,26 +6912,29 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
     // row order.
     // -----------------------------------------------------------------
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_13_keys (round 121/128/132)', () => {
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_14_keys (round 121/128/132/133)', () => {
         // Extends round-120
         // 8 rows by 3 new
         // panel-toggle rows
         // (G / N / O) + round-128
         // 12th row (D) + round-132
-        // 13th row (Z).
-        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(13);
+        // 13th row (Z) +
+        // round-133 14th row
+        // (K).
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(14);
     });
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_lists_13_expected_keys (round 121/128/132)', () => {
-        // 13 panel-toggle keys
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_14_expected_keys (round 121/128/132/133)', () => {
+        // 14 panel-toggle keys
         // in QWERTY order. The
         // round-120 8 keys are
         // preserved + 3 new
         // keys (G / N / O) +
         // round-128 D key +
-        // round-132 Z key.
+        // round-132 Z key +
+        // round-133 K key.
         const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
-        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z']);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z', 'K']);
     });
 
     test('PANEL_TOGGLE_DESCRIPTIONS_G_N_O_rows_have_chinese_actions (round 121)', () => {
@@ -7075,7 +7117,7 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         expect(main).not.toMatch(/bind\('btn-epoch',\s*\(\)\s*=>\s*app\.toggleEpoch\(\)\)/);
     });
 
-    test('main_ts_help_overlay_header_says_13_keys (round 121/128/132)', () => {
+    test('main_ts_help_overlay_header_says_14_keys (round 121/128/132/133)', () => {
         // The 3rd section header
         // in the help overlay
         // (round-120
@@ -7085,16 +7127,18 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         // "面板开关 (11 键)"
         // post-round-121,
         // "面板开关 (12 键)"
-        // post-round-128, and
+        // post-round-128,
         // "面板开关 (13 键)"
-        // post-round-132. The
-        // round-132 update is
+        // post-round-132, and
+        // "面板开关 (14 键)"
+        // post-round-133. The
+        // round-133 update is
         // important so a player
         // scanning the section
         // knows how many keys
         // are listed.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toMatch(/面板开关 \(13 键\)/);
+        expect(main).toMatch(/面板开关 \(14 键\)/);
     });
 });
 
@@ -7697,6 +7741,231 @@ describe('App — round 132: Z-key EventLog panel (50-event ring buffer from Ana
         // App constructor.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
         expect(main).toMatch(/eventLogRoot:\s*eventLogRoot\s*\?\?\s*undefined/);
+    });
+});
+
+describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex)', () => {
+    test('routeKey_k_returns_toggle_dsl_codex_action (round 133)', () => {
+        // Round 133 — lowercase
+        // k routes to
+        // toggle-dsl-codex.
+        // The K key was free
+        // in the panel-toggle
+        // group pre-round-133
+        // (no pre-existing K
+        // mapping in routeKey),
+        // so this is a new
+        // binding, not a
+        // promotion.
+        const a = routeKey('k');
+        expect(a).not.toBeNull();
+        expect(a).toEqual({ kind: 'toggle-dsl-codex' });
+    });
+
+    test('routeKey_K_returns_toggle_dsl_codex_action_for_shifted_key (round 133)', () => {
+        // Round 133 — case-
+        // insensitive mirror
+        // matches the
+        // round-85 R /
+        // round-91 ` /
+        // round-112 P /
+        // round-128 D /
+        // round-132 Z
+        // conventions.
+        const a = routeKey('K');
+        expect(a).not.toBeNull();
+        expect(a).toEqual({ kind: 'toggle-dsl-codex' });
+    });
+
+    test('App_exposes_toggleDslCodex_for_bootstrap_keydown_switch (round 133)', () => {
+        // The K key's wrapper
+        // method must exist on
+        // the App for the
+        // round-131
+        // `panelToggleMethodByKind`
+        // dispatch to find it.
+        // (The App also
+        // defines
+        // `toggleDslCodex()`
+        // as a 1-liner via
+        // the round-131
+        // `toggleByMethod`
+        // helper.)
+        const app = makeApp();
+        expect(typeof (app as unknown as { toggleDslCodex: () => void }).toggleDslCodex).toBe('function');
+    });
+
+    test('toggleDslCodex_is_a_no_op_when_dsl_codex_root_is_missing_from_DOM (round 133)', () => {
+        // If the
+        // `#dsl-codex-root`
+        // mount point is
+        // missing from the
+        // DOM, the toggle
+        // method is a safe
+        // no-op (defensive —
+        // same contract as
+        // round-117's
+        // `togglePanel`).
+        // We simulate the
+        // missing mount point
+        // by removing the
+        // root from the DOM.
+        const app = makeApp();
+        const root = document.getElementById('dsl-codex-root');
+        root?.remove();
+        // Should not throw.
+        (app as unknown as { toggleDslCodex: () => void }).toggleDslCodex();
+    });
+
+    test('toggleDslCodex_flips_hidden_attribute_on_dsl_codex_root (round 133)', () => {
+        // Happy path: the
+        // mount point is
+        // present, so the
+        // wrapper flips the
+        // `hidden` attribute
+        // and the round-117
+        // helper logs a
+        // Chinese open / close
+        // message.
+        const app = makeApp();
+        const root = document.getElementById('dsl-codex-root') as HTMLElement;
+        expect(root).not.toBeNull();
+        const beforeHidden = root.hasAttribute('hidden');
+        (app as unknown as { toggleDslCodex: () => void }).toggleDslCodex();
+        const afterHidden = root.hasAttribute('hidden');
+        expect(afterHidden).toBe(!beforeHidden);
+    });
+
+    test('BINDING_DESCRIPTIONS_for_K_documents_round_133_DslCodex_panel (round 133)', () => {
+        // The 14th panel-toggle
+        // BINDING_DESCRIPTIONS
+        // row (K) is
+        // reverse-covered —
+        // a BINDING_DESCRIPTIONS
+        // reverse-coverage
+        // test ensures the
+        // description is
+        // present + has a
+        // Chinese action.
+        const k = BINDING_DESCRIPTIONS.find((d) => d.key === 'K');
+        expect(k).toBeDefined();
+        expect(k?.action.length).toBeGreaterThan(0);
+        expect(k?.action).toMatch(/[一-鿿]/);
+        // The action mentions
+        // the panel's purpose
+        // (DSL codex / DSL
+        // rule).
+        expect(k?.action).toContain('DSL');
+    });
+
+    test('index_html_has_dsl_codex_root_for_round_133_panel (round 133)', () => {
+        // The mount point
+        // exists in the DOM
+        // (hidden by default
+        // — the K key opens
+        // it).
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toContain('id="dsl-codex-root"');
+        // And the mount
+        // point has the
+        // `hidden` attribute
+        // by default (so it
+        // doesn't appear on
+        // first load).
+        expect(html).toMatch(/<div class="panel" id="dsl-codex-root" hidden>/);
+    });
+
+    test('index_html_has_btn_dsl_codex_button_for_mouse_only_players (round 133)', () => {
+        // The 14th
+        // panel-toggle
+        // mouse button is
+        // present in the
+        // controls bar so
+        // mouse-only
+        // players can open
+        // the panel.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/<button class="ctl toggle-btn" id="btn-dsl-codex" data-key="K">/);
+    });
+
+    test('main_ts_imports_renderDslCodexPanel (round 133)', () => {
+        // File-content
+        // regression: the
+        // App module must
+        // import the
+        // round-133 panel
+        // module.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/import\s*\{[^}]*renderDslCodexPanel[^}]*\}\s*from\s*['"]\.\/ui\/DslCodexPanel['"]/);
+    });
+
+    test('main_ts_wires_dsl_codex_handle_in_constructor (round 133)', () => {
+        // The App constructor
+        // calls
+        // `renderDslCodexPanel`
+        // when the
+        // `dsl-codex-root`
+        // mount point is
+        // provided.
+        // We verify this by
+        // checking the
+        // App's dslCodexRoot
+        // has been rendered
+        // (the panel content
+        // is written into
+        // the root's
+        // innerHTML).
+        const app = makeApp();
+        const root = document.getElementById('dsl-codex-root') as HTMLElement;
+        expect(root).not.toBeNull();
+        // The
+        // `renderDslCodexPanel`
+        // is called in the
+        // constructor; the
+        // root's innerHTML
+        // should now have
+        // the
+        // `.dsl-codex-panel`
+        // wrapper (the
+        // empty state since
+        // no `hotReloadFromMemes`
+        // has been called
+        // yet).
+        expect(root.innerHTML).toContain('dsl-codex-panel');
+    });
+
+    test('main_ts_passes_dslCodexRoot_to_App_constructor (round 133)', () => {
+        // File-content
+        // regression: the
+        // bootstrap reads
+        // the
+        // `dsl-codex-root`
+        // from the DOM and
+        // passes it to the
+        // App constructor.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/dslCodexRoot:\s*dslCodexRoot\s*\?\?\s*undefined/);
+    });
+
+    test('main_ts_help_overlay_header_reads_14_keys_not_13 (round 133)', () => {
+        // The help overlay
+        // section header
+        // text was updated
+        // from "13 键" to
+        // "14 键" so the
+        // player sees the
+        // K-key DslCodex
+        // panel in the
+        // count. A
+        // regression that
+        // forgets to bump
+        // the number would
+        // be a content
+        // drift caught by
+        // this test.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toContain('面板开关 (14 键)');
+        expect(main).not.toContain('面板开关 (13 键)');
     });
 });
 
