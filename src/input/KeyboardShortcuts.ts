@@ -36,6 +36,9 @@
  *   M       — toggle NPC mind panel (round 114)
  *   V       — toggle achievements panel (round 115)
  *   B       — toggle biome library panel (round 119)
+ *   G       — toggle DM God console panel (round 121, keyboard counterpart to round-66 `btn-god`)
+ *   N       — toggle economy panel (round 121, N = Numbers = currencies)
+ *   O       — toggle epoch panel (round 121, O = the 3rd remaining panel-toggle key)
  *
  * Anything else is ignored (returns `null`). The mapping is locked
  * by the index.html help overlay and the 8-portal palette in
@@ -59,7 +62,10 @@ export type KeyboardAction =
     | { kind: 'toggle-npc-mind' }
     | { kind: 'toggle-tutorial' }
     | { kind: 'toggle-achievements' }
-    | { kind: 'toggle-biome-library' };
+    | { kind: 'toggle-biome-library' }
+    | { kind: 'toggle-god-console-panel' }
+    | { kind: 'toggle-economy' }
+    | { kind: 'toggle-epoch' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -222,6 +228,85 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // round-112-115 panel-
     // toggle group to 8 keys.
     { key: 'B',    action: '切换生物群系图鉴' },
+    // Round 121 — the G key
+    // toggles the DM God
+    // console panel
+    // (`#god-root`). This is
+    // the keyboard counterpart
+    // to the round-66 `btn-god`
+    // button. The God console
+    // is the entry point for
+    // `dm run <cmd>` lines that
+    // drive the round-66
+    // onDimension callback (and
+    // the round-87
+    // setLastBiomeAccent
+    // wiring). The G key is a
+    // separate panel-toggle
+    // action from the round-91
+    // `~/`` key (which toggles
+    // the same panel but was
+    // registered as a distinct
+    // keyboard action —
+    // `toggle-dm-console` —
+    // because the round-91
+    // backtick alias predates
+    // the round-117 panel-toggle
+    // helper). The G key
+    // routes to a fresh
+    // `toggle-god-console-panel`
+    // kind that reuses the
+    // round-117 `togglePanel`
+    // helper, so the log
+    // message format matches
+    // the other 10 panel-toggle
+    // keys.
+    { key: 'G',    action: '切换 DM God 控制台面板' },
+    // Round 121 — the N key
+    // toggles the economy
+    // panel (`#economy-root`).
+    // The economy panel shows
+    // currencies (gold / gems
+    // / dust) + inventory
+    // counts (the round-25
+    // EconomyPanel). The N
+    // mnemonic stands for
+    // "Numbers" — the panel
+    // shows numerical currency
+    // counts. N is a free
+    // letter key (E is taken
+    // by `roll world event`,
+    // L by `load game`, etc.)
+    // and is in the QWERTY
+    // row beneath the
+    // round-112-115 P/Q/W/T/F/M
+    // group.
+    { key: 'N',    action: '切换经济面板' },
+    // Round 121 — the O key
+    // toggles the epoch
+    // panel (`#epoch-root`).
+    // The epoch panel shows
+    // the current epoch
+    // number + epoch name +
+    // epoch rules added via
+    // `epoch.addRule()` (the
+    // round-65 EpochPanel). O
+    // is the 3rd new
+    // panel-toggle key in the
+    // round-121 batch (along
+    // with G and N). The O
+    // letter doesn't have a
+    // strong mnemonic fit for
+    // "epoch" but is a free
+    // QWERTY key + completes
+    // the 11-key panel-toggle
+    // group with the 3
+    // always-on HUD-tier
+    // panels that lacked a
+    // keyboard shortcut
+    // (god-console / economy
+    // / epoch).
+    { key: 'O',    action: '切换纪元面板' },
 ];
 
 /**
@@ -244,8 +329,22 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
  * 24-row `BINDING_DESCRIPTIONS`
  * list.
  *
- * The 8 keys are the
- * round-112-119 panel-toggle
+ * Round 121 — extended from
+ * 8 to 11 keys to include
+ * the G / N / O keys for
+ * the god-console / economy
+ * / epoch panels (the 3
+ * always-on HUD-tier
+ * panels that lacked a
+ * keyboard shortcut). The
+ * 3 new keys round out
+ * the 11-key panel-toggle
+ * group to cover every
+ * always-visible + on-demand
+ * panel in the HUD.
+ *
+ * The 11 keys are the
+ * round-112-121 panel-toggle
  * shortcuts in QWERTY
  * order. The labels are
  * short (one Chinese word
@@ -259,9 +358,8 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
  * co-located with the
  * source-of-truth routing
  * table. Any future toggle
- * addition (round-120+
- * G / D / Z etc.) would
- * add one row here + the
+ * addition would add one
+ * row here + the
  * corresponding BINDING_DESCRIPTIONS
  * row.
  */
@@ -274,6 +372,9 @@ export const PANEL_TOGGLE_DESCRIPTIONS: ReadonlyArray<{ key: string; action: str
     { key: 'M', action: 'NPC 心智面板' },
     { key: 'V', action: '成就面板' },
     { key: 'B', action: '生物群系图鉴' },
+    { key: 'G', action: 'DM God 控制台' },
+    { key: 'N', action: '经济面板 (货币/库存)' },
+    { key: 'O', action: '纪元面板' },
 ];
 
 /**
@@ -414,6 +515,66 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'b':
         case 'B':
             return { kind: 'toggle-biome-library' };
+        // Round 121 — G key
+        // toggles the DM God
+        // console panel
+        // (`#god-root`). The G
+        // key is the keyboard
+        // counterpart to the
+        // round-66 `btn-god`
+        // mouse button. Both
+        // routes (G keyboard +
+        // btn-god mouse) call
+        // `app.toggleGodConsolePanel()`
+        // which uses the
+        // round-117 `togglePanel`
+        // helper. The existing
+        // `~/`` key (round-91)
+        // still routes to the
+        // separate
+        // `toggle-dm-console`
+        // action that calls
+        // `godConsole.toggle()`
+        // (the DM console's
+        // own visibility
+        // method, not the
+        // round-117 helper) so
+        // the backtick shortcut
+        // keeps its
+        // pre-round-121 log
+        // format. The G key
+        // uses the standard
+        // `[kb] ${label}已打开`
+        // / `[kb] ${label}已关闭`
+        // format.
+        case 'g':
+        case 'G':
+            return { kind: 'toggle-god-console-panel' };
+        // Round 121 — N key
+        // toggles the economy
+        // panel (`#economy-root`).
+        // The economy panel
+        // shows currencies
+        // (gold / gems / dust)
+        // + inventory counts
+        // (the round-25
+        // EconomyPanel). N
+        // stands for "Numbers".
+        case 'n':
+        case 'N':
+            return { kind: 'toggle-economy' };
+        // Round 121 — O key
+        // toggles the epoch
+        // panel (`#epoch-root`).
+        // The epoch panel shows
+        // the current epoch
+        // number + epoch name +
+        // epoch rules added via
+        // `epoch.addRule()` (the
+        // round-65 EpochPanel).
+        case 'o':
+        case 'O':
+            return { kind: 'toggle-epoch' };
         default:
             return null;
     }

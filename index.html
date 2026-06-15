@@ -78,6 +78,29 @@
          for screenshot / focus
          mode. */
       #biome-library-root[hidden] { display: none; }
+      /* Round 121 — G / N / O
+         3-key batch: same pattern
+         as the round-112/113/114
+         /115/119 [hidden] rules
+         above. G / N / O shortcuts
+         hide the god-console /
+         economy / epoch panels
+         for screenshot / focus
+         mode. The 3 panels are
+         normally always-visible
+         (unlike the round-112
+         settings panel which
+         starts hidden) so the
+         [hidden] override is
+         defensive — it ensures
+         a future `display: flex`
+         rule on any of the 3
+         panel classes can't
+         override the keyboard
+         toggle's hide. */
+      #god-root[hidden] { display: none; }
+      #economy-root[hidden] { display: none; }
+      #epoch-root[hidden] { display: none; }
       .settings-panel {
         background: rgba(11, 11, 34, 0.92);
         border: 1px solid var(--neon-cyan, #4ecdc4);
@@ -550,6 +573,23 @@
            round-23 BiomeLibraryPanel
            showing the 6 biomes. -->
       <button class="ctl toggle-btn" id="btn-biome-library" data-key="B">🌍 生物群系 (B)</button>
+      <!-- Round 121 — 3 mouse
+           buttons for the G / N / O
+           3-key batch (god-console /
+           economy / epoch panels).
+           Mirror of the round-66
+           `btn-god` button (which
+           uses the round-91
+           `godConsole.toggle()` flow
+           and so is left untouched)
+           but routed through the
+           round-117 `togglePanel`
+           helper for log format
+           consistency with the other
+           8 toggle keys. -->
+      <button class="ctl toggle-btn" id="btn-god-panel" data-key="G">⚡ God (G)</button>
+      <button class="ctl toggle-btn" id="btn-economy" data-key="N">💰 经济 (N)</button>
+      <button class="ctl toggle-btn" id="btn-epoch" data-key="O">🕰 纪元 (O)</button>
       <button class="ctl" id="btn-complete">完成试炼</button>
       <button class="ctl" id="btn-save">存档</button>
       <button class="ctl" id="btn-load">读档</button>

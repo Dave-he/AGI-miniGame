@@ -5888,17 +5888,30 @@ describe('App — round 120: concentrated help-overlay section for 8 panel-toggl
     // a focused subset of
     // BINDING_DESCRIPTIONS (the
     // 8 panel-toggle rows).
+    // Round 121 extends the
+    // count from 8 to 11 (the
+    // 3 new G / N / O rows for
+    // the god-console / economy
+    // / epoch panels) so the
+    // 2 count-asserting tests
+    // below have been bumped
+    // to 11. The list-keys
+    // test mirrors the new
+    // 11-key QWERTY order.
     // -----------------------------------------------------------------
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_8_keys (round 120)', () => {
-        // The 8 panel-toggle keys:
-        // P / Q / W / T / F / M / V / B
-        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(8);
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_11_keys (round 120/121)', () => {
+        // The 11 panel-toggle
+        // keys: P / Q / W / T /
+        // F / M / V / B / G / N
+        // / O (round-121 G / N
+        // / O extension).
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(11);
     });
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_lists_8_expected_keys (round 120)', () => {
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_11_expected_keys (round 120/121)', () => {
         const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
-        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B']);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O']);
     });
 
     test('PANEL_TOGGLE_DESCRIPTIONS_every_key_has_a_chinese_action (round 120)', () => {
@@ -5995,6 +6008,243 @@ describe('App — round 120: concentrated help-overlay section for 8 panel-toggl
         // `PANEL_TOGGLE_DESCRIPTIONS`.
         expect(main).toMatch(/kb-help-section-toggle/);
         expect(main).toMatch(/for \(const d of PANEL_TOGGLE_DESCRIPTIONS\)/);
+    });
+});
+
+describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 — god-console / economy / epoch)', () => {
+    // -----------------------------------------------------------------
+    // routeKey extends from
+    // 24 to 27 routable keys
+    // (the round-121 G / N / O
+    // batch). Each new key
+    // maps to a fresh
+    // KeyboardAction kind:
+    //   'g' / 'G' → toggle-god-console-panel
+    //   'n' / 'N' → toggle-economy
+    //   'o' / 'O' → toggle-epoch
+    // (round 121)
+    // -----------------------------------------------------------------
+
+    test('routeKey_g_lowercase_returns_toggle_god_console_panel (round 121)', () => {
+        const action = routeKey('g');
+        expect(action).toEqual({ kind: 'toggle-god-console-panel' });
+    });
+
+    test('routeKey_G_uppercase_returns_toggle_god_console_panel (round 121)', () => {
+        // Case-insensitive mirror
+        // (same convention as
+        // round-85 R / round-91
+        // ` / round-112-119 P/Q/
+        // W/T/F/M/V/B).
+        const action = routeKey('G');
+        expect(action).toEqual({ kind: 'toggle-god-console-panel' });
+    });
+
+    test('routeKey_n_lowercase_returns_toggle_economy (round 121)', () => {
+        const action = routeKey('n');
+        expect(action).toEqual({ kind: 'toggle-economy' });
+    });
+
+    test('routeKey_N_uppercase_returns_toggle_economy (round 121)', () => {
+        const action = routeKey('N');
+        expect(action).toEqual({ kind: 'toggle-economy' });
+    });
+
+    test('routeKey_o_lowercase_returns_toggle_epoch (round 121)', () => {
+        const action = routeKey('o');
+        expect(action).toEqual({ kind: 'toggle-epoch' });
+    });
+
+    test('routeKey_O_uppercase_returns_toggle_epoch (round 121)', () => {
+        const action = routeKey('O');
+        expect(action).toEqual({ kind: 'toggle-epoch' });
+    });
+
+    // -----------------------------------------------------------------
+    // PANEL_TOGGLE_DESCRIPTIONS
+    // extends from 8 to 11
+    // rows. The 3 new rows
+    // (G / N / O) are appended
+    // in QWERTY order at the
+    // end of the list (after
+    // B). This preserves the
+    // round-120 reading order
+    // (P / Q / W / T / F / M /
+    // V / B / G / N / O) and
+    // matches the
+    // BINDING_DESCRIPTIONS
+    // row order.
+    // -----------------------------------------------------------------
+
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_11_keys (round 121)', () => {
+        // Extends round-120
+        // 8 rows by 3 new
+        // panel-toggle rows
+        // (G / N / O).
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(11);
+    });
+
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_11_expected_keys (round 121)', () => {
+        // 11 panel-toggle keys
+        // in QWERTY order. The
+        // round-120 8 keys are
+        // preserved + 3 new
+        // keys (G / N / O) are
+        // appended.
+        const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O']);
+    });
+
+    test('PANEL_TOGGLE_DESCRIPTIONS_G_N_O_rows_have_chinese_actions (round 121)', () => {
+        // The 3 new rows
+        // (G / N / O) each
+        // have a Chinese
+        // action label.
+        const g = PANEL_TOGGLE_DESCRIPTIONS.find((d) => d.key === 'G');
+        const n = PANEL_TOGGLE_DESCRIPTIONS.find((d) => d.key === 'N');
+        const o = PANEL_TOGGLE_DESCRIPTIONS.find((d) => d.key === 'O');
+        expect(g).toBeDefined();
+        expect(n).toBeDefined();
+        expect(o).toBeDefined();
+        expect(g!.action).toMatch(/[一-鿿]/);
+        expect(n!.action).toMatch(/[一-鿿]/);
+        expect(o!.action).toMatch(/[一-鿿]/);
+    });
+
+    test('PANEL_TOGGLE_DESCRIPTIONS_G_N_O_rows_match_BINDING_DESCRIPTIONS (round 121)', () => {
+        // The 3 new rows mirror
+        // the BINDING_DESCRIPTIONS
+        // G / N / O rows
+        // (defense: a future
+        // refactor that renames
+        // a toggle shortcut
+        // without updating this
+        // list would silently
+        // desync the help
+        // overlay).
+        for (const k of ['G', 'N', 'O']) {
+            const match = BINDING_DESCRIPTIONS.find((b) => b.key === k);
+            expect(match).toBeDefined();
+        }
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test: the
+    // 3 new [hidden] CSS rules
+    // for `#god-root`,
+    // `#economy-root`,
+    // `#epoch-root` (mirror
+    // the round-112-119
+    // pattern). Defense: a
+    // future `display: flex`
+    // rule on any of the 3
+    // panel classes would
+    // otherwise override the
+    // keyboard toggle's hide.
+    // -----------------------------------------------------------------
+
+    test('index_html_has_god_root_hidden_css_rule (round 121)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/#god-root\[hidden\]\s*\{\s*display:\s*none/);
+    });
+
+    test('index_html_has_economy_root_hidden_css_rule (round 121)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/#economy-root\[hidden\]\s*\{\s*display:\s*none/);
+    });
+
+    test('index_html_has_epoch_root_hidden_css_rule (round 121)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/#epoch-root\[hidden\]\s*\{\s*display:\s*none/);
+    });
+
+    test('index_html_has_btn_god_panel_mouse_button (round 121)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // 3 new mouse buttons
+        // mirror the G / N / O
+        // keyboard keys. Each
+        // uses the round-116
+        // `data-key` attribute
+        // convention so the
+        // button label shows
+        // the keyboard shortcut.
+        expect(html).toMatch(/id="btn-god-panel"[^>]*data-key="G"/);
+        expect(html).toMatch(/id="btn-economy"[^>]*data-key="N"/);
+        expect(html).toMatch(/id="btn-epoch"[^>]*data-key="O"/);
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test: main.ts
+    // now has 3 App toggle
+    // methods (toggleGodConsole
+    // Panel / toggleEconomy /
+    // toggleEpoch) and the
+    // keydown bootstrap switch
+    // dispatches 3 new cases.
+    // -----------------------------------------------------------------
+
+    test('main_ts_exposes_toggle_god_console_panel_method (round 121)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        // The 3 new toggle
+        // methods are 1-line
+        // wrappers using the
+        // round-117 `togglePanel`
+        // helper. Each method
+        // passes the panel's
+        // rootId, Chinese label,
+        // and key letter.
+        expect(main).toMatch(/toggleGodConsolePanel\(\):\s*void\s*\{\s*this\.togglePanel\('god-root',\s*'DM God 控制台',\s*'G'\)/);
+        expect(main).toMatch(/toggleEconomy\(\):\s*void\s*\{\s*this\.togglePanel\('economy-root',\s*'经济面板',\s*'N'\)/);
+        expect(main).toMatch(/toggleEpoch\(\):\s*void\s*\{\s*this\.togglePanel\('epoch-root',\s*'纪元面板',\s*'O'\)/);
+    });
+
+    test('main_ts_bootstrap_dispatches_3_new_toggle_cases (round 121)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        // The bootstrap keydown
+        // switch (added in
+        // round-57 + extended
+        // in round-85/91/112-
+        // 119) routes the 3 new
+        // KeyboardAction kinds
+        // to the 3 new App
+        // toggle methods.
+        expect(main).toMatch(/case 'toggle-god-console-panel':\s*app\.toggleGodConsolePanel\(\);\s*break;/);
+        expect(main).toMatch(/case 'toggle-economy':\s*app\.toggleEconomy\(\);\s*break;/);
+        expect(main).toMatch(/case 'toggle-epoch':\s*app\.toggleEpoch\(\);\s*break;/);
+    });
+
+    test('main_ts_binds_3_new_mouse_buttons (round 121)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        // 3 new mouse buttons
+        // (`btn-god-panel` /
+        // `btn-economy` /
+        // `btn-epoch`) bind
+        // to the 3 new App
+        // toggle methods. Each
+        // is a 1-line wrapper
+        // around
+        // `app.toggleX()`.
+        expect(main).toMatch(/bind\('btn-god-panel',\s*\(\)\s*=>\s*app\.toggleGodConsolePanel\(\)\)/);
+        expect(main).toMatch(/bind\('btn-economy',\s*\(\)\s*=>\s*app\.toggleEconomy\(\)\)/);
+        expect(main).toMatch(/bind\('btn-epoch',\s*\(\)\s*=>\s*app\.toggleEpoch\(\)\)/);
+    });
+
+    test('main_ts_help_overlay_header_says_11_keys (round 121)', () => {
+        // The 3rd section header
+        // in the help overlay
+        // (round-120
+        // `kb-help-section-toggle`)
+        // says "面板开关 (8 键)"
+        // pre-round-121 and
+        // "面板开关 (11 键)"
+        // post-round-121. The
+        // round-121 update is
+        // important so a player
+        // scanning the section
+        // knows how many keys
+        // are listed.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/面板开关 \(11 键\)/);
     });
 });
 

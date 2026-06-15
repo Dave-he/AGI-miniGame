@@ -1598,6 +1598,63 @@ class App {
     toggleBiomeLibrary(): void { this.togglePanel('biome-library-root', '生物群系图鉴', 'B'); }
 
     /**
+     * Round 121 — G key
+     * counterpart to the
+     * round-66 `btn-god`
+     * mouse button. Toggles
+     * the `#god-root` DM God
+     * console panel via the
+     * round-117 `togglePanel`
+     * helper. The pre-existing
+     * `~/`` key (round-91)
+     * still routes to the
+     * separate `toggle-dm-console`
+     * action that calls
+     * `godConsole.toggle()`
+     * directly (the DM
+     * console's own visibility
+     * method, not the
+     * round-117 helper) so
+     * the backtick shortcut
+     * keeps its pre-round-121
+     * log format. The G key
+     * uses the standard
+     * `[kb] ${label}已打开`
+     * / `[kb] ${label}已关闭`
+     * format.
+     */
+    toggleGodConsolePanel(): void { this.togglePanel('god-root', 'DM God 控制台', 'G'); }
+
+    /**
+     * Round 121 — N key
+     * counterpart. Toggles
+     * the `#economy-root`
+     * panel (the round-25
+     * EconomyPanel showing
+     * currencies + inventory
+     * counts) via the
+     * round-117 `togglePanel`
+     * helper. N is mnemonic
+     * for "Numbers" (the
+     * panel's primary
+     * content).
+     */
+    toggleEconomy(): void { this.togglePanel('economy-root', '经济面板', 'N'); }
+
+    /**
+     * Round 121 — O key
+     * counterpart. Toggles
+     * the `#epoch-root`
+     * panel (the round-65
+     * EpochPanel showing
+     * the current epoch
+     * number + epoch rules)
+     * via the round-117
+     * `togglePanel` helper.
+     */
+    toggleEpoch(): void { this.togglePanel('epoch-root', '纪元面板', 'O'); }
+
+    /**
      * Round 117 — shared panel-toggle
      * helper. The 7 panel-toggle
      * methods (toggleSettings /
@@ -2734,6 +2791,28 @@ async function bootstrap(): Promise<void> {
     // closes the
     // `BiomeLibraryPanel`.
     bind('btn-biome-library', () => app.toggleBiomeLibrary());
+    // Round 121 — 3 mouse
+    // button counterparts to
+    // the round-121 G / N / O
+    // keyboard shortcuts
+    // (god-console / economy /
+    // epoch panels). The 3
+    // buttons extend the
+    // round-116 7-button
+    // toggle cluster + the
+    // round-119 8th biome-
+    // library button to 11
+    // buttons total. Same
+    // case-insensitive
+    // mirror convention as
+    // the keyboard keys —
+    // the btn- route +
+    // the kb- route call
+    // the same `app.toggleX()`
+    // method.
+    bind('btn-god-panel',  () => app.toggleGodConsolePanel());
+    bind('btn-economy',    () => app.toggleEconomy());
+    bind('btn-epoch',      () => app.toggleEpoch());
     bind('btn-complete',  () => app.completeRun(2500, [
         { itemId: 'gold', quantity: 100 },
         { itemId: 'gem',  quantity: 5 },
@@ -2784,9 +2863,10 @@ async function bootstrap(): Promise<void> {
                 body.appendChild(actEl);
             }
             // Round 120 — Section 3:
-            // the 8 panel-toggle
+            // the 11 panel-toggle
             // keys (P / Q / W + T /
-            // F / M + V + B), shown
+            // F / M + V + B + G / N
+            // / O), shown
             // in a dedicated visually-
             // distinct section. The
             // player can scan this
@@ -2802,7 +2882,7 @@ async function bootstrap(): Promise<void> {
             // border.
             const toggleHeader = document.createElement('div');
             toggleHeader.className = 'kb-help-section kb-help-section-toggle';
-            toggleHeader.textContent = '面板开关 (8 键)';
+            toggleHeader.textContent = '面板开关 (11 键)';
             body.appendChild(toggleHeader);
             for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
                 const keyEl = document.createElement('div');
@@ -2963,6 +3043,28 @@ async function bootstrap(): Promise<void> {
             // so the toggle is
             // idempotent.
             case 'toggle-biome-library': app.toggleBiomeLibrary(); break;
+            // Round 121 — G / N / O
+            // 3-key batch. All 3
+            // route through the
+            // round-117 `togglePanel`
+            // helper, so the
+            // keydown switch
+            // collapses to 3
+            // one-liners. The G
+            // key is distinct from
+            // the round-91 `~/``
+            // key (which routes to
+            // `toggle-dm-console`
+            // and calls
+            // `godConsole.toggle()`
+            // directly) so the
+            // backtick shortcut
+            // keeps its
+            // pre-round-121 log
+            // format.
+            case 'toggle-god-console-panel': app.toggleGodConsolePanel(); break;
+            case 'toggle-economy':          app.toggleEconomy();          break;
+            case 'toggle-epoch':            app.toggleEpoch();            break;
         }
         // Only swallow the event when we actually handled it so
         // tab navigation, Esc-into-fullscreen-exit etc. still
