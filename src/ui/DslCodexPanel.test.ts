@@ -529,3 +529,219 @@ test('round_134_history_refresh_picks_up_new_history_array', () => {
     expect(root.innerHTML).toContain('Damage(1)');
 });
 
+// ---------------------------------------------------------------------------
+// Round 135 — click-to-
+// apply from the
+// history list.
+// `renderDslCodexPanel`
+// 6-arg signature
+// adds an optional
+// `onApplyHistory`
+// callback. When
+// provided, each
+// history row gets a
+// `dsl-codex-history-row-clickable`
+// class +
+// `data-rule-idx`
+// attribute; clicking
+// (or pressing
+// Enter / Space)
+// on a row calls
+// the callback with
+// the rule at that
+// row's index.
+// ---------------------------------------------------------------------------
+
+test('round_135_no_onApplyHistory_renders_non_clickable_rows', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    // 5-arg
+    // signature
+    // (no
+    // onApplyHistory)
+    // — rows are
+    // static
+    // divs.
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    expect(root.innerHTML).toContain('dsl-codex-history-row');
+    // No
+    // clickable
+    // class
+    // because
+    // onApplyHistory
+    // was
+    // omitted.
+    expect(root.innerHTML).not.toContain('dsl-codex-history-row-clickable');
+    expect(root.innerHTML).not.toContain('data-rule-idx');
+});
+
+test('round_135_with_onApplyHistory_marks_rows_clickable', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+        undefined,
+        (rule) => rule, // onApplyHistory
+    );
+    // Both rows
+    // have the
+    // clickable
+    // class
+    // + a
+    // `data-rule-idx`
+    // attribute
+    // (0-based).
+    expect(root.innerHTML).toContain('dsl-codex-history-row-clickable');
+    expect(root.innerHTML).toContain('data-rule-idx="0"');
+    expect(root.innerHTML).toContain('data-rule-idx="1"');
+});
+
+test('round_135_clicking_history_row_invokes_onApplyHistory_with_correct_rule', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X'] }] },
+    ];
+    const applied: DslRule[] = [];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+        undefined,
+        (r) => { applied.push(r); },
+    );
+    // Click the
+    // 2nd row
+    // (idx=1).
+    const rows = root.querySelectorAll('.dsl-codex-history-row-clickable');
+    expect(rows.length).toBe(2);
+    (rows[1] as HTMLElement).click();
+    // The
+    // callback
+    // received
+    // the rule
+    // at idx=1.
+    expect(applied.length).toBe(1);
+    expect(applied[0].event.kind).toBe('Timer');
+    expect(applied[0].event.arg).toBe(5);
+});
+
+test('round_135_pressing_enter_on_history_row_invokes_onApplyHistory', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    const applied: DslRule[] = [];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+        undefined,
+        (r) => { applied.push(r); },
+    );
+    const row = root.querySelector('.dsl-codex-history-row-clickable') as HTMLElement;
+    // Dispatch
+    // a
+    // keydown
+    // event
+    // (Enter).
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(applied.length).toBe(1);
+    expect(applied[0].actions[0].kind).toBe('Damage');
+});
+
+test('round_135_history_click_works_even_when_current_rule_is_null', () => {
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+    ];
+    const applied: DslRule[] = [];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+        undefined,
+        (r) => { applied.push(r); },
+    );
+    // The empty
+    // state is
+    // rendered
+    // (current
+    // rule is
+    // null) but
+    // the
+    // history
+    // is still
+    // clickable.
+    expect(root.innerHTML).toContain('dsl-codex-empty');
+    const row = root.querySelector('.dsl-codex-history-row-clickable') as HTMLElement;
+    expect(row).toBeTruthy();
+    row.click();
+    expect(applied.length).toBe(1);
+    expect(applied[0].actions[0].kind).toBe('Heal');
+});
+
+test('round_135_clicking_outside_history_row_does_not_invoke_callback', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    const applied: DslRule[] = [];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+        undefined,
+        (r) => { applied.push(r); },
+    );
+    // Click
+    // somewhere
+    // inside the
+    // panel but
+    // not on a
+    // history
+    // row (e.g.
+    // the title
+    // element).
+    const title = root.querySelector('.dsl-codex-title') as HTMLElement;
+    title.click();
+    expect(applied.length).toBe(0);
+});
+

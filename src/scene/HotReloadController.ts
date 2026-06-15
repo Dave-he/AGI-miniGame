@@ -17,6 +17,32 @@
 import { DslExecutor } from './DslExecutor';
 import { parseDSL, DslRule } from '../dsl/MemeCompiler';
 
+/**
+ * Render a `DslRule`
+ * back to its source
+ * DSL form (used for
+ * the `HotReloadEvent`
+ * `dsl` payload during
+ * `reApplyRule`).
+ * Mirrors the
+ * `DslCodexPanel`
+ * `ruleToSource`
+ * helper exactly.
+ */
+function ruleToSource(rule: DslRule): string {
+    const eventPart = rule.event.arg !== undefined
+        ? `On(${rule.event.kind}, ${JSON.stringify(rule.event.arg)})`
+        : `On(${rule.event.kind})`;
+    const actionParts = rule.actions.map((a) => {
+        if (a.args.length === 0) {
+            return `${a.kind}()`;
+        }
+        const argStrs = a.args.map((arg) => JSON.stringify(arg));
+        return `${a.kind}(${argStrs.join(', ')})`;
+    });
+    return `${eventPart} -> ${actionParts.join(', ')}`;
+}
+
 export type HotReloadState = 'idle' | 'compiling' | 'shielded' | 'applied' | 'rejected';
 
 export interface HotReloadEvent {
@@ -280,6 +306,68 @@ export class HotReloadController {
         // zombie rule.
         this.activeRule = null;
         this.emit({ state: 'idle', charge: 0 });
+    }
+
+    /**
+     * Round 135 — re-apply
+     * a previously-applied
+     * rule (typically a
+     * history entry from
+     * `getRuleHistory()`).
+     * This is the click-to-
+     * apply path: the
+     * player picks a rule
+     * out of the DslCodex
+     * "历史" list and the
+     * controller re-runs
+     * the same machinery
+     * as a fresh apply
+     * (rate-limit check,
+     * exec.apply, history
+     * push, state emit).
+     *
+     * Bypasses the
+     * compile-time delay
+     * — the rule has
+     * already been parsed
+     * and validated when
+     * it was first applied,
+     * so re-applying is
+     * immediate.
+     *
+     * Returns true if
+     * applied, false if
+     * rate-limited or if
+     * the controller is
+     * mid-compile.
+     */
+    reApplyRule(rule: DslRule): boolean {
+        // Defensive: if a
+        // compile is already
+        // running, don't pile
+        // on a second one.
+        if (this.state !== 'idle' && this.state !== 'applied') return false;
+        if (!this.rateOk()) {
+            this.rejectCount += 1;
+            this.emit({ state: 'rejected', reason: 'rate limit', charge: 0, rule });
+            return false;
+        }
+        // Bypass the
+        // compile phase:
+        // the rule was
+        // already validated
+        // when first applied.
+        // Render the source
+        // DSL from the rule
+        // for the event
+        // payload (mirrors
+        // what `begin()`
+        // does for the dsl
+        // field).
+        const dsl = ruleToSource(rule);
+        this.activeRule = rule;
+        this.applyNow(rule, dsl);
+        return true;
     }
 
     private _lastTimer: any = null;

@@ -160,8 +160,30 @@ function renderActionRows(rule: DslRule): string {
  * applied yet), the
  * "暂无历史" empty
  * state is shown.
+ *
+ * Round 135 — when
+ * the `onApplyHistory`
+ * callback is
+ * provided, each row
+ * gets a
+ * `dsl-codex-history-row-clickable`
+ * class + a
+ * `data-rule-idx`
+ * attribute so the
+ * host's click
+ * handler can find
+ * the right entry
+ * (round-135 click-to-
+ * apply UX). When
+ * the callback is
+ * omitted, rows are
+ * plain divs (backward
+ * compat).
  */
-function renderHistoryList(history: ReadonlyArray<DslRule>): string {
+function renderHistoryList(
+    history: ReadonlyArray<DslRule>,
+    clickable: boolean,
+): string {
     if (history.length === 0) {
         return `<div class="dsl-codex-history-empty">暂无历史</div>`;
     }
@@ -176,8 +198,14 @@ function renderHistoryList(history: ReadonlyArray<DslRule>): string {
         // stretch the
         // panel).
         const preview = source.length > 80 ? source.slice(0, 77) + '…' : source;
+        const cls = clickable
+            ? 'dsl-codex-history-row dsl-codex-history-row-clickable'
+            : 'dsl-codex-history-row';
+        const dataAttr = clickable
+            ? ` data-rule-idx="${i}" role="button" tabindex="0"`
+            : '';
         return `
-            <div class="dsl-codex-history-row">
+            <div class="${cls}"${dataAttr}>
                 <span class="dsl-codex-history-idx">#${i + 1}</span>
                 <span class="dsl-codex-history-source">${escapeHtml(preview)}</span>
                 <span class="dsl-codex-history-actions">${rule.actions.length} 动作</span>
@@ -208,18 +236,78 @@ export function renderDslCodexPanel(
      */
     getRuleHistory?: () => ReadonlyArray<DslRule>,
     i18n?: { t: (k: string, p?: any) => string },
+    /**
+     * Round 135 —
+     * optional click-
+     * to-apply
+     * callback. When
+     * provided, each
+     * history row
+     * becomes
+     * clickable and
+     * clicking (or
+     * pressing Enter
+     * on) it calls
+     * this callback
+     * with the rule
+     * at that row's
+     * index. When
+     * omitted, the
+     * history rows
+     * are static
+     * divs (backward
+     * compat with
+     * round-134).
+     */
+    onApplyHistory?: (rule: DslRule) => void,
 ): DslCodexPanelHandle {
     const t = (k: string, params?: any) => i18n ? i18n.t(k, params) : k;
+
+    /**
+     * Round 135 —
+     * delegate click
+     * + keyboard
+     * (Enter / Space)
+     * events on
+     * `.dsl-codex-history-row-clickable`
+     * elements to the
+     * `onApplyHistory`
+     * callback. The
+     * row's
+     * `data-rule-idx`
+     * attribute tells
+     * us which entry
+     * to pull from
+     * the current
+     * `getRuleHistory()`
+     * snapshot.
+     */
+    const dispatchClick = (target: EventTarget | null) => {
+        if (!onApplyHistory || !getRuleHistory) return;
+        const el = (target as HTMLElement | null)?.closest(
+            '.dsl-codex-history-row-clickable'
+        ) as HTMLElement | null;
+        if (!el) return;
+        const idxAttr = el.getAttribute('data-rule-idx');
+        if (idxAttr === null) return;
+        const idx = Number.parseInt(idxAttr, 10);
+        if (!Number.isFinite(idx)) return;
+        const history = getRuleHistory();
+        const rule = history[idx];
+        if (rule) onApplyHistory(rule);
+    };
 
     const doRender = () => {
         const rule = getCurrentRule();
         const outcome = getLastOutcome();
+        const hasHistory = !!getRuleHistory;
+        const clickable = hasHistory && !!onApplyHistory;
         if (rule === null) {
             root.innerHTML = `
                 <div class="dsl-codex-panel">
                     <div class="dsl-codex-title">${escapeHtml(t('dslCodex.title'))}</div>
                     <div class="dsl-codex-empty">暂无 DSL — 按 1-8 进入 atom 后由 AGI 自动生成</div>
-                    ${getRuleHistory ? renderHistoryList(getRuleHistory()) : ''}
+                    ${hasHistory ? renderHistoryList(getRuleHistory!(), clickable) : ''}
                 </div>
             `;
             return;
@@ -243,13 +331,39 @@ export function renderDslCodexPanel(
                 <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.breakdown'))}</div>
                 ${renderEventRow(rule)}
                 ${renderActionRows(rule)}
-                ${getRuleHistory ? `
+                ${hasHistory ? `
                     <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))}</div>
-                    ${renderHistoryList(getRuleHistory())}
+                    ${renderHistoryList(getRuleHistory!(), clickable)}
                 ` : ''}
             </div>
         `;
     };
+
+    // Round 135 —
+    // wire click +
+    // keyboard
+    // activation on
+    // the panel root
+    // (event delegation
+    // — survives
+    // `doRender()`
+    // re-renders
+    // because the
+    // listener is
+    // attached to the
+    // stable `root`
+    // element, not to
+    // the per-render
+    // children).
+    if (onApplyHistory) {
+        root.addEventListener('click', (e) => dispatchClick(e.target));
+        root.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                dispatchClick(e.target);
+            }
+        });
+    }
 
     doRender();
     return { refresh: doRender };

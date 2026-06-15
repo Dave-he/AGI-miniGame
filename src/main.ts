@@ -1179,6 +1179,42 @@ class App {
                 // codex block.
                 () => this.hot.getRuleHistory(),
                 this.i18n,
+                // Round 135 —
+                // click-to-apply
+                // callback: when
+                // the player
+                // clicks a
+                // history row,
+                // re-apply the
+                // rule via the
+                // `HotReloadController`
+                // `reApplyRule()`
+                // (immediate,
+                // bypasses the
+                // compile phase).
+                // We also close
+                // the panel +
+                // emit a Chinese
+                // log so the
+                // player sees
+                // the result of
+                // the re-apply.
+                (rule) => {
+                    const ok = this.hot.reApplyRule(rule);
+                    this.toggleDslCodex();
+                    if (ok) {
+                        this.analytics.track('dsl.applied', {
+                            source: 'history-replay',
+                            event: rule.event.kind,
+                            actions: rule.actions.length,
+                        });
+                    } else {
+                        this.analytics.track('dsl.rejected', {
+                            reason: 'history-replay-rate-limit-or-compile-in-flight',
+                            event: rule.event.kind,
+                        });
+                    }
+                },
             );
         }
         this.economy = new EconomyPanel(refs.economyRoot, this.worldState);
