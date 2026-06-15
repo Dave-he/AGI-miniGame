@@ -2418,3 +2418,233 @@ describe('App — round 83 e2e: rollback rehydrate from WASM-stub snapshot', () 
         expect(setRollbackCount2).toHaveBeenCalledWith(0);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 89 — e2e tests for the round-87 `setLastBiomeAccent`
+// wiring. Round 87 added 4 call sites in main.ts that
+// resolve `biome → color` (via `getBiomeAtmosphere`) and
+// push the value to the HUD. The unit-level contract
+// (HUDState field + setter + dim panel style) is locked
+// in HUD.test.ts; this block locks the App-level wiring
+// so a future refactor of `enterNewDimension`,
+// `rollbackToLastGood`, or `loadGame` can't silently
+// drop the accent.
+//
+// The 4 call sites:
+//   1. enterNewDimension (post-themeToScene path, line ~886)
+//   2. DmMode.onDimension (DM-driven path, line ~273)
+//   3. rollbackToLastGood (line ~1509)
+//   4. loadGame (line ~1574)
+//
+// `getBiomeAtmosphere('forest').particleColor` = '#90c290'
+// `getBiomeAtmosphere('desert').particleColor` = '#ffd166'
+// `getBiomeAtmosphere('ice').particleColor`    = '#ffffff'
+// ---------------------------------------------------------------------------
+
+describe('App — round 89 e2e: setLastBiomeAccent wiring', () => {
+    // Local `makeBridgeBlueprint` — identical to
+    // the round-80 + round-83 fixture. Inlined
+    // here (not module-scoped) so this block is
+    // self-contained.
+    function makeBridgeBlueprintR89(
+        seed: number,
+        visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon',
+        musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse',
+    ) {
+        return {
+            id: `dim_${visualStyle}_${seed}_r89`,
+            name: `e2e r89 ${visualStyle}`,
+            description: 'round 89 e2e fixture',
+            atomIds: ['tower_defense'],
+            atomWeights: { tower_defense: 1 },
+            difficulty: 0.5,
+            rules: [],
+            rewards: [],
+            theme: { name: 'e2e_r89', visualStyle, musicMood, colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1'] },
+            timeLimitSecs: 60,
+            objectives: [],
+        };
+    }
+
+    // Stub the bridge + sceneGenWasm + side-effect
+    // surfaces that `enterAtom` touches. The
+    // `enterAtom` path (round-65) is the one that
+    // pushes `setLastBiome` + `setLastBiomeAccent`
+    // (round-87) into the HUD; `enterNewDimension`
+    // itself does NOT push the biome into the HUD
+    // (only the keyboard 1-8 jump path does).
+    async function enterAtomAccentTest(
+        app: App,
+        seed: number,
+        visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon',
+        musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse',
+        wasmOverrides: Parameters<typeof makeWasmStub>[0] = {},
+    ): Promise<void> {
+        jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async () => ({
+                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e r89' },
+                atomIds: ['tower_defense'],
+                blueprint: makeBridgeBlueprintR89(seed, visualStyle, musicMood),
+                modules: [],
+                seed,
+                configSource: 'wasm',
+            }));
+        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = makeWasmStub(wasmOverrides);
+        jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
+            .mockReturnValue(['mock_npc_a']);
+        jest
+            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn(app as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition')
+            .mockImplementation(() => undefined);
+        await (app as unknown as { enterAtom: (atomId: string) => Promise<void> }).enterAtom('tower_defense');
+    }
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('enterAtom_keyboard_jump_pushes_accent_from_WASM_resolved_biome', async () => {
+        // The round-65/87 keyboard 1-8 jump path:
+        // `enterAtom('tower_defense')` resolves the
+        // biome via themeToScene (WASM stub returns
+        // biome='forest'), then pushes the forest
+        // particleColor '#90c290' to the HUD.
+        const app = makeApp();
+        const setAccent = jest
+            .spyOn((app as unknown as { hud: { setLastBiomeAccent: (c: string | null) => void } }).hud, 'setLastBiomeAccent')
+            .mockImplementation(() => undefined);
+        await enterAtomAccentTest(app, 0xFEED0001, 'fantasy', 'mysterious', {
+            biomeId: 'forest',
+        });
+        expect(setAccent).toHaveBeenCalledWith('#90c290');
+    });
+
+    test('DmMode_run_dim_pushes_accent_for_DM_resolved_biome', async () => {
+        // The DM-driven path: player types
+        // `dim 5 5 desert` in the DM console. The
+        // DmMode parses it and dispatches to the
+        // `onDimension` callback in main.ts, which
+        // is the round-66 + round-87 wiring under
+        // test.
+        const app = makeApp();
+        // Stub the side effects that the DM
+        // callback triggers so the test stays
+        // headless (no WebGL, no AudioContext).
+        jest
+            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
+            .mockImplementation(() => undefined);
+        const setAccent = jest
+            .spyOn((app as unknown as { hud: { setLastBiomeAccent: (c: string | null) => void } }).hud, 'setLastBiomeAccent')
+            .mockImplementation(() => undefined);
+
+        // DmMode's public API is `run(line)`, not
+        // `handle(line)`. The 'dim 5 5 desert' form
+        // dispatches to the onDimension callback.
+        (app as unknown as { dm: { run: (line: string) => unknown } }).dm.run('dim 5 5 desert');
+
+        expect(setAccent).toHaveBeenCalledWith('#ffd166');
+    });
+
+    test('rollbackToLastGood_pushes_accent_from_restored_biome', async () => {
+        // The rollback path: worldState.lastBiome
+        // is restored from the backup, then
+        // setLastBiomeAccent is called with the
+        // matching particleColor. We use biome
+        // 'ice' here so the assertion can
+        // distinguish it from the forest default
+        // in makeSnap.
+        const app = makeApp();
+        // Drive an `enterAtom` first to seed
+        // worldState.lastBiome = 'ice' (the
+        // backup biome). The backup snapshot is
+        // set up by the round-79 failure path;
+        // we call backupFailedSnapshot directly
+        // to keep the test focused on the
+        // rollback restore step.
+        await enterAtomAccentTest(app, 0xFEED0002, 'fantasy', 'melancholic', {
+            biomeId: 'ice',
+        });
+        (app as unknown as { worldState: { backupFailedSnapshot: (b: unknown) => void } }).worldState.backupFailedSnapshot({
+            blueprint: makeSnap({ biomeId: 'ice' }),
+            seed: 0xFEED0002,
+            biome: 'ice',
+            npcSnapshot: [],
+        });
+        // Spy on the post-restore accent push.
+        const setAccent = jest
+            .spyOn((app as unknown as { hud: { setLastBiomeAccent: (c: string | null) => void } }).hud, 'setLastBiomeAccent')
+            .mockImplementation(() => undefined);
+        (app as unknown as { rollbackToLastGood: () => void }).rollbackToLastGood();
+        // After rollback, the HUD must receive
+        // the ice biome's particleColor.
+        expect(setAccent).toHaveBeenCalledWith('#ffffff');
+    });
+
+    test('loadGame_pushes_accent_from_loaded_biome', async () => {
+        // The save/load path: loadGame calls
+        // `this.save.restore()`, which clears
+        // WorldState and re-applies the saved
+        // fields. We stub `restore()` to seed
+        // lastBiome='desert' and return true so
+        // the round-43 + round-87 HUD-write
+        // sequence runs.
+        const app = makeApp();
+        // Stub save.restore to seed the
+        // desert biome and return success.
+        jest
+            .spyOn((app as unknown as { save: { restore: () => boolean } }).save, 'restore')
+            .mockImplementation(() => {
+                (app as unknown as { worldState: { lastBiome: string } }).worldState.lastBiome = 'desert';
+                return true;
+            });
+        // Stub all the other HUD setters that
+        // loadGame calls so we focus the
+        // assertion on setLastBiomeAccent alone.
+        jest.spyOn((app as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome').mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { hud: { setMinimap: (m: string | null) => void } }).hud, 'setMinimap').mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { hud: { setNpcMindsSnapshot: (s: unknown) => void } }).hud, 'setNpcMindsSnapshot').mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots').mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear').mockImplementation(() => undefined);
+        jest.spyOn(app as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition').mockImplementation(() => undefined);
+        const setAccent = jest
+            .spyOn((app as unknown as { hud: { setLastBiomeAccent: (c: string | null) => void } }).hud, 'setLastBiomeAccent')
+            .mockImplementation(() => undefined);
+
+        (app as unknown as { loadGame: () => void }).loadGame();
+
+        // loadGame should push the desert
+        // particleColor since the stubbed
+        // restore() set WorldState.lastBiome
+        // to 'desert' before the round-87
+        // wiring read it.
+        expect(setAccent).toHaveBeenCalledWith('#ffd166');
+    });
+});
