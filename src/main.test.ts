@@ -3428,7 +3428,7 @@ describe('App — round 99: enterNewDimension dual-call race e2e (auto-generated
 // ---------------------------------------------------------------------------
 
 describe('App — round 103: loadGame in-flight guard (rejected, see comments above)', () => {
-    test('loadGame_called_twice_sequential_runs_both (synchronous release of guard)', () => {
+    test('loadGame_called_twice_sequential_runs_both_without_debounce (round 103 empirical evidence)', () => {
         // Documents WHY a `try/finally` in-flight guard
         // doesn't help for `loadGame`. Two sequential
         // test calls both reach `save.restore()` because
@@ -3439,16 +3439,155 @@ describe('App — round 103: loadGame in-flight guard (rejected, see comments ab
         // evidence so a future refactor that tries to
         // re-add the guard sees the empirical reason it
         // didn't work.
+        //
+        // Round 104 caveat: this test is now partly
+        // obsolete. With the round-104 time-based
+        // debounce, sequential calls within 500ms
+        // short-circuit (call count === 1). The
+        // round-104 `after_500ms` test (in the
+        // next describe block) covers the
+        // "after-window both run" case. This test
+        // is kept as a historical marker for the
+        // round-103 rejection evidence — a
+        // "what was wrong with the rejected
+        // design" pin. To make it pass under
+        // round 104, the second call must be
+        // outside the 500ms window.
+        const app = makeApp();
+        const restoreSpy = jest
+            .spyOn((app as unknown as { save: { restore: () => boolean } }).save, 'restore')
+            .mockImplementation(() => false);
+        (app as unknown as { loadGame: () => void }).loadGame();
+        // Advance `Date.now()` past the 500ms debounce
+        // window so the second call runs.
+        const future = Date.now() + (app as unknown as { LOAD_DEBOUNCE_MS: number }).LOAD_DEBOUNCE_MS + 100;
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(future);
+        (app as unknown as { loadGame: () => void }).loadGame();
+        nowSpy.mockRestore();
+        // Both calls reach restore. The second
+        // call ran because we advanced past the
+        // 500ms window. This is the evidence that
+        // a `try/finally` guard is the wrong
+        // pattern for sync `loadGame` (round 103
+        // rejection) and that a time-based
+        // debounce (round 104) is the right
+        // pattern.
+        expect(restoreSpy.mock.calls.length).toBe(2);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 104 — `loadGame` time-based debounce (操控性好 UX improvement,
+// follow-up to round-103 rejected design).
+//
+// Round 103's `try/finally` in-flight guard was rejected
+// because `loadGame` is synchronous — the `finally` releases
+// the guard before the second call arrives, so both calls
+// run end-to-end. Round 104 introduces a TIME-BASED debounce:
+// `private lastLoadAt = 0` + `private static readonly
+// LOAD_DEBOUNCE_MS = 500` + a debounce check at the top of
+// `loadGame` that short-circuits a second call within the
+// window. The debounce stamp `lastLoadAt = Date.now()` is
+// written at the END of the body (not the start), so a
+// failure mid-body still counts as "completed" and the user
+// can't spam-retry past a broken save. The 500ms window is
+// tuned to a human double-click (~200-300ms) + round-50
+// rehydration completion (~50ms) with margin on both sides.
+//
+// The three contracts pinned here are:
+//   1. Two rapid `loadGame` calls within 500ms → the second
+//      short-circuits BEFORE `save.restore` is called
+//      (call count === 1).
+//   2. Two `loadGame` calls with `Date.now()` advanced past
+//      500ms between them → BOTH reach `save.restore`
+//      (call count === 2). The debounce is time-based, not
+//      one-shot — once the window passes, the user can load
+//      again.
+//   3. The short-circuited second call emits a Chinese-
+//      localized log line `[orchestrator] 距上次 loadGame
+//      仅 Xms < 500ms 窗口，跳过本次调用 (round 104 防御)`
+//      so the player can see WHY their second L-tap was
+//      ignored (vs. the keyboard breaking).
+// ---------------------------------------------------------------------------
+
+describe('App — round 104: loadGame time-based debounce', () => {
+    test('loadGame_called_twice_within_500ms_short_circuits_second', () => {
+        // The headline contract: the second call
+        // within the debounce window short-
+        // circuits BEFORE `save.restore` is
+        // reached. A regression that drops the
+        // debounce check (or moves it after
+        // `save.restore`) would silently re-
+        // introduce the round-50 event-chain
+        // timer doubling.
         const app = makeApp();
         const restoreSpy = jest
             .spyOn((app as unknown as { save: { restore: () => boolean } }).save, 'restore')
             .mockImplementation(() => false);
         (app as unknown as { loadGame: () => void }).loadGame();
         (app as unknown as { loadGame: () => void }).loadGame();
-        // Both calls reach restore. This is the
-        // evidence that a `try/finally` guard is the
-        // wrong pattern for sync `loadGame`.
+        // First call runs the body (restore
+        // called once). Second call short-
+        // circuits (restore NOT called again).
+        expect(restoreSpy.mock.calls.length).toBe(1);
+    });
+
+    test('loadGame_called_twice_after_500ms_runs_both (debounce is time-based, not one-shot)', () => {
+        // The debounce is time-based, not a
+        // one-shot latch. Once the window passes,
+        // the user can load again. A regression
+        // that turned the debounce into a
+        // permanent "already loaded" flag would
+        // silently break legitimate "load to
+        // recover, then load again" workflows
+        // (e.g. the round-54 rollback UI flow).
+        const app = makeApp();
+        const restoreSpy = jest
+            .spyOn((app as unknown as { save: { restore: () => boolean } }).save, 'restore')
+            .mockImplementation(() => false);
+        (app as unknown as { loadGame: () => void }).loadGame();
+        // Advance `Date.now()` past the 500ms
+        // debounce window so the second call
+        // runs.
+        const future = Date.now() + (app as unknown as { LOAD_DEBOUNCE_MS: number }).LOAD_DEBOUNCE_MS + 100;
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(future);
+        (app as unknown as { loadGame: () => void }).loadGame();
+        nowSpy.mockRestore();
+        // Both calls reached restore.
         expect(restoreSpy.mock.calls.length).toBe(2);
+    });
+
+    test('loadGame_within_500ms_logs_chinese_skip_message (round 104)', () => {
+        // The short-circuited second call emits
+        // a Chinese-localized log line so the
+        // player can see WHY their second L-tap
+        // was ignored. The `[orchestrator]`
+        // prefix disambiguates from other
+        // loadGame log lines (e.g. `[读档]` for
+        // the actual restore outcome,
+        // `[narr+mind]` for the round-48
+        // rehydrate, `[scene]` for the round-50
+        // re-render).
+        const app = makeApp();
+        const logSpy = jest
+            .spyOn((app as unknown as { hud: { log: (s: string) => void } }).hud, 'log')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { save: { restore: () => boolean } }).save, 'restore').mockImplementation(() => false);
+        (app as unknown as { loadGame: () => void }).loadGame();
+        (app as unknown as { loadGame: () => void }).loadGame();
+        const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        // The log line uses the
+        // `[orchestrator]` prefix and includes
+        // both the elapsed-ms number AND the
+        // 500ms window threshold so the player
+        // sees the concrete reason (not just a
+        // "skipped" flag).
+        expect(lines).toMatch(
+            new RegExp(
+                `\\[orchestrator\\] 距上次 loadGame 仅 \\d+ms`
+                + ` < ${500}ms 窗口.*round 104 防御`,
+            ),
+        );
     });
 });
 
