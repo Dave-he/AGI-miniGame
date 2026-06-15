@@ -1337,23 +1337,16 @@ class App {
      * Round 112 — toggle the settings overlay. The settings
      * overlay is a hidden-by-default `<div id="settings-root">`
      * populated by the round-111 SettingsPanel (audio mute,
-     * locale, debounce-window knob). Mirrors `toggleHelp`'s
-     * pattern: just flip the `hidden` attribute, log a Chinese
-     * open/close line. The P key shortcut in the keydown
-     * handler routes through this method.
+     * locale, debounce-window knob). The P key shortcut in
+     * the keydown handler routes through this method.
+     *
+     * Round 117 — body folded into `togglePanel(rootId, label, key)`
+     * helper. The 7 public methods now share a single implementation;
+     * future panel-toggle additions (round-117+ follow-ups like
+     * B / G / D / Z keys) only need a new 1-line wrapper + a new
+     * mount point in index.html.
      */
-    toggleSettings(): void {
-        const el = document.getElementById('settings-root');
-        if (!el) return;
-        const isHidden = el.hasAttribute('hidden');
-        if (isHidden) {
-            el.removeAttribute('hidden');
-            this.hud.log('[kb] 设置浮层已打开 (按 P 关闭)');
-        } else {
-            el.setAttribute('hidden', '');
-            this.hud.log('[kb] 设置浮层已关闭');
-        }
-    }
+    toggleSettings(): void { this.togglePanel('settings-root', '设置浮层', 'P'); }
 
     /**
      * Round 113 — toggle the stats panel overlay. The
@@ -1362,20 +1355,10 @@ class App {
      * round-63/64's StatsPanel. Always visible by
      * default; the Q key shortcut toggles the
      * `hidden` attribute for screenshot / focus mode.
-     * Mirrors `toggleHelp` / `toggleSettings` exactly.
+     *
+     * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleStatsPanel(): void {
-        const el = document.getElementById('stats-root');
-        if (!el) return;
-        const isHidden = el.hasAttribute('hidden');
-        if (isHidden) {
-            el.removeAttribute('hidden');
-            this.hud.log('[kb] 统计面板已打开 (按 Q 关闭)');
-        } else {
-            el.setAttribute('hidden', '');
-            this.hud.log('[kb] 统计面板已关闭');
-        }
-    }
+    toggleStatsPanel(): void { this.togglePanel('stats-root', '统计面板', 'Q'); }
 
     /**
      * Round 113 — toggle the progression panel
@@ -1384,21 +1367,11 @@ class App {
      * by round-65's ProgressionUI (XP bar + talent
      * tree) — always visible by default. The W key
      * shortcut toggles the `hidden` attribute for
-     * screenshot / focus mode. Mirrors
-     * `toggleStatsPanel` exactly.
+     * screenshot / focus mode.
+     *
+     * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleProgression(): void {
-        const el = document.getElementById('progression-root');
-        if (!el) return;
-        const isHidden = el.hasAttribute('hidden');
-        if (isHidden) {
-            el.removeAttribute('hidden');
-            this.hud.log('[kb] 进度面板已打开 (按 W 关闭)');
-        } else {
-            el.setAttribute('hidden', '');
-            this.hud.log('[kb] 进度面板已关闭');
-        }
-    }
+    toggleProgression(): void { this.togglePanel('progression-root', '进度面板', 'W'); }
 
     /**
      * Round 114 — toggle the tutorial overlay. The
@@ -1409,23 +1382,11 @@ class App {
      * the notification history (read-only — the
      * panel is also shown via `tutorial.notify`
      * calls from the App, but the T shortcut is
-     * a manual toggle). Mirrors
-     * `toggleHelp` / `toggleSettings` /
-     * `toggleStatsPanel` /
-     * `toggleProgression` exactly.
+     * a manual toggle).
+     *
+     * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleTutorial(): void {
-        const el = document.getElementById('tutorial-root');
-        if (!el) return;
-        const isHidden = el.hasAttribute('hidden');
-        if (isHidden) {
-            el.removeAttribute('hidden');
-            this.hud.log('[kb] 教程浮层已打开 (按 T 关闭)');
-        } else {
-            el.setAttribute('hidden', '');
-            this.hud.log('[kb] 教程浮层已关闭');
-        }
-    }
+    toggleTutorial(): void { this.togglePanel('tutorial-root', '教程浮层', 'T'); }
 
     /**
      * Round 114 — toggle the vault panel. The
@@ -1436,20 +1397,10 @@ class App {
      * dimensions). The F key shortcut gives
      * keyboard-only players a way to hide the
      * panel for screenshot / focus mode.
-     * Mirrors `toggleProgression` exactly.
+     *
+     * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleVault(): void {
-        const el = document.getElementById('vault-root');
-        if (!el) return;
-        const isHidden = el.hasAttribute('hidden');
-        if (isHidden) {
-            el.removeAttribute('hidden');
-            this.hud.log('[kb] 档案库面板已打开 (按 F 关闭)');
-        } else {
-            el.setAttribute('hidden', '');
-            this.hud.log('[kb] 档案库面板已关闭');
-        }
-    }
+    toggleVault(): void { this.togglePanel('vault-root', '档案库面板', 'F'); }
 
     /**
      * Round 114 — toggle the NPC mind panel.
@@ -1459,21 +1410,11 @@ class App {
      * populated by `renderNpcMindPanel`. The
      * M key shortcut gives keyboard-only
      * players a way to hide the panel for
-     * screenshot / focus mode. Mirrors
-     * `toggleVault` exactly.
+     * screenshot / focus mode.
+     *
+     * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleNpcMind(): void {
-        const el = document.getElementById('npc-mind-root');
-        if (!el) return;
-        const isHidden = el.hasAttribute('hidden');
-        if (isHidden) {
-            el.removeAttribute('hidden');
-            this.hud.log('[kb] NPC 心智面板已打开 (按 M 关闭)');
-        } else {
-            el.setAttribute('hidden', '');
-            this.hud.log('[kb] NPC 心智面板已关闭');
-        }
-    }
+    toggleNpcMind(): void { this.togglePanel('npc-mind-root', 'NPC 心智面板', 'M'); }
 
     /**
      * Round 115 — toggle the
@@ -1498,23 +1439,91 @@ class App {
      * index.html, toggle method
      * exists on App, bootstrap
      * keydown routes 'V'/'v' to
-     * the toggle). Mirrors
-     * `toggleHelp` / `toggleSettings` /
-     * `toggleStatsPanel` /
-     * `toggleProgression` /
-     * `toggleTutorial` / `toggleVault` /
-     * `toggleNpcMind` exactly.
+     * the toggle).
+     *
+     * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleAchievements(): void {
-        const el = document.getElementById('achievements-root');
+    toggleAchievements(): void { this.togglePanel('achievements-root', '成就面板', 'V'); }
+
+    /**
+     * Round 117 — shared panel-toggle
+     * helper. The 7 panel-toggle
+     * methods (toggleSettings /
+     * toggleStatsPanel /
+     * toggleProgression /
+     * toggleTutorial /
+     * toggleVault /
+     * toggleNpcMind /
+     * toggleAchievements) all
+     * share the same body:
+     * no-op if the mount point
+     * is missing, otherwise
+     * flip the `hidden` attribute
+     * and log a Chinese
+     * open/close line.
+     *
+     * Args:
+     *   rootId — the DOM id of
+     *            the panel's
+     *            mount point
+     *            (e.g.
+     *            'settings-root',
+     *            'stats-root', ...).
+     *   label  — the Chinese
+     *            panel name used
+     *            in the open/close
+     *            log line
+     *            (e.g. '设置浮层',
+     *            '统计面板', ...).
+     *            The log message
+     *            format is:
+     *            open →
+     *            `[kb] ${label}已打开 (按 ${key} 关闭)`
+     *            close →
+     *            `[kb] ${label}已关闭`
+     *            The pre-round-117
+     *            7 log messages are
+     *            preserved exactly.
+     *   key    — the keyboard-key
+     *            shortcut letter
+     *            used in the open
+     *            log line
+     *            (e.g. 'P', 'Q', ...).
+     *
+     * Behavior is unchanged from
+     * the pre-round-117 inline
+     * bodies — the helper is a
+     * pure refactor (no observable
+     * change other than the
+     * line-count delta in main.ts).
+     * The 7 existing round-112/
+     * 113/114/115 toggle e2e
+     * tests (routeKey + App_exposes
+     * + no-op + flips hidden +
+     * bootstrap + BINDING_DESCRIPTIONS)
+     * all pass unchanged, proving
+     * the refactor is behavior-
+     * preserving.
+     *
+     * The helper is `private`
+     * (not part of the public App
+     * surface) so the 7
+     * round-112-115 methods
+     * remain the public
+     * contract for the bootstrap
+     * keydown switch + the
+     * round-116 mouse buttons.
+     */
+    private togglePanel(rootId: string, label: string, key: string): void {
+        const el = document.getElementById(rootId);
         if (!el) return;
         const isHidden = el.hasAttribute('hidden');
         if (isHidden) {
             el.removeAttribute('hidden');
-            this.hud.log('[kb] 成就面板已打开 (按 V 关闭)');
+            this.hud.log(`[kb] ${label}已打开 (按 ${key} 关闭)`);
         } else {
             el.setAttribute('hidden', '');
-            this.hud.log('[kb] 成就面板已关闭');
+            this.hud.log(`[kb] ${label}已关闭`);
         }
     }
 

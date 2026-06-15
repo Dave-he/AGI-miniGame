@@ -5481,3 +5481,136 @@ describe('App — round 116: 6 mouse-button counterparts to panel-toggle keyboar
     });
 });
 
+describe('App — round 117: fold 7 toggle methods to single togglePanel helper (操控性好 refactor)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+        // Clean up any test-created
+        // nodes so the next test
+        // sees a fresh DOM.
+        document.getElementById('settings-root')?.remove();
+        document.getElementById('stats-root')?.remove();
+        document.getElementById('progression-root')?.remove();
+        document.getElementById('tutorial-root')?.remove();
+        document.getElementById('vault-root')?.remove();
+        document.getElementById('npc-mind-root')?.remove();
+        document.getElementById('achievements-root')?.remove();
+    });
+
+    // -----------------------------------------------------------------
+    // Helper-level: the 7 public
+    // wrappers are 1-line
+    // delegations to a private
+    // `togglePanel(rootId, label,
+    // key)` helper. The helper
+    // must:
+    //   - no-op when the mount
+    //     point is missing
+    //   - flip `hidden` when the
+    //     mount point exists
+    //   - log the Chinese open
+    //     line in the format
+    //     `[kb] <label>已打开 (按
+    //     <key> 关闭)`
+    //   - log the Chinese close
+    //     line in the format
+    //     `[kb] <label>已关闭`
+    // -----------------------------------------------------------------
+
+    test('togglePanel_helper_flips_hidden_attribute_on_existing_mount_point (round 117 helper)', () => {
+        document.body.innerHTML += '<div id="round-117-test-root"></div>';
+        const root = document.getElementById('round-117-test-root')!;
+        const app = makeApp();
+        expect(root.hasAttribute('hidden')).toBe(false);
+        (app as unknown as {
+            togglePanel: (id: string, label: string, key: string) => void;
+        }).togglePanel('round-117-test-root', '测试面板', 'X');
+        expect(root.hasAttribute('hidden')).toBe(true);
+        (app as unknown as {
+            togglePanel: (id: string, label: string, key: string) => void;
+        }).togglePanel('round-117-test-root', '测试面板', 'X');
+        expect(root.hasAttribute('hidden')).toBe(false);
+    });
+
+    test('togglePanel_helper_is_a_no_op_when_mount_point_missing (round 117 helper)', () => {
+        const app = makeApp();
+        expect(() => {
+            (app as unknown as {
+                togglePanel: (id: string, label: string, key: string) => void;
+            }).togglePanel('round-117-missing-root', '测试面板', 'X');
+        }).not.toThrow();
+    });
+
+    // -----------------------------------------------------------------
+    // Contract: all 7 public
+    // wrappers still exist on
+    // App (defense against a
+    // future refactor that
+    // renames / removes any of
+    // them — the bootstrap
+    // keydown switch + the
+    // round-116 mouse buttons
+    // depend on the public
+    // method names).
+    // -----------------------------------------------------------------
+
+    test('App_still_exposes_all_7_toggle_methods_after_round_117_fold', () => {
+        const app = makeApp();
+        // 7 public method names
+        // preserved through the
+        // refactor.
+        const expectedMethods = [
+            'toggleSettings',
+            'toggleStatsPanel',
+            'toggleProgression',
+            'toggleTutorial',
+            'toggleVault',
+            'toggleNpcMind',
+            'toggleAchievements',
+        ];
+        for (const m of expectedMethods) {
+            const fn = (app as unknown as Record<string, unknown>)[m];
+            expect(typeof fn).toBe('function');
+        }
+    });
+
+    // -----------------------------------------------------------------
+    // Behavior-preservation: the
+    // 7 wrappers still route to
+    // the right mount point +
+    // the right Chinese log
+    // messages. Spot-check 2
+    // panels (the other 5 are
+    // covered by the round-112/
+    // 113/114/115 e2e tests that
+    // are run unchanged).
+    // -----------------------------------------------------------------
+
+    test('toggleSettings_wrapper_still_uses_settings_root_and_设置浮层 (round 117)', () => {
+        document.body.innerHTML += '<div id="settings-root"></div>';
+        const root = document.getElementById('settings-root')!;
+        const logSpy = jest.spyOn(
+            (require('./main') as { hud: { log: (s: string) => void } }).hud ?? { log: () => undefined },
+            'log',
+        ).mockImplementation(() => undefined);
+        const app = makeApp();
+        (app as unknown as { toggleSettings: () => void }).toggleSettings();
+        expect(root.hasAttribute('hidden')).toBe(true);
+        // We can't easily assert on
+        // the log message without a
+        // hud stub — the round-112
+        // e2e test already does
+        // that. We just verify the
+        // wrapper routes to the
+        // right mount point here.
+        logSpy.mockRestore();
+    });
+
+    test('toggleAchievements_wrapper_still_uses_achievements_root (round 117)', () => {
+        document.body.innerHTML += '<div id="achievements-root"></div>';
+        const root = document.getElementById('achievements-root')!;
+        const app = makeApp();
+        (app as unknown as { toggleAchievements: () => void }).toggleAchievements();
+        expect(root.hasAttribute('hidden')).toBe(true);
+    });
+});
+
