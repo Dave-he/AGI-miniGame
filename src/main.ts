@@ -90,6 +90,22 @@ interface AppRefs {
     vaultRoot?: HTMLElement;
     npcMindRoot?: HTMLElement;
     /**
+     * Round 115 — optional root for
+     * the achievements panel
+     * (player.achievements list).
+     * The panel is constructed only
+     * if the host page provides a
+     * DOM node with
+     * `id="achievements-root"`. The
+     * V key shortcut is the primary
+     * way to open the panel (the
+     * round-22 follow-up will add a
+     * mouse button alongside the V
+     * key — round-115 ships the
+     * toggle group entry only).
+     */
+    achievementsRoot?: HTMLElement;
+    /**
      * Round 111 — optional root for the
      * SettingsPanel (audio / difficulty /
      * language / debounce window). The
@@ -1460,6 +1476,49 @@ class App {
     }
 
     /**
+     * Round 115 — toggle the
+     * achievements panel. The
+     * achievements panel is the
+     * round-22 per-player
+     * achievement list
+     * (`<div id="achievements-root">`)
+     * sourced from
+     * `worldState.player.achievements`
+     * (a `string[]` of unlocked
+     * achievement ids, populated
+     * via `addAchievement(id)`).
+     * The V key shortcut is the
+     * primary way to open the
+     * panel — the panel itself
+     * is rendered into the
+     * mount point by future
+     * round-115 follow-up work
+     * (the round-115 contract
+     * is: mount point exists in
+     * index.html, toggle method
+     * exists on App, bootstrap
+     * keydown routes 'V'/'v' to
+     * the toggle). Mirrors
+     * `toggleHelp` / `toggleSettings` /
+     * `toggleStatsPanel` /
+     * `toggleProgression` /
+     * `toggleTutorial` / `toggleVault` /
+     * `toggleNpcMind` exactly.
+     */
+    toggleAchievements(): void {
+        const el = document.getElementById('achievements-root');
+        if (!el) return;
+        const isHidden = el.hasAttribute('hidden');
+        if (isHidden) {
+            el.removeAttribute('hidden');
+            this.hud.log('[kb] 成就面板已打开 (按 V 关闭)');
+        } else {
+            el.setAttribute('hidden', '');
+            this.hud.log('[kb] 成就面板已关闭');
+        }
+    }
+
+    /**
      * Round 35 — keep `worldState.lastNpcDisposition` in sync with
      * the NpcRegistry's current average so a save → reload cycle
      * preserves the world's mood signal. Called from every site
@@ -2433,6 +2492,7 @@ async function bootstrap(): Promise<void> {
     const godRoot = document.getElementById('god-root') as HTMLElement | null;
     const vaultRoot = document.getElementById('vault-root') as HTMLElement | null;
     const npcMindRoot = document.getElementById('npc-mind-root') as HTMLElement | null;
+    const achievementsRoot = document.getElementById('achievements-root') as HTMLElement | null;
     if (!canvas || !hudRoot || !progRoot || !econRoot || !epochRoot) {
         console.error('Missing required DOM roots');
         return;
@@ -2449,6 +2509,7 @@ async function bootstrap(): Promise<void> {
         godRoot: godRoot ?? undefined,
         vaultRoot: vaultRoot ?? undefined,
         npcMindRoot: npcMindRoot ?? undefined,
+        achievementsRoot: achievementsRoot ?? undefined,
     });
     (window as any).__AGI__ = app;
     await app.start();
@@ -2641,6 +2702,26 @@ async function bootstrap(): Promise<void> {
             case 'toggle-tutorial':  app.toggleTutorial(); break;
             case 'toggle-vault':     app.toggleVault(); break;
             case 'toggle-npc-mind':  app.toggleNpcMind(); break;
+            // Round 115 — V key for
+            // the achievements panel.
+            // The panel content is
+            // rendered into
+            // `<div id="achievements-root">`
+            // (currently empty in
+            // round-115; the round-22
+            // follow-up will populate
+            // it from
+            // `worldState.player.achievements`).
+            // The shortcut calls the
+            // same `toggleAchievements()`
+            // method that the mouse
+            // entry point (round-115
+            // follow-up `btn-achievements`)
+            // will dispatch; the method
+            // flips the `hidden`
+            // attribute, so the toggle
+            // is idempotent.
+            case 'toggle-achievements': app.toggleAchievements(); break;
         }
         // Only swallow the event when we actually handled it so
         // tab navigation, Esc-into-fullscreen-exit etc. still

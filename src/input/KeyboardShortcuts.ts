@@ -34,6 +34,7 @@
  *   T       — toggle tutorial overlay (round 114)
  *   F       — toggle vault panel (round 114)
  *   M       — toggle NPC mind panel (round 114)
+ *   V       — toggle achievements panel (round 115)
  *
  * Anything else is ignored (returns `null`). The mapping is locked
  * by the index.html help overlay and the 8-portal palette in
@@ -55,7 +56,8 @@ export type KeyboardAction =
     | { kind: 'toggle-progression' }
     | { kind: 'toggle-vault' }
     | { kind: 'toggle-npc-mind' }
-    | { kind: 'toggle-tutorial' };
+    | { kind: 'toggle-tutorial' }
+    | { kind: 'toggle-achievements' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -187,6 +189,23 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     { key: 'T',    action: '切换教程面板' },
     { key: 'F',    action: '切换档案库面板' },
     { key: 'M',    action: '切换 NPC 心智面板' },
+    // Round 115 — the V key toggles
+    // the achievements panel
+    // (`#achievements-root`). The
+    // achievements list is sourced
+    // from `PlayerProfile.achievements`
+    // (a `string[]` of unlocked
+    // achievement ids, populated
+    // via `addAchievement(id)`).
+    // V is a single-letter
+    // shortcut in the row beneath
+    // the round-112/113 P/Q/W
+    // group + the round-114 T/F/M
+    // group — same case-insensitive
+    // mirror convention
+    // (lowercase + shifted both
+    // route to the same action).
+    { key: 'V',    action: '切换成就面板' },
 ];
 
 /**
@@ -311,6 +330,14 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'm':
         case 'M':
             return { kind: 'toggle-npc-mind' };
+        // Round 115 — V key toggles
+        // the achievements panel.
+        // Same case-insensitive
+        // mirror convention as
+        // T / F / M above.
+        case 'v':
+        case 'V':
+            return { kind: 'toggle-achievements' };
         default:
             return null;
     }

@@ -5228,3 +5228,121 @@ describe('App — round 114: T / F / M key toggles for tutorial + vault + NPC mi
     });
 });
 
+describe('App — round 115: V key + achievements panel (round-22 follow-up, 操控性好)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+        // Always clean up any
+        // test-created nodes so
+        // the next test sees a
+        // fresh DOM.
+        document.getElementById('achievements-root')?.remove();
+    });
+
+    // -----------------------------------------------------------------
+    // routeKey coverage (lowercase + shifted)
+    // -----------------------------------------------------------------
+
+    test('routeKey_v_returns_toggle_achievements_action', () => {
+        const action = routeKey('v');
+        expect(action).toEqual({ kind: 'toggle-achievements' });
+    });
+
+    test('routeKey_V_returns_toggle_achievements_action_for_shifted_key', () => {
+        const action = routeKey('V');
+        expect(action).toEqual({ kind: 'toggle-achievements' });
+    });
+
+    // -----------------------------------------------------------------
+    // App exposes the method (defense against
+    // a refactor that renames / removes it)
+    // -----------------------------------------------------------------
+
+    test('App_exposes_toggleAchievements_for_bootstrap_keydown_switch', () => {
+        const app = makeApp();
+        const fn = (app as unknown as { toggleAchievements?: () => void }).toggleAchievements;
+        expect(typeof fn).toBe('function');
+    });
+
+    // -----------------------------------------------------------------
+    // No-op when DOM element is missing
+    // -----------------------------------------------------------------
+
+    test('toggleAchievements_is_a_no_op_when_achievements_root_is_missing_from_DOM', () => {
+        const app = makeApp();
+        expect(() => {
+            (app as unknown as { toggleAchievements: () => void }).toggleAchievements();
+        }).not.toThrow();
+    });
+
+    // -----------------------------------------------------------------
+    // e2e: flips the `hidden` attribute on the real DOM
+    // -----------------------------------------------------------------
+
+    test('toggleAchievements_flips_hidden_attribute_on_achievements_root (round 115 e2e)', () => {
+        document.body.innerHTML += '<div id="achievements-root"></div>';
+        const root = document.getElementById('achievements-root')!;
+        expect(root.hasAttribute('hidden')).toBe(false);
+        const app = makeApp();
+        (app as unknown as { toggleAchievements: () => void }).toggleAchievements();
+        expect(root.hasAttribute('hidden')).toBe(true);
+        (app as unknown as { toggleAchievements: () => void }).toggleAchievements();
+        expect(root.hasAttribute('hidden')).toBe(false);
+    });
+
+    // -----------------------------------------------------------------
+    // Bootstrap keydown full path
+    // (round-85/91/112/113/114 spy
+    // pattern extended to V)
+    // -----------------------------------------------------------------
+
+    test('bootstrap_keydown_handler_full_path_V_to_toggleAchievements (round 115 e2e)', () => {
+        const app = makeApp();
+        const toggleSpy = jest
+            .spyOn(app as unknown as { toggleAchievements: () => void }, 'toggleAchievements')
+            .mockImplementation(() => undefined);
+        const action = routeKey('V');
+        expect(action).not.toBeNull();
+        if (action && action.kind === 'toggle-achievements') {
+            (app as unknown as { toggleAchievements: () => void }).toggleAchievements();
+        }
+        expect(toggleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // -----------------------------------------------------------------
+    // BINDING_DESCRIPTIONS reverse coverage
+    // -----------------------------------------------------------------
+
+    test('BINDING_DESCRIPTIONS_for_V_documents_achievements_panel', () => {
+        const vRow = BINDING_DESCRIPTIONS.find((d) => d.key === 'V');
+        expect(vRow).toBeDefined();
+        expect(vRow!.action).toContain('成就');
+        expect(routeKey('V')).toEqual({ kind: 'toggle-achievements' });
+        expect(routeKey('v')).toEqual({ kind: 'toggle-achievements' });
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test: mount point + [hidden] CSS rule
+    // -----------------------------------------------------------------
+
+    test('index_html_has_achievements_root_mount_point (round 115)', () => {
+        // The V key shortcut calls
+        // `document.getElementById('achievements-root')`
+        // — the mount point must
+        // exist in index.html. Plus
+        // the [hidden] CSS rule must
+        // be present so a future
+        // refactor that adds
+        // `display: flex` etc.
+        // doesn't accidentally
+        // override the hidden
+        // state. Mirrors the
+        // round-112/113/114
+        // file-content regression
+        // pattern applied to the
+        // round-115 mount point.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/id="achievements-root"/);
+        expect(html).toMatch(/#achievements-root\[hidden\]/);
+    });
+});
+

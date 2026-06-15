@@ -63,6 +63,13 @@
       #tutorial-root[hidden] { display: none; }
       #vault-root[hidden] { display: none; }
       #npc-mind-root[hidden] { display: none; }
+      /* Round 115 — achievements
+         root: same pattern as the
+         round-112/113/114 [hidden]
+         rules above. V shortcut
+         hides the panel for
+         screenshot / focus mode. */
+      #achievements-root[hidden] { display: none; }
       .settings-panel {
         background: rgba(11, 11, 34, 0.92);
         border: 1px solid var(--neon-cyan, #4ecdc4);
@@ -417,6 +424,18 @@
     <div class="panel" id="god-root"></div>
     <div class="panel" id="vault-root"></div>
     <div class="panel" id="npc-mind-root"></div>
+    <!-- Round 115 — achievements-root: home
+         for the round-22 player.achievements
+         list. Hidden by default; the V key
+         toggles the `hidden` attribute via
+         App.toggleAchievements(). The panel
+         content is rendered into this div by
+         future round-115 follow-up work
+         (round-115 ships the toggle contract
+         only — the actual `renderAchievementsPanel`
+         wiring into the App constructor is
+         part of the round-22 follow-up). -->
+    <div class="panel" id="achievements-root"></div>
     <!-- Round 112 — settings-root: home for the
          round-111 SettingsPanel (audio mute, locale,
          debounce-window knob). Hidden by default; the
