@@ -43,6 +43,18 @@
         z-index: 20;
       }
       #settings-root[hidden] { display: none; }
+      /* Round 113 — stats-root + progression-root:
+         both panels are always visible by default
+         (they're part of the default HUD layout),
+         but the Q / W key shortcuts can hide them
+         via the `hidden` attribute for screenshot /
+         focus mode. The `[hidden]` selector
+         is the browser default but we restate it
+         here so a future refactor that adds
+         `display: flex` etc. doesn't accidentally
+         override the hidden state. */
+      #stats-root[hidden] { display: none; }
+      #progression-root[hidden] { display: none; }
       .settings-panel {
         background: rgba(11, 11, 34, 0.92);
         border: 1px solid var(--neon-cyan, #4ecdc4);

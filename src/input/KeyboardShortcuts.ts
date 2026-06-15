@@ -29,6 +29,8 @@
  *   R       — rollback to last good state (round 85)
  *   `/~     — toggle DM God console (round 91)
  *   P       — toggle settings overlay (round 112)
+ *   Q       — toggle stats panel (round 113)
+ *   W       — toggle progression panel (round 113)
  *
  * Anything else is ignored (returns `null`). The mapping is locked
  * by the index.html help overlay and the 8-portal palette in
@@ -45,7 +47,9 @@ export type KeyboardAction =
     | { kind: 'event' }
     | { kind: 'rollback' }
     | { kind: 'toggle-dm-console' }
-    | { kind: 'toggle-settings' };
+    | { kind: 'toggle-settings' }
+    | { kind: 'toggle-stats' }
+    | { kind: 'toggle-progression' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -120,6 +124,28 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // bar — round-112 also adds the
     // button alongside the P key).
     { key: 'P',    action: '打开设置 (声音 / 语言 / 防抖窗口)' },
+    // Round 113 — the Q key toggles
+    // the stats panel (`#stats-root`,
+    // populated by round-63/64's
+    // StatsPanel). Stats is the
+    // small debugging overlay that
+    // shows Analytics counters +
+    // recent events. QWERTY order
+    // P / Q / W keeps the toggle
+    // shortcuts grouped together
+    // (P = settings, Q = stats,
+    // W = progression).
+    { key: 'Q',    action: '切换统计面板' },
+    // Round 113 — the W key toggles
+    // the progression panel
+    // (`#progression-root`, populated
+    // by round-65's ProgressionUI).
+    // Progression is the core
+    // gameplay panel (XP bar +
+    // talent tree) — always visible
+    // by default; W hides it for
+    // screenshot / focus mode.
+    { key: 'W',    action: '切换进度面板' },
 ];
 
 /**
@@ -211,6 +237,23 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'p':
         case 'P':
             return { kind: 'toggle-settings' };
+        // Round 113 — Q key toggles
+        // the stats panel. Both
+        // lowercase 'q' and shifted
+        // 'Q' route to the same
+        // action (case-insensitive
+        // mirror of round-85 R /
+        // round-91 ` / round-112 P).
+        case 'q':
+        case 'Q':
+            return { kind: 'toggle-stats' };
+        // Round 113 — W key toggles
+        // the progression panel.
+        // Same case-insensitive
+        // convention as Q above.
+        case 'w':
+        case 'W':
+            return { kind: 'toggle-progression' };
         default:
             return null;
     }

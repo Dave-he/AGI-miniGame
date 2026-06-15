@@ -1340,6 +1340,51 @@ class App {
     }
 
     /**
+     * Round 113 — toggle the stats panel overlay. The
+     * stats panel is the small debugging overlay
+     * (`<div id="stats-root">`) populated by
+     * round-63/64's StatsPanel. Always visible by
+     * default; the Q key shortcut toggles the
+     * `hidden` attribute for screenshot / focus mode.
+     * Mirrors `toggleHelp` / `toggleSettings` exactly.
+     */
+    toggleStatsPanel(): void {
+        const el = document.getElementById('stats-root');
+        if (!el) return;
+        const isHidden = el.hasAttribute('hidden');
+        if (isHidden) {
+            el.removeAttribute('hidden');
+            this.hud.log('[kb] 统计面板已打开 (按 Q 关闭)');
+        } else {
+            el.setAttribute('hidden', '');
+            this.hud.log('[kb] 统计面板已关闭');
+        }
+    }
+
+    /**
+     * Round 113 — toggle the progression panel
+     * overlay. The progression panel
+     * (`<div id="progression-root">`) is populated
+     * by round-65's ProgressionUI (XP bar + talent
+     * tree) — always visible by default. The W key
+     * shortcut toggles the `hidden` attribute for
+     * screenshot / focus mode. Mirrors
+     * `toggleStatsPanel` exactly.
+     */
+    toggleProgression(): void {
+        const el = document.getElementById('progression-root');
+        if (!el) return;
+        const isHidden = el.hasAttribute('hidden');
+        if (isHidden) {
+            el.removeAttribute('hidden');
+            this.hud.log('[kb] 进度面板已打开 (按 W 关闭)');
+        } else {
+            el.setAttribute('hidden', '');
+            this.hud.log('[kb] 进度面板已关闭');
+        }
+    }
+
+    /**
      * Round 35 — keep `worldState.lastNpcDisposition` in sync with
      * the NpcRegistry's current average so a save → reload cycle
      * preserves the world's mood signal. Called from every site
@@ -2464,6 +2509,40 @@ async function bootstrap(): Promise<void> {
             // so the toggle is
             // idempotent.
             case 'toggle-settings':  app.toggleSettings(); break;
+            // Round 113 — Q key shortcut
+            // for the round-63/64
+            // StatsPanel. The panel
+            // itself is rendered into
+            // `<div id="stats-root">`
+            // via `renderStatsPanel`
+            // during construction. The
+            // shortcut calls the same
+            // `toggleStatsPanel()` that
+            // (if a `btn-stats` button
+            // is added later) the
+            // mouse counterpart would
+            // call; the method flips
+            // the `hidden` attribute,
+            // so the toggle is
+            // idempotent.
+            case 'toggle-stats':      app.toggleStatsPanel(); break;
+            // Round 113 — W key shortcut
+            // for the round-65
+            // ProgressionUI. The UI is
+            // rendered into
+            // `<div id="progression-root">`
+            // via `new ProgressionUI`
+            // during construction. The
+            // shortcut calls the same
+            // `toggleProgression()` that
+            // (if a `btn-progression`
+            // button is added later)
+            // the mouse counterpart
+            // would call; the method
+            // flips the `hidden`
+            // attribute, so the toggle
+            // is idempotent.
+            case 'toggle-progression': app.toggleProgression(); break;
         }
         // Only swallow the event when we actually handled it so
         // tab navigation, Esc-into-fullscreen-exit etc. still

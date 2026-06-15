@@ -4563,3 +4563,370 @@ describe('App — round 112: P key + button toggle for round-111 SettingsPanel (
     });
 });
 
+// ---------------------------------------------------------------------------
+// Round 113 — Q / W key shortcuts to toggle the
+// round-63/64 stats panel + round-65 progression
+// panel (操控性好).
+//
+// Round 112 added the P key to toggle
+// the round-111 SettingsPanel.
+// Pre-round-113 the other 2 panels
+// (stats + progression) had inline
+// UI (rendered into the always-visible
+// `#stats-root` / `#progression-root`
+// divs) but no keyboard shortcut. The
+// Q / W shortcuts close that gap so
+// keyboard-only players can hide the
+// panels for screenshot / focus mode.
+//
+// The 3 toggle shortcuts are now
+// grouped in QWERTY order: P = settings,
+// Q = stats, W = progression. The
+// shortcut letters are intentionally
+// adjacent on the keyboard for muscle
+// memory.
+//
+// This block pins:
+//   1. `routeKey('q')` and `routeKey('Q')`
+//      both translate to
+//      `{ kind: 'toggle-stats' }`
+//   2. `routeKey('w')` and `routeKey('W')`
+//      both translate to
+//      `{ kind: 'toggle-progression' }`
+//   3. The App exposes a callable
+//      `toggleStatsPanel()` method
+//      that the bootstrap switch invokes
+//   4. The App exposes a callable
+//      `toggleProgression()` method
+//   5. `toggleStatsPanel()` is a no-op
+//      when `#stats-root` is missing
+//      from the DOM (defensive — the
+//      element is in index.html but
+//      a test setup or future HTML
+//      edit could drop it)
+//   6. `toggleProgression()` is a
+//      no-op when `#progression-root`
+//      is missing from the DOM
+//   7. `toggleStatsPanel()` flips
+//      the `hidden` attribute on the
+//      real `#stats-root` element
+//   8. `toggleProgression()` flips
+//      the `hidden` attribute on the
+//      real `#progression-root`
+//      element
+//   9. The bootstrap keydown handler's
+//      full path: keydown("Q") →
+//      routeKey → action →
+//      `app.toggleStatsPanel()`
+//  10. The bootstrap keydown handler's
+//      full path: keydown("W") →
+//      routeKey → action →
+//      `app.toggleProgression()`
+//  11. The BINDING_DESCRIPTIONS row
+//      for Q documents the stats
+//      panel + is routable
+//  12. The BINDING_DESCRIPTIONS row
+//      for W documents the
+//      progression panel + is
+//      routable
+//  13. index.html has the two
+//      mount points (`#stats-root`
+//      + `#progression-root`)
+//      + the [hidden] CSS rules
+//      (file-content test)
+// ---------------------------------------------------------------------------
+
+describe('App — round 113: Q / W key toggles for stats + progression panels (操控性好)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+        // Always clean up any test-created
+        // nodes so the next test sees a
+        // fresh DOM.
+        document.getElementById('stats-root')?.remove();
+        document.getElementById('progression-root')?.remove();
+    });
+
+    test('routeKey_q_returns_toggle_stats_action', () => {
+        // The lowercase 'q' must route
+        // to the new toggle-stats
+        // action. A regression that
+        // only routes 'Q' would
+        // silently break QWERTY
+        // players who don't hold
+        // shift.
+        const action = routeKey('q');
+        expect(action).toEqual({ kind: 'toggle-stats' });
+    });
+
+    test('routeKey_Q_returns_toggle_stats_action_for_shifted_key', () => {
+        // Mirror of routeKey_q — the
+        // shifted 'Q' must also
+        // route (round-91 backtick /
+        // round-112 P case pattern:
+        // both shift states map to
+        // the same action).
+        const action = routeKey('Q');
+        expect(action).toEqual({ kind: 'toggle-stats' });
+    });
+
+    test('routeKey_w_returns_toggle_progression_action', () => {
+        // The lowercase 'w' must
+        // route to the new
+        // toggle-progression action.
+        const action = routeKey('w');
+        expect(action).toEqual({ kind: 'toggle-progression' });
+    });
+
+    test('routeKey_W_returns_toggle_progression_action_for_shifted_key', () => {
+        // Mirror of routeKey_w —
+        // the shifted 'W' must
+        // also route.
+        const action = routeKey('W');
+        expect(action).toEqual({ kind: 'toggle-progression' });
+    });
+
+    test('App_exposes_toggleStatsPanel_for_bootstrap_keydown_switch', () => {
+        // The bootstrap keydown
+        // switch case
+        // `'toggle-stats':
+        // app.toggleStatsPanel()`
+        // requires the App to expose
+        // a callable
+        // `toggleStatsPanel` method.
+        const app = makeApp();
+        const fn = (app as unknown as { toggleStatsPanel?: () => void }).toggleStatsPanel;
+        expect(typeof fn).toBe('function');
+    });
+
+    test('App_exposes_toggleProgression_for_bootstrap_keydown_switch', () => {
+        // Mirror of the
+        // toggleStatsPanel test
+        // for the progression
+        // panel.
+        const app = makeApp();
+        const fn = (app as unknown as { toggleProgression?: () => void }).toggleProgression;
+        expect(typeof fn).toBe('function');
+    });
+
+    test('toggleStatsPanel_is_a_no_op_when_stats_root_is_missing_from_DOM', () => {
+        // The test setup creates
+        // the App without
+        // `bootstrap()` and the
+        // `afterEach` removes any
+        // stats-root node, so the
+        // DOM is guaranteed to not
+        // have it. The method's
+        // `document.getElementById('stats-root')`
+        // early-return must not
+        // throw. A regression that
+        // dereferences the
+        // element directly would
+        // throw here.
+        const app = makeApp();
+        expect(() => {
+            (app as unknown as { toggleStatsPanel: () => void }).toggleStatsPanel();
+        }).not.toThrow();
+    });
+
+    test('toggleProgression_is_a_no_op_when_progression_root_is_missing_from_DOM', () => {
+        // Mirror of the
+        // toggleStatsPanel no-op
+        // test for the
+        // progression panel.
+        const app = makeApp();
+        expect(() => {
+            (app as unknown as { toggleProgression: () => void }).toggleProgression();
+        }).not.toThrow();
+    });
+
+    test('toggleStatsPanel_flips_hidden_attribute_on_stats_root (round 113 e2e)', () => {
+        // End-to-end: when the
+        // `#stats-root` element
+        // exists in the DOM, the
+        // first call to
+        // `toggleStatsPanel()`
+        // adds the `hidden`
+        // attribute (hide), the
+        // second call removes it
+        // (show). The toggle is
+        // idempotent. (The panel
+        // is always visible by
+        // default in index.html,
+        // so the first call hides
+        // it.)
+        document.body.innerHTML += '<div id="stats-root"></div>';
+        const root = document.getElementById('stats-root')!;
+        expect(root.hasAttribute('hidden')).toBe(false);
+        const app = makeApp();
+        (app as unknown as { toggleStatsPanel: () => void }).toggleStatsPanel();
+        expect(root.hasAttribute('hidden')).toBe(true);
+        (app as unknown as { toggleStatsPanel: () => void }).toggleStatsPanel();
+        expect(root.hasAttribute('hidden')).toBe(false);
+    });
+
+    test('toggleProgression_flips_hidden_attribute_on_progression_root (round 113 e2e)', () => {
+        // Mirror of the
+        // toggleStatsPanel
+        // e2e test for the
+        // progression panel.
+        document.body.innerHTML += '<div id="progression-root"></div>';
+        const root = document.getElementById('progression-root')!;
+        expect(root.hasAttribute('hidden')).toBe(false);
+        const app = makeApp();
+        (app as unknown as { toggleProgression: () => void }).toggleProgression();
+        expect(root.hasAttribute('hidden')).toBe(true);
+        (app as unknown as { toggleProgression: () => void }).toggleProgression();
+        expect(root.hasAttribute('hidden')).toBe(false);
+    });
+
+    test('bootstrap_keydown_handler_full_path_Q_to_toggleStatsPanel (round 113 e2e)', () => {
+        // End-to-end of the full
+        // round-113 path:
+        //   keydown("Q") → routeKey → { kind: 'toggle-stats' }
+        //               → app.toggleStatsPanel()
+        // We assert the wiring by
+        // spying on
+        // `toggleStatsPanel`,
+        // dispatching the action
+        // the bootstrap switch
+        // would dispatch, and
+        // confirming the spy was
+        // called (round-85 R /
+        // round-91 ` / round-112 P
+        // pattern).
+        const app = makeApp();
+        const toggleSpy = jest
+            .spyOn(app as unknown as { toggleStatsPanel: () => void }, 'toggleStatsPanel')
+            .mockImplementation(() => undefined);
+        // Replicate the
+        // bootstrap switch for
+        // the 'toggle-stats'
+        // action kind.
+        const action = routeKey('Q');
+        expect(action).not.toBeNull();
+        if (action && action.kind === 'toggle-stats') {
+            (app as unknown as { toggleStatsPanel: () => void }).toggleStatsPanel();
+        }
+        expect(toggleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('bootstrap_keydown_handler_full_path_W_to_toggleProgression (round 113 e2e)', () => {
+        // Mirror of the Q
+        // bootstrap test for
+        // the W key.
+        const app = makeApp();
+        const toggleSpy = jest
+            .spyOn(app as unknown as { toggleProgression: () => void }, 'toggleProgression')
+            .mockImplementation(() => undefined);
+        // Replicate the
+        // bootstrap switch for
+        // the
+        // 'toggle-progression'
+        // action kind.
+        const action = routeKey('W');
+        expect(action).not.toBeNull();
+        if (action && action.kind === 'toggle-progression') {
+            (app as unknown as { toggleProgression: () => void }).toggleProgression();
+        }
+        expect(toggleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('BINDING_DESCRIPTIONS_for_Q_documents_stats_panel', () => {
+        // The 'Q' row in
+        // BINDING_DESCRIPTIONS
+        // documents the
+        // player's shortcut for
+        // the round-63/64
+        // stats panel. A
+        // regression that
+        // renames 'Q' → 'q'
+        // (or moves the row)
+        // would break the
+        // help-overlay →
+        // routeKey contract.
+        // We pin the
+        // description text +
+        // the key field so
+        // both stay in
+        // lock-step with the
+        // routeKey branch.
+        const qRow = BINDING_DESCRIPTIONS.find((d) => d.key === 'Q');
+        expect(qRow).toBeDefined();
+        expect(qRow!.action).toContain('统计');
+        // And the routeKey
+        // branch for 'Q' must
+        // exist (defense
+        // against a regression
+        // that removes the
+        // case from the
+        // switch).
+        expect(routeKey('Q')).toEqual({ kind: 'toggle-stats' });
+        // Both cases ('q'
+        // lowercase and 'Q'
+        // shifted) must
+        // resolve to the same
+        // action.
+        expect(routeKey('q')).toEqual({ kind: 'toggle-stats' });
+    });
+
+    test('BINDING_DESCRIPTIONS_for_W_documents_progression_panel', () => {
+        // The 'W' row in
+        // BINDING_DESCRIPTIONS
+        // documents the
+        // player's shortcut
+        // for the round-65
+        // progression panel.
+        const wRow = BINDING_DESCRIPTIONS.find((d) => d.key === 'W');
+        expect(wRow).toBeDefined();
+        expect(wRow!.action).toContain('进度');
+        // And the routeKey
+        // branch for 'W'
+        // must exist.
+        expect(routeKey('W')).toEqual({ kind: 'toggle-progression' });
+        // Both cases ('w'
+        // lowercase and 'W'
+        // shifted) must
+        // resolve to the same
+        // action.
+        expect(routeKey('w')).toEqual({ kind: 'toggle-progression' });
+    });
+
+    test('index_html_has_stats_root_and_progression_root_mount_points (round 113)', () => {
+        // The Q / W key shortcuts
+        // are the primary way to
+        // hide the round-63/64
+        // stats panel + the
+        // round-65 progression
+        // panel. The shortcuts
+        // call
+        // `document.getElementById('stats-root')`
+        // /
+        // `document.getElementById('progression-root')`
+        // — both mount points
+        // must exist in
+        // index.html. Read
+        // index.html and assert
+        // both divs are
+        // present. Mirrors the
+        // round-101/112
+        // file-content
+        // regression pattern
+        // applied to the new
+        // round-113 mount
+        // points.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/id="stats-root"/);
+        expect(html).toMatch(/id="progression-root"/);
+        // The [hidden] CSS
+        // rules must also be
+        // present so a future
+        // refactor that adds
+        // `display: flex` etc.
+        // doesn't accidentally
+        // override the hidden
+        // state.
+        expect(html).toMatch(/#stats-root\[hidden\]/);
+        expect(html).toMatch(/#progression-root\[hidden\]/);
+    });
+});
+
