@@ -289,4 +289,214 @@ describe('ActionDebouncer (round 108)', () => {
         d.setWindowMs('not a number' as unknown as number);
         expect(d.windowSizeMs).toBe(0);
     });
+
+    // ---------------------------------------------------------------
+    // Round 124 — _fireFake(stampTime, checkTime)
+    // test-only fake-fire helper.
+    //
+    // Replaces the awkward
+    // `jest.spyOn(Date, 'now').mockReturnValue(future)`
+    // pattern that round-108 + the App-level
+    // round-104/106/107/109 after-window tests
+    // had to use. The new hook:
+    //   - sets `lastFiredAt = stampTime`
+    //     explicitly (no Date.now() read)
+    //   - runs the check logic at the
+    //     caller-passed `checkTime`
+    //   - returns the boolean result
+    //
+    // Properties pinned by the round-124
+    // tests:
+    //   1. With stampTime=0, checkTime=now:
+    //      treated as never-stamped (the
+    //      `lastFiredAt > 0` guard) — returns
+    //      true.
+    //   2. With stampTime just inside window,
+    //      checkTime=stampTime+windowMs-1:
+    //      returns false + emits Chinese log.
+    //   3. With stampTime just outside window,
+    //      checkTime=stampTime+windowMs:
+    //      returns true (debounce is time-
+    //      based, not one-shot).
+    //   4. setWindowMs interacts correctly
+    //      with _fireFake (a window-shrink
+    //      to 0 allows the next fake-fire
+    //      even when stamp is recent).
+    //   5. Does NOT call `Date.now()`
+    //      (defense: a regression that
+    //      re-introduces Date.now() into
+    //      _checkAt would break the
+    //      deterministic-timestamp
+    //      guarantee).
+    // ---------------------------------------------------------------
+
+    test('_fireFake_never_stamped_returns_true (round 124 stamp=0 bypass)', () => {
+        // The `lastFiredAt > 0` guard
+        // treats stampTime=0 the same as
+        // "never stamped". A regression
+        // that used `>=` instead of `>`
+        // would silently delay the first
+        // fake-fire by the full window.
+        const log = jest.fn();
+        const d = new ActionDebouncer(500, 'loadGame', 'round 124', log);
+        // stampTime=0 simulates
+        // "never stamped". checkTime=1000
+        // is just a random now.
+        expect(d._fireFake(0, 1000)).toBe(true);
+        expect(log).not.toHaveBeenCalled();
+    });
+
+    test('_fireFake_within_window_returns_false_and_logs_chinese_skip (round 124)', () => {
+        // The headline contract — the
+        // fake-fire helper must produce
+        // the same result as a real
+        // stamp+check within the window.
+        const log = jest.fn();
+        const d = new ActionDebouncer(500, 'loadGame', 'round 124', log);
+        // stamp at 1000, check at 1499
+        // (499ms elapsed, < 500ms window)
+        // → debounced.
+        expect(d._fireFake(1000, 1499)).toBe(false);
+        expect(log).toHaveBeenCalledTimes(1);
+        const line = String(log.mock.calls[0]?.[0] ?? '');
+        // The Chinese log line uses the
+        // EXPLICIT `now` passed to
+        // `_checkAt`, not Date.now().
+        // So `now - lastFiredAt` should
+        // be exactly 499ms (deterministic).
+        expect(line).toContain('距上次 loadGame 仅 499ms');
+        expect(line).toContain('< 500ms 窗口');
+        expect(line).toContain('round 124 防御');
+    });
+
+    test('_fireFake_outside_window_returns_true (round 124 time-based)', () => {
+        // After the window passes
+        // (stampTime + windowMs ≤ checkTime)
+        // the check is allowed. The
+        // debounce is time-based, not a
+        // one-shot latch.
+        const log = jest.fn();
+        const d = new ActionDebouncer(500, 'saveGame', 'round 124', log);
+        // stamp at 1000, check at 1500
+        // (exactly 500ms elapsed) →
+        // allowed (the `<` check is
+        // exclusive).
+        expect(d._fireFake(1000, 1500)).toBe(true);
+        expect(log).not.toHaveBeenCalled();
+        // stamp at 1000, check at 1501
+        // (501ms elapsed, > 500ms
+        // window) → allowed.
+        expect(d._fireFake(1000, 1501)).toBe(true);
+        expect(log).not.toHaveBeenCalled();
+    });
+
+    test('_fireFake_does_not_call_Date_now (round 124 deterministic timestamp guarantee)', () => {
+        // Defense: a regression that
+        // re-introduced `Date.now()`
+        // into `_checkAt` would break
+        // the deterministic-timestamp
+        // guarantee. The test pins a
+        // highly-fake "stamp + check"
+        // pair that no real `Date.now()`
+        // call could accidentally produce.
+        const log = jest.fn();
+        const d = new ActionDebouncer(500, 'rollWorldEvent', 'round 124', log);
+        // Use timestamps from the year
+        // 2030 — no real Date.now()
+        // call could produce these
+        // values during a 2026 test
+        // run.
+        const stampYear2030 = 1_900_000_000_000;
+        const checkYear2030 = 1_900_000_500_000;
+        // Spy on Date.now — the spy
+        // is never invoked if the
+        // fake helper is correctly
+        // bypassing it.
+        const nowSpy = jest.spyOn(Date, 'now');
+        expect(d._fireFake(stampYear2030, checkYear2030)).toBe(true);
+        expect(nowSpy).not.toHaveBeenCalled();
+        nowSpy.mockRestore();
+    });
+
+    test('_fireFake_interacts_with_setWindowMs_shrink (round 124 round 111 + 124 integration)', () => {
+        // The round-111 setWindowMs
+        // shrink test used
+        // `jest.spyOn(Date, 'now')` to
+        // inject a now-after-shrink
+        // timestamp. Round 124
+        // replaces that with
+        // `_fireFake` for clarity.
+        const log = jest.fn();
+        const d = new ActionDebouncer(500, 'saveGame', 'round 124', log);
+        // Stamp at t=1000, check at
+        // t=1100 (100ms elapsed, < 500ms
+        // window) → debounced.
+        expect(d._fireFake(1000, 1100)).toBe(false);
+        expect(log).toHaveBeenCalledTimes(1);
+        // Shrink the window to 0.
+        d.setWindowMs(0);
+        // Re-stamp + check at t=1200
+        // (200ms after stamp, 0ms
+        // window) → allowed (200 > 0).
+        expect(d._fireFake(1000, 1200)).toBe(true);
+        // The shrink suppressed the
+        // 2nd log line.
+        expect(log).toHaveBeenCalledTimes(1);
+    });
+
+    test('_fireFake_equivalent_to_stamp_plus_real_check (round 124 parity)', () => {
+        // Parity test: a `_fireFake`
+        // call with explicit timestamps
+        // must produce the SAME result
+        // as a real `stamp()` +
+        // `check()` pair where
+        // `Date.now()` returns the
+        // fake's `checkTime`. This
+        // pins the contract that
+        // _fireFake is a deterministic
+        // replacement for the
+        // Date.now()-mocking pattern.
+        //
+        // Setup: stamp at time T1,
+        // check at time T2 (where
+        // T2 > T1, T2 - T1 = 600ms,
+        // windowMs = 500). Both
+        // paths return `true` (the
+        // 600ms elapsed time exceeds
+        // the 500ms window).
+        const log1 = jest.fn();
+        const log2 = jest.fn();
+        const d1 = new ActionDebouncer(500, 'loadGame', 'round 124', log1);
+        const d2 = new ActionDebouncer(500, 'loadGame', 'round 124', log2);
+        const T1 = 1_000_000;
+        const T2 = T1 + 600; // 600ms elapsed, > 500ms window.
+        // d1: real stamp at T1, real
+        // check at T2 (Date.now()
+        // mocked to return T1 then
+        // T2 via sequential
+        // mockReturnValueOnce).
+        const nowSpy = jest.spyOn(Date, 'now')
+            .mockReturnValueOnce(T1)
+            .mockReturnValueOnce(T2);
+        d1.stamp();
+        const result1 = d1.check();
+        nowSpy.mockRestore();
+        // d2: fake-fire with the
+        // same T1 stamp + T2 check.
+        const result2 = d2._fireFake(T1, T2);
+        // Parity: both paths must
+        // produce the same boolean.
+        expect(result1).toBe(result2);
+        // Both paths return `true`
+        // because the 600ms elapsed
+        // time exceeds the 500ms
+        // window.
+        expect(result1).toBe(true);
+        expect(result2).toBe(true);
+        // Neither path emitted a log
+        // line (both checks were
+        // allowed).
+        expect(log1).not.toHaveBeenCalled();
+        expect(log2).not.toHaveBeenCalled();
+    });
 });

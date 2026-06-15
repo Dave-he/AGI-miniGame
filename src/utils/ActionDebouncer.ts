@@ -82,17 +82,16 @@ export class ActionDebouncer {
      * Returns `true` if the call is allowed, `false` if
      * it was debounced. Side effect: emits a Chinese-
      * localized log line on debounce.
+     *
+     * Round 124 — delegates to `_checkAt(Date.now())`
+     * so the test-only `_fireFake(stampTime, checkTime)`
+     * helper can call `_checkAt` directly with a
+     * caller-passed `now`, avoiding the awkward
+     * `jest.spyOn(Date, 'now').mockReturnValue(...)`
+     * pattern.
      */
     check(): boolean {
-        const now = Date.now();
-        if (this.lastFiredAt > 0 && now - this.lastFiredAt < this.windowMs) {
-            this.logFn(
-                `[orchestrator] 距上次 ${this.actionName} 仅 ${now - this.lastFiredAt}ms`
-                + ` < ${this.windowMs}ms 窗口，跳过本次调用 (${this.roundTag} 防御)`,
-            );
-            return false;
-        }
-        return true;
+        return this._checkAt(Date.now());
     }
 
     /**
@@ -154,5 +153,65 @@ export class ActionDebouncer {
         } else {
             this.windowMs = 0;
         }
+    }
+
+    /**
+     * Round 124 — test-only fake-fire helper.
+     *
+     * Replaces the awkward
+     * `jest.spyOn(Date, 'now').mockReturnValue(future)`
+     * pattern that the round-108 helper-level tests +
+     * the round-104/106/107/109 App-level after-window
+     * tests had to use. The pattern leaks `Date.now`
+     * globally (every other test in the same suite
+     * sees the mocked value until `nowSpy.mockRestore()`
+     * is called), is fragile (a test that forgets to
+     * restore corrupts every subsequent test), and
+     * is verbose (3 lines per use).
+     *
+     * `_fireFake(stampTime, checkTime)` does the same
+     * thing in 1 line, locally:
+     *
+     *   1. Sets `lastFiredAt = stampTime` (the fake
+     *      stamp). Note: this BYPASSES the real
+     *      `Date.now()` — the debouncer's `lastFiredAt`
+     *      is whatever the caller passes.
+     *   2. Runs `_checkAt(checkTime)` (the private
+     *      check-with-explicit-now helper extracted
+     *      from `check()` below) which uses the
+     *      caller-passed `checkTime` instead of
+     *      `Date.now()`. Returns the boolean result
+     *      (true = allowed, false = debounced).
+     *
+     * The `_` prefix + `as unknown as { _fireFake: ... }`
+     * cast pattern (round-90/98) keeps this method
+     * "App-private" — production code never calls it,
+     * tests opt in via the cast.
+     *
+     * Returns: the boolean result of the fake check
+     * (true = would allow, false = would debounce).
+     */
+    _fireFake(stampTime: number, checkTime: number): boolean {
+        this.lastFiredAt = stampTime;
+        return this._checkAt(checkTime);
+    }
+
+    /**
+     * Round 124 — private check-with-explicit-now
+     * helper. The production `check()` method now
+     * delegates here, passing `Date.now()`. The test-
+     * only `_fireFake` calls this directly with a
+     * caller-passed `now` so the test can pin the
+     * check time without mocking `Date.now` globally.
+     */
+    private _checkAt(now: number): boolean {
+        if (this.lastFiredAt > 0 && now - this.lastFiredAt < this.windowMs) {
+            this.logFn(
+                `[orchestrator] 距上次 ${this.actionName} 仅 ${now - this.lastFiredAt}ms`
+                + ` < ${this.windowMs}ms 窗口，跳过本次调用 (${this.roundTag} 防御)`,
+            );
+            return false;
+        }
+        return true;
     }
 }
