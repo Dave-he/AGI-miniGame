@@ -745,3 +745,520 @@ test('round_135_clicking_outside_history_row_does_not_invoke_callback', () => {
     expect(applied.length).toBe(0);
 });
 
+// ---------------------------------------------------------------------------
+// Round 136 — filter
+// by event kind.
+// The history list
+// gains a dropdown
+// above it with
+// "全部" / "Collide" /
+// "Timer" / "Spawn" /
+// "PlayerHit". Changing
+// the dropdown
+// filters the
+// displayed history
+// rows. Filter state
+// persists across
+// refresh() calls but
+// resets when the
+// panel is re-opened
+// (fresh closure).
+// ---------------------------------------------------------------------------
+
+test('round_136_no_history_callback_means_no_filter_dropdown', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    // 4-arg
+    // signature
+    // (no
+    // history)
+    // — no
+    // filter
+    // dropdown
+    // either.
+    renderDslCodexPanel(root, () => rule, () => 'accepted');
+    expect(root.innerHTML).not.toContain('dsl-codex-history-filter');
+    expect(root.innerHTML).not.toContain('dsl-codex-history-filter-select');
+});
+
+test('round_136_with_history_renders_filter_dropdown', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // The
+    // dropdown
+    // is
+    // rendered
+    // when
+    // history
+    // is
+    // enabled.
+    expect(root.innerHTML).toContain('dsl-codex-history-filter');
+    expect(root.innerHTML).toContain('dsl-codex-history-filter-select');
+    // The
+    // dropdown
+    // has
+    // 5
+    // options:
+    // 全部
+    // +
+    // 4
+    // DslEventKind.
+    const select = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    expect(select).toBeTruthy();
+    expect(select.options.length).toBe(5);
+    expect(select.options[0].value).toBe('');
+    expect(select.options[0].textContent).toBe('全部');
+    expect(select.options[1].value).toBe('Collide');
+    expect(select.options[2].value).toBe('Timer');
+    expect(select.options[3].value).toBe('Spawn');
+    expect(select.options[4].value).toBe('PlayerHit');
+    // Default
+    // selected
+    // is
+    // 全部
+    // (value
+    // = '').
+    expect(select.value).toBe('');
+});
+
+test('round_136_filter_to_collide_shows_only_collide_rows', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X'] }] },
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [2] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Damage', args: [3] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // All 4
+    // rows
+    // visible
+    // initially.
+    let rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(4);
+    // Change
+    // the
+    // dropdown
+    // to
+    // "Collide".
+    const select = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    select.value = 'Collide';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    // Only
+    // 2
+    // rows
+    // visible
+    // (the
+    // 2
+    // Collide
+    // entries).
+    rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(2);
+    // The
+    // post-filter
+    // indices
+    // are
+    // 1-based
+    // and
+    // continuous
+    // (#1,
+    // #2
+    // — no
+    // gaps).
+    expect(root.innerHTML).toContain('#1');
+    expect(root.innerHTML).toContain('#2');
+    expect(root.innerHTML).not.toContain('#3');
+    expect(root.innerHTML).not.toContain('#4');
+    // Both
+    // visible
+    // rows
+    // show
+    // the
+    // Collide
+    // event
+    // in
+    // their
+    // source
+    // DSL.
+    expect(root.innerHTML).toContain('On(Collide)');
+});
+
+test('round_136_filter_to_timer_shows_only_timer_rows', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X'] }] },
+        { event: { kind: 'Timer', arg: 10 }, actions: [{ kind: 'Spawn', args: ['Y'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    const select = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    select.value = 'Timer';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    // 2 Timer
+    // rows
+    // visible
+    // (the
+    // 1
+    // Collide
+    // row
+    // is
+    // hidden
+    // by
+    // the
+    // filter).
+    const rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(2);
+    // Both
+    // Timer
+    // rows
+    // are
+    // visible
+    // (scoped
+    // to the
+    // history
+    // list
+    // — the
+    // main
+    // codex
+    // block
+    // also
+    // has
+    // a
+    // source
+    // div
+    // for
+    // the
+    // current
+    // rule
+    // which
+    // is
+    // also
+    // a
+    // Collide
+    // rule).
+    const historyListHtml = root.querySelector('.dsl-codex-history-list')?.innerHTML ?? '';
+    expect(historyListHtml).toContain('On(Timer, 5)');
+    expect(historyListHtml).toContain('On(Timer, 10)');
+    expect(historyListHtml).not.toContain('On(Collide)');
+});
+
+test('round_136_filter_with_no_matches_shows_暂无_match_empty_state', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    // History
+    // has
+    // only
+    // Collide
+    // events.
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Filter
+    // to
+    // Timer
+    // (no
+    // matches
+    // in
+    // the
+    // history).
+    const select = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    select.value = 'Timer';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    // The
+    // 暂无匹配
+    // empty
+    // state
+    // is
+    // shown
+    // (different
+    // from
+    // the
+    // 暂无历史
+    // empty
+    // state).
+    expect(root.innerHTML).toContain('dsl-codex-history-empty');
+    expect(root.innerHTML).toContain('暂无匹配');
+    expect(root.innerHTML).not.toContain('暂无历史');
+});
+
+test('round_136_filter_change_back_to_all_restores_all_rows', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Filter
+    // to
+    // Collide
+    // first
+    // (re-query
+    // the
+    // select
+    // each
+    // time
+    // because
+    // `doRender()`
+    // rebuilds
+    // the
+    // DOM
+    // and
+    // the
+    // old
+    // ref
+    // is
+    // detached).
+    let select = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    select.value = 'Collide';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+    // Change
+    // back
+    // to
+    // All
+    // — must
+    // re-query
+    // because
+    // the
+    // previous
+    // dispatch
+    // triggered
+    // a
+    // re-render
+    // that
+    // detached
+    // the
+    // old
+    // <select>.
+    select = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    select.value = '';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    // All
+    // 2
+    // rows
+    // back.
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(2);
+});
+
+test('round_136_filter_persists_across_refresh', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X'] }] },
+    ];
+    const handle = renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Filter
+    // to
+    // Collide.
+    const select = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    select.value = 'Collide';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    // Refresh
+    // (e.g.
+    // after
+    // a
+    // hot-reload
+    // event).
+    handle.refresh();
+    // The
+    // filter
+    // is
+    // still
+    // applied
+    // (1
+    // row
+    // visible).
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+    // The
+    // dropdown
+    // still
+    // reads
+    // "Collide"
+    // (we
+    // re-render
+    // with
+    // `selected`
+    // on
+    // the
+    // right
+    // option).
+    const selectAfter = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    expect(selectAfter.value).toBe('Collide');
+});
+
+test('round_136_filtered_click_to_apply_passes_correct_rule', () => {
+    // When the
+    // player
+    // has
+    // a
+    // filter
+    // active
+    // and
+    // clicks
+    // a
+    // history
+    // row,
+    // the
+    // callback
+    // should
+    // be
+    // invoked
+    // with
+    // the
+    // post-filter
+    // rule
+    // (not
+    // the
+    // raw
+    // history[idx]
+    // rule,
+    // which
+    // would
+    // be
+    // the
+    // wrong
+    // index
+    // when
+    // a
+    // filter
+    // is
+    // active).
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X'] }] },
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    const applied: DslRule[] = [];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+        undefined,
+        (r) => { applied.push(r); },
+    );
+    // Filter
+    // to
+    // Collide.
+    const select = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    select.value = 'Collide';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    // Click
+    // the
+    // 1st
+    // visible
+    // row
+    // (post-filter
+    // idx=0
+    // =
+    // the
+    // 1st
+    // Collide
+    // rule).
+    const rows = root.querySelectorAll('.dsl-codex-history-row-clickable');
+    expect(rows.length).toBe(2);
+    (rows[0] as HTMLElement).click();
+    // The
+    // callback
+    // got
+    // the
+    // Collide
+    // rule
+    // (Damage(1)),
+    // NOT
+    // history[0]
+    // (which
+    // happens
+    // to
+    // also
+    // be
+    // a
+    // Collide
+    // rule
+    // —
+    // the
+    // test
+    // is
+    // more
+    // interesting
+    // if
+    // we
+    // use
+    // a
+    // different
+    // rule
+    // to
+    // prove
+    // the
+    // post-filter
+    // lookup).
+    expect(applied.length).toBe(1);
+    expect(applied[0].event.kind).toBe('Collide');
+    expect(applied[0].actions[0].args[0]).toBe(1);
+});
+

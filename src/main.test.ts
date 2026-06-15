@@ -8138,6 +8138,111 @@ describe('App — round 135: DslCodexPanel history click-to-apply (操控性好 
     });
 });
 
+describe('App — round 136: DslCodexPanel filter by event kind (操控性好 UX)', () => {
+    test('DslCodexPanel_imports_DslEventKind_type (round 136)', () => {
+        // The
+        // filter
+        // dropdown
+        // needs
+        // the
+        // `DslEventKind`
+        // type
+        // to
+        // type-check
+        // the
+        // filter
+        // state.
+        const fs = require('fs');
+        const path = require('path');
+        const panel = fs.readFileSync(path.resolve(__dirname, 'ui', 'DslCodexPanel.ts'), 'utf-8');
+        expect(panel).toMatch(/import(?:\s+type)?\s*\{[^}]*DslEventKind[^}]*\}\s*from\s*['"]\.\.\/dsl\/MemeCompiler['"]/);
+    });
+
+    test('DslCodexPanel_renders_filter_dropdown_when_history_enabled (round 136)', () => {
+        // The
+        // `renderHistoryFilter`
+        // helper
+        // emits
+        // the
+        // `<select
+        // id="dsl-codex-history-filter-select">`
+        // element.
+        const fs = require('fs');
+        const path = require('path');
+        const panel = fs.readFileSync(path.resolve(__dirname, 'ui', 'DslCodexPanel.ts'), 'utf-8');
+        expect(panel).toMatch(/renderHistoryFilter/);
+        expect(panel).toMatch(/dsl-codex-history-filter-select/);
+    });
+
+    test('DslCodexPanel_has_filter_with_4_event_kinds_plus_all (round 136)', () => {
+        // The
+        // filter
+        // dropdown
+        // has
+        // 5
+        // options:
+        // 全部
+        // (All)
+        // +
+        // the
+        // 4
+        // DslEventKind
+        // variants
+        // (Collide
+        // / Timer
+        // / Spawn
+        // / PlayerHit).
+        const fs = require('fs');
+        const path = require('path');
+        const panel = fs.readFileSync(path.resolve(__dirname, 'ui', 'DslCodexPanel.ts'), 'utf-8');
+        // The
+        // kinds
+        // array
+        // is
+        // the
+        // source
+        // of
+        // truth
+        // for
+        // the
+        // 4
+        // event
+        // kinds.
+        expect(panel).toMatch(/const kinds:\s*DslEventKind\[\]\s*=\s*\['Collide',\s*'Timer',\s*'Spawn',\s*'PlayerHit'\]/);
+        // The
+        // "All"
+        // option
+        // (value
+        // = '').
+        expect(panel).toMatch(/全部/);
+    });
+
+    test('DslCodexPanel_has_change_event_listener_for_filter (round 136)', () => {
+        // The
+        // filter
+        // dropdown
+        // change
+        // event
+        // is
+        // wired
+        // via
+        // event
+        // delegation
+        // on
+        // the
+        // stable
+        // `root`
+        // element
+        // (survives
+        // refresh()).
+        const fs = require('fs');
+        const path = require('path');
+        const panel = fs.readFileSync(path.resolve(__dirname, 'ui', 'DslCodexPanel.ts'), 'utf-8');
+        expect(panel).toMatch(/root\.addEventListener\(\s*'change'/);
+        expect(panel).toMatch(/dispatchFilter/);
+    });
+});
+
 describe('App — round 122: settings-panel CSS responsive layout for narrow screens (操控性好 mobile/portrait)', () => {
     // -----------------------------------------------------------------
     // The round-111 SettingsPanel
