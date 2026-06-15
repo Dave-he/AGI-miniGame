@@ -6386,3 +6386,221 @@ describe('App — round 122: settings-panel CSS responsive layout for narrow scr
     });
 });
 
+describe('App — round 123: file-content tests for 4 ActionDebouncer fields + setWindowMs calls (defense vs accidental rename)', () => {
+    // -----------------------------------------------------------------
+    // Round 93 pattern applied to
+    // the 4 `ActionDebouncer`
+    // fields in main.ts:
+    //   debouncerLoadGame
+    //   debouncerSaveGame
+    //   debouncerRollWorldEvent
+    //   debouncerEnterAtom
+    // Each field is
+    // (a) declared as a
+    //     private field with
+    //     type `ActionDebouncer`
+    // (b) instantiated in the
+    //     constructor with
+    //     `new ActionDebouncer(
+    //       App.ACTION_DEBOUNCE_MS,
+    //       <actionName>,
+    //       <roundTag>,
+    //       <logFn>,
+    //     )`
+    // (c) used in
+    //     `applyDebounceSettings`
+    //     via `setWindowMs(ms)`
+    //
+    // The pre-round-123
+    // App-level behavioural
+    // tests (round 111) cover
+    // the *behavior* of
+    // applyDebounceSettings
+    // (4 debouncers sync, the
+    // currentDebounceWindowMs
+    // field reflects the new
+    // value, 0ms vs 2000ms
+    // e2e behavior). Round
+    // 123 adds file-content
+    // regression tests that
+    // pin the *names* +
+    // *shape* of the 4 fields
+    // so a refactor that
+    // accidentally renames a
+    // field (e.g.
+    // `debouncerLoadGame` →
+    // `loadGameDebouncer`) or
+    // removes a `setWindowMs`
+    // call from
+    // `applyDebounceSettings`
+    // fails the test before
+    // it can silently desync
+    // the 4 debouncers.
+    // -----------------------------------------------------------------
+
+    // -----------------------------------------------------------------
+    // (a) Field declarations
+    // -----------------------------------------------------------------
+
+    test('main_ts_declares_debouncerLoadGame_field (round 123)', () => {
+        // Defense: a rename of
+        // the field name would
+        // silently break every
+        // downstream caller
+        // (applyDebounceSettings
+        // + the 4 .check() +
+        // .stamp() sites).
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/debouncerLoadGame:\s*ActionDebouncer/);
+    });
+
+    test('main_ts_declares_debouncerSaveGame_field (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/debouncerSaveGame:\s*ActionDebouncer/);
+    });
+
+    test('main_ts_declares_debouncerRollWorldEvent_field (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/debouncerRollWorldEvent:\s*ActionDebouncer/);
+    });
+
+    test('main_ts_declares_debouncerEnterAtom_field (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/debouncerEnterAtom:\s*ActionDebouncer/);
+    });
+
+    // -----------------------------------------------------------------
+    // (b) Constructor
+    // instantiations (4x
+    // `new ActionDebouncer(
+    // App.ACTION_DEBOUNCE_MS,
+    // <actionName>, <roundTag>,
+    // <logFn>)` calls).
+    // Defense: a refactor
+    // that drops the
+    // App.ACTION_DEBOUNCE_MS
+    // arg (e.g. hard-codes a
+    // different value) would
+    // silently desync the 4
+    // windows from the
+    // round-110a single
+    // source of truth.
+    // -----------------------------------------------------------------
+
+    test('main_ts_constructs_debouncerLoadGame_with_ACTION_DEBOUNCE_MS (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        // The instantiation
+        // shape: `this.debouncerLoadGame
+        // = new ActionDebouncer(
+        //   App.ACTION_DEBOUNCE_MS,
+        //   'loadGame',
+        //   'round 104',
+        //   (line) => ...
+        // );`
+        expect(main).toMatch(/this\.debouncerLoadGame\s*=\s*new ActionDebouncer\(\s*App\.ACTION_DEBOUNCE_MS/);
+        expect(main).toMatch(/new ActionDebouncer\(\s*App\.ACTION_DEBOUNCE_MS,\s*'loadGame',\s*'round 104'/);
+    });
+
+    test('main_ts_constructs_debouncerSaveGame_with_ACTION_DEBOUNCE_MS (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.debouncerSaveGame\s*=\s*new ActionDebouncer\(\s*App\.ACTION_DEBOUNCE_MS/);
+        expect(main).toMatch(/new ActionDebouncer\(\s*App\.ACTION_DEBOUNCE_MS,\s*'saveGame',\s*'round 106'/);
+    });
+
+    test('main_ts_constructs_debouncerRollWorldEvent_with_ACTION_DEBOUNCE_MS (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.debouncerRollWorldEvent\s*=\s*new ActionDebouncer\(\s*App\.ACTION_DEBOUNCE_MS/);
+        expect(main).toMatch(/new ActionDebouncer\(\s*App\.ACTION_DEBOUNCE_MS,\s*'rollWorldEvent',\s*'round 107'/);
+    });
+
+    test('main_ts_constructs_debouncerEnterAtom_with_ACTION_DEBOUNCE_MS (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.debouncerEnterAtom\s*=\s*new ActionDebouncer\(\s*App\.ACTION_DEBOUNCE_MS/);
+        expect(main).toMatch(/new ActionDebouncer\(\s*App\.ACTION_DEBOUNCE_MS,\s*'enterAtom',\s*'round 109'/);
+    });
+
+    // -----------------------------------------------------------------
+    // (c) applyDebounceSettings
+    // calls `setWindowMs(ms)`
+    // on each of the 4
+    // debouncers. Defense: a
+    // refactor that drops
+    // one of the 4 calls
+    // would silently leave
+    // one debouncer's window
+    // at the previous value
+    // (e.g. 2000ms knob
+    // mutation doesn't
+    // affect saveGame
+    // anymore).
+    // -----------------------------------------------------------------
+
+    test('applyDebounceSettings_calls_setWindowMs_on_debouncerLoadGame (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.debouncerLoadGame\.setWindowMs\(ms\)/);
+    });
+
+    test('applyDebounceSettings_calls_setWindowMs_on_debouncerSaveGame (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.debouncerSaveGame\.setWindowMs\(ms\)/);
+    });
+
+    test('applyDebounceSettings_calls_setWindowMs_on_debouncerRollWorldEvent (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.debouncerRollWorldEvent\.setWindowMs\(ms\)/);
+    });
+
+    test('applyDebounceSettings_calls_setWindowMs_on_debouncerEnterAtom (round 123)', () => {
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.debouncerEnterAtom\.setWindowMs\(ms\)/);
+    });
+
+    // -----------------------------------------------------------------
+    // Aggregate: the 4
+    // .check() + .stamp()
+    // call sites (4 actions
+    // x 2 methods = 8
+    // sites). Defense: a
+    // refactor that drops
+    // one of the .check()
+    // calls would silently
+    // bypass the debouncer.
+    // -----------------------------------------------------------------
+
+    test('main_ts_has_4_check_call_sites_for_4_debouncers (round 123)', () => {
+        // Each of the 4
+        // debouncers must be
+        // .check()'d before its
+        // action body runs.
+        // The 4 expected sites:
+        //   - debouncerLoadGame.check() in loadGame
+        //   - debouncerSaveGame.check() in saveGame
+        //   - debouncerRollWorldEvent.check() in rollWorldEvent
+        //   - debouncerEnterAtom.check() in enterAtom
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.debouncerLoadGame\.check\(\)/);
+        expect(main).toMatch(/this\.debouncerSaveGame\.check\(\)/);
+        expect(main).toMatch(/this\.debouncerRollWorldEvent\.check\(\)/);
+        expect(main).toMatch(/this\.debouncerEnterAtom\.check\(\)/);
+    });
+
+    test('main_ts_has_4_stamp_call_sites_for_4_debouncers (round 123)', () => {
+        // Each of the 4
+        // debouncers must be
+        // .stamp()'d after its
+        // action runs (stamp
+        // before body for
+        // rollWorldEvent
+        // /enterAtom to handle
+        // early-return paths;
+        // stamp after body for
+        // loadGame/saveGame to
+        // prevent spam-retry).
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.debouncerLoadGame\.stamp\(\)/);
+        expect(main).toMatch(/this\.debouncerSaveGame\.stamp\(\)/);
+        expect(main).toMatch(/this\.debouncerRollWorldEvent\.stamp\(\)/);
+        expect(main).toMatch(/this\.debouncerEnterAtom\.stamp\(\)/);
+    });
+});
+
