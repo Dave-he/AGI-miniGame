@@ -83,6 +83,12 @@ import { renderAchievementsPanel, AchievementsPanelHandle } from './ui/Achieveme
 // `WfcBiomes.BIOMES` with the
 // current biome highlighted.
 import { renderBiomeLibraryPanel, BiomeLibraryPanelHandle } from './ui/BiomeLibraryPanel';
+// Round 128 — the D-key DebugOverlay
+// panel showing the 4 ActionDebouncer
+// instances' runtime state (window /
+// ms since last stamp / currently
+// debouncing?). Developer + QA tool.
+import { renderDebugOverlay, DebugOverlayHandle, type DebugOverlayDebouncerInfo } from './ui/DebugOverlay';
 // Round 48 — `themeToScene` itself is no longer called from main.ts;
 // the WASM bridge below wraps it. The `ThemeInput` type alias is
 // still needed to type the input to the bridge.
@@ -138,6 +144,16 @@ interface AppRefs {
      * panel.
      */
     biomeLibraryRoot?: HTMLElement;
+    /**
+     * Round 128 — optional root
+     * for the DebugOverlay panel
+     * (4 ActionDebouncer
+     * instances' runtime state).
+     * The D key shortcut is the
+     * primary way to open the
+     * panel.
+     */
+    debugOverlayRoot?: HTMLElement;
     /**
      * Round 111 — optional root for the
      * SettingsPanel (audio / difficulty /
@@ -313,6 +329,20 @@ class App {
      * dimension.
      */
     private biomeLibraryHandle: BiomeLibraryPanelHandle | null = null;
+    /**
+     * Round 128 — handle for the
+     * DebugOverlay panel (the
+     * 12-key panel-toggle D
+     * shortcut's content).
+     * Refreshed every 200ms via
+     * `debugOverlayTimer` so the
+     * `ms since stamp` counts
+     * tick in real time. Null
+     * when the mount point is
+     * not provided.
+     */
+    private debugOverlayHandle: DebugOverlayHandle | null = null;
+    private debugOverlayTimer: ReturnType<typeof setInterval> | null = null;
     /** Monotonic turn counter for NpcMemoryEntry.turn. */
     private npcTurn = 0;
     /**
@@ -803,6 +833,33 @@ class App {
                 this.i18n,
             );
         }
+        // Round 128 — wire the DebugOverlay
+        // panel showing the 4 ActionDebouncer
+        // instances' runtime state. The
+        // panel is refreshed every 200ms via
+        // setInterval so the `ms since stamp`
+        // counts tick in real time. The
+        // mount point is hidden by default;
+        // the D key (or future mouse button)
+        // toggles it via the round-117
+        // `togglePanel` helper.
+        //
+        // The wiring happens AFTER the 4
+        // debouncer constructors (lines
+        // 890-925) + the round-127
+        // applyDebounceSettings call below
+        // because the DebugOverlay's
+        // render pass reads `d.msSinceLastFire`
+        // + `d.windowSizeMs` — the
+        // debouncers must exist first.
+        // Round 128 originally placed this
+        // block here (before debouncer
+        // construction), which crashed
+        // with "Cannot read properties of
+        // undefined (reading 'msSinceLastFire')"
+        // on every makeApp() call. Moving
+        // the block to after line 925 fixes
+        // the boot order.
         this.dslExec = new DslExecutor(this.scene, {
             log: (line) => this.hud.log(line),
             onPlayerDamage: (n) => this.hud.log(`受到 ${n} 点伤害`),
@@ -888,6 +945,23 @@ class App {
         // Idempotent when the value
         // matches the default.
         this.applyDebounceSettings(this.currentDebounceWindowMs);
+        // Round 128 — wire the
+        // DebugOverlay panel now that all
+        // 4 ActionDebouncer instances
+        // exist. The panel reads
+        // `d.msSinceLastFire` +
+        // `d.windowSizeMs` so it MUST be
+        // constructed AFTER the debouncers.
+        if (refs.debugOverlayRoot) {
+            const debouncerInfos: DebugOverlayDebouncerInfo[] = [
+                { debouncer: this.debouncerLoadGame,       chineseLabel: '读取存档' },
+                { debouncer: this.debouncerSaveGame,       chineseLabel: '保存游戏' },
+                { debouncer: this.debouncerRollWorldEvent, chineseLabel: '世界事件' },
+                { debouncer: this.debouncerEnterAtom,      chineseLabel: '进入 atom' },
+            ];
+            this.debugOverlayHandle = renderDebugOverlay(refs.debugOverlayRoot, debouncerInfos);
+            this.debugOverlayTimer = setInterval(() => this.debugOverlayHandle?.refresh(), 200);
+        }
         this.economy = new EconomyPanel(refs.economyRoot, this.worldState);
         this.epochPanel = new EpochPanel(refs.epochRoot, this.epoch, () => this.triggerCollapse(), this.i18n);
         // Round 54 — wire the rollback callback into the
@@ -1743,6 +1817,32 @@ class App {
      * `togglePanel` helper.
      */
     toggleEpoch(): void { this.togglePanel('epoch-root', '纪元面板', 'O'); }
+
+    /**
+     * Round 128 — D key
+     * counterpart.
+     * Toggles the
+     * `#debug-overlay-root`
+     * panel (the
+     * round-128
+     * `renderDebugOverlay`
+     * showing the 4
+     * `ActionDebouncer`
+     * instances' runtime
+     * state — action label /
+     * window / ms since last
+     * stamp / currently
+     * debouncing?) via the
+     * round-117 `togglePanel`
+     * helper. The 12th panel
+     * in the panel-toggle
+     * group, developer + QA
+     * tool (the Q key's
+     * StatsPanel is the
+     * player-facing aggregate
+     * counterpart).
+     */
+    toggleDebugOverlay(): void { this.togglePanel('debug-overlay-root', '调试信息', 'D'); }
 
     /**
      * Round 117 — shared panel-toggle
@@ -2802,6 +2902,7 @@ async function bootstrap(): Promise<void> {
     const npcMindRoot = document.getElementById('npc-mind-root') as HTMLElement | null;
     const achievementsRoot = document.getElementById('achievements-root') as HTMLElement | null;
     const biomeLibraryRoot = document.getElementById('biome-library-root') as HTMLElement | null;
+    const debugOverlayRoot = document.getElementById('debug-overlay-root') as HTMLElement | null;
     if (!canvas || !hudRoot || !progRoot || !econRoot || !epochRoot) {
         console.error('Missing required DOM roots');
         return;
@@ -2820,6 +2921,7 @@ async function bootstrap(): Promise<void> {
         npcMindRoot: npcMindRoot ?? undefined,
         achievementsRoot: achievementsRoot ?? undefined,
         biomeLibraryRoot: biomeLibraryRoot ?? undefined,
+        debugOverlayRoot: debugOverlayRoot ?? undefined,
     });
     (window as any).__AGI__ = app;
     await app.start();
@@ -2903,6 +3005,17 @@ async function bootstrap(): Promise<void> {
     bind('btn-god-panel',  () => app.toggleGodConsolePanel());
     bind('btn-economy',    () => app.toggleEconomy());
     bind('btn-epoch',      () => app.toggleEpoch());
+    // Round 128 — D key mouse
+    // counterpart. Opens /
+    // closes the
+    // `DebugOverlay` panel
+    // showing the 4
+    // ActionDebouncer
+    // instances' runtime
+    // state. 12th button in
+    // the round-116-121
+    // toggle cluster.
+    bind('btn-debug-overlay', () => app.toggleDebugOverlay());
     bind('btn-complete',  () => app.completeRun(2500, [
         { itemId: 'gold', quantity: 100 },
         { itemId: 'gem',  quantity: 5 },
@@ -2972,7 +3085,7 @@ async function bootstrap(): Promise<void> {
             // border.
             const toggleHeader = document.createElement('div');
             toggleHeader.className = 'kb-help-section kb-help-section-toggle';
-            toggleHeader.textContent = '面板开关 (11 键)';
+            toggleHeader.textContent = '面板开关 (12 键)';
             body.appendChild(toggleHeader);
             for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
                 const keyEl = document.createElement('div');
@@ -3155,6 +3268,20 @@ async function bootstrap(): Promise<void> {
             case 'toggle-god-console-panel': app.toggleGodConsolePanel(); break;
             case 'toggle-economy':          app.toggleEconomy();          break;
             case 'toggle-epoch':            app.toggleEpoch();            break;
+            // Round 128 — D key for
+            // the DebugOverlay panel.
+            // The shortcut calls the
+            // same `toggleDebugOverlay()`
+            // method that the
+            // mouse entry point
+            // (`btn-debug-overlay`)
+            // dispatches; the
+            // method flips the
+            // `hidden` attribute via
+            // the round-117
+            // `togglePanel` helper, so
+            // the toggle is idempotent.
+            case 'toggle-debug-overlay':    app.toggleDebugOverlay();    break;
         }
         // Only swallow the event when we actually handled it so
         // tab navigation, Esc-into-fullscreen-exit etc. still

@@ -117,13 +117,37 @@ export class ActionDebouncer {
     /**
      * Round 108 — debug accessor. Returns the
      * constructor-injected window in milliseconds.
-     * Used by the round-109+ DebugOverlay panel
+     * Used by the round-128 DebugOverlay panel
      * and by main.test.ts to advance `Date.now()`
      * past the debounce window in the
      * `after_window_runs_both` test.
      */
     get windowSizeMs(): number {
         return this.windowMs;
+    }
+
+    /**
+     * Round 128 — debug accessor. Returns the
+     * constructor-injected action name
+     * (e.g. "loadGame", "saveGame",
+     * "rollWorldEvent", "enterAtom"). Used
+     * by the DebugOverlay panel to label each
+     * debouncer row.
+     */
+    get actionLabel(): string {
+        return this.actionName;
+    }
+
+    /**
+     * Round 128 — debug accessor. Returns the
+     * constructor-injected round tag
+     * (e.g. "round 104", "round 106",
+     * "round 107", "round 109"). Used by the
+     * DebugOverlay panel to show which round
+     * introduced the debounce.
+     */
+    get debounceRound(): string {
+        return this.roundTag;
     }
 
     /**

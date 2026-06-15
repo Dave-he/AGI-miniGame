@@ -80,6 +80,7 @@ interface AppRefsLike {
     achievementsRoot?: HTMLElement;
     biomeLibraryRoot?: HTMLElement;
     settingsRoot?: HTMLElement;
+    debugOverlayRoot?: HTMLElement;
 }
 
 function makeRefs(): AppRefsLike {
@@ -140,6 +141,19 @@ function makeRefs(): AppRefsLike {
     const settingsRoot = document.createElement('div');
     settingsRoot.id = 'settings-root';
     document.body.appendChild(settingsRoot);
+    // Round 128 — add the
+    // debug-overlay-root so the
+    // round-128 App-level
+    // tests can exercise the
+    // `renderDebugOverlay`
+    // handle (the handle is
+    // constructed only if the
+    // mount point is provided;
+    // null otherwise).
+    const debugOverlayRoot = document.createElement('div');
+    debugOverlayRoot.id = 'debug-overlay-root';
+    debugOverlayRoot.setAttribute('hidden', '');
+    document.body.appendChild(debugOverlayRoot);
     return {
         canvas,
         hudRoot,
@@ -149,6 +163,7 @@ function makeRefs(): AppRefsLike {
         achievementsRoot,
         biomeLibraryRoot,
         settingsRoot,
+        debugOverlayRoot,
     };
 }
 
@@ -6385,21 +6400,22 @@ describe('App — round 120: concentrated help-overlay section for 8 panel-toggl
     // below have been bumped
     // to 11. The list-keys
     // test mirrors the new
-    // 11-key QWERTY order.
+    // 12-key QWERTY order (round 128 added D).
     // -----------------------------------------------------------------
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_11_keys (round 120/121)', () => {
-        // The 11 panel-toggle
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_12_keys (round 120/121/128)', () => {
+        // The 12 panel-toggle
         // keys: P / Q / W / T /
         // F / M / V / B / G / N
-        // / O (round-121 G / N
-        // / O extension).
-        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(11);
+        // / O / D (round-128 D
+        // extension for the
+        // DebugOverlay panel).
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(12);
     });
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_lists_11_expected_keys (round 120/121)', () => {
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_12_expected_keys (round 120/121/128)', () => {
         const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
-        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O']);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D']);
     });
 
     test('PANEL_TOGGLE_DESCRIPTIONS_every_key_has_a_chinese_action (round 120)', () => {
@@ -6564,23 +6580,24 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
     // row order.
     // -----------------------------------------------------------------
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_11_keys (round 121)', () => {
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_12_keys (round 121/128)', () => {
         // Extends round-120
         // 8 rows by 3 new
         // panel-toggle rows
-        // (G / N / O).
-        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(11);
+        // (G / N / O) + round-128
+        // 12th row (D).
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(12);
     });
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_lists_11_expected_keys (round 121)', () => {
-        // 11 panel-toggle keys
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_12_expected_keys (round 121/128)', () => {
+        // 12 panel-toggle keys
         // in QWERTY order. The
         // round-120 8 keys are
         // preserved + 3 new
-        // keys (G / N / O) are
-        // appended.
+        // keys (G / N / O) +
+        // round-128 D key.
         const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
-        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O']);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D']);
     });
 
     test('PANEL_TOGGLE_DESCRIPTIONS_G_N_O_rows_have_chinese_actions (round 121)', () => {
@@ -6717,22 +6734,271 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         expect(main).toMatch(/bind\('btn-epoch',\s*\(\)\s*=>\s*app\.toggleEpoch\(\)\)/);
     });
 
-    test('main_ts_help_overlay_header_says_11_keys (round 121)', () => {
+    test('main_ts_help_overlay_header_says_12_keys (round 121/128)', () => {
         // The 3rd section header
         // in the help overlay
         // (round-120
         // `kb-help-section-toggle`)
         // says "面板开关 (8 键)"
-        // pre-round-121 and
+        // pre-round-121,
         // "面板开关 (11 键)"
-        // post-round-121. The
-        // round-121 update is
+        // post-round-121, and
+        // "面板开关 (12 键)"
+        // post-round-128. The
+        // round-128 update is
         // important so a player
         // scanning the section
         // knows how many keys
         // are listed.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toMatch(/面板开关 \(11 键\)/);
+        expect(main).toMatch(/面板开关 \(12 键\)/);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 128 — D-key DebugOverlay panel
+// (操控性好 UX improvement — developer
+// + QA tool showing the 4
+// ActionDebouncer instances' runtime
+// state). Closes the round-109+ TODO
+// gap (the round-108 helper accessors
+// `msSinceLastFire` + `windowSizeMs`
+// were exposed but never rendered to
+// a UI panel).
+//
+// Pins:
+//   1. `routeKey('d')` and `routeKey('D')`
+//      both return `{ kind:
+//      'toggle-debug-overlay' }`.
+//   2. `App_exposes_toggleDebugOverlay_for_bootstrap_keydown_switch`.
+//   3. `toggleDebugOverlay_is_a_no_op_when_debug_root_missing`
+//      (helper is null-safe; mirrors
+//      round-117 contract).
+//   4. `toggleDebugOverlay_flips_hidden_attribute_on_debug_root`.
+//   5. `bootstrap_keydown_handler_full_path_D_to_toggleDebugOverlay`.
+//   6. `BINDING_DESCRIPTIONS_for_D_documents_round_128_DebugOverlay`.
+//   7. `App_wires_renderDebugOverlay_when_debug_root_is_provided`.
+//   8. `App_wires_setInterval_200ms_for_debug_overlay_refresh`.
+//   9. `index_html_has_debug_overlay_root_mount_point`.
+//   10. `index_html_has_btn_debug_overlay_button_for_mouse_players`.
+//   11. `index_html_has_debug_overlay_css_rules`.
+//   12. `main_ts_passes_4_debouncers_to_renderDebugOverlay`.
+// ---------------------------------------------------------------------------
+
+describe('App — round 128: D-key DebugOverlay panel (4 debouncer stats)', () => {
+    function cast<T>(v: unknown): T { return v as T; }
+
+    // Cleanup round-127 localStorage keys
+    // (the App constructor reads them in
+    // the field initializers) so the
+    // tests see default state.
+    beforeEach(() => {
+        try { localStorage.removeItem('agi_muted'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_debounce_ms'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_difficulty'); } catch { /* noop */ }
+    });
+
+    test('routeKey_d_returns_toggle_debug_overlay_action (round 128)', () => {
+        // Lowercase d → the
+        // toggle-debug-overlay
+        // action.
+        expect(routeKey('d')).toEqual({ kind: 'toggle-debug-overlay' });
+    });
+
+    test('routeKey_D_returns_toggle_debug_overlay_action_for_shifted_key (round 128)', () => {
+        // Shifted D (the same physical key
+        // with Shift held) → same action.
+        // Mirrors the round-85 R / round-91 `
+        // / round-119 B conventions.
+        expect(routeKey('D')).toEqual({ kind: 'toggle-debug-overlay' });
+    });
+
+    test('App_exposes_toggleDebugOverlay_for_bootstrap_keydown_switch (round 128)', () => {
+        // The bootstrap keydown
+        // switch dispatches
+        // `app.toggleDebugOverlay()`
+        // (1-line wrapper round-117
+        // helper), so the method
+        // must exist on the App
+        // surface.
+        const app = makeApp();
+        expect(typeof (app as unknown as { toggleDebugOverlay: unknown }).toggleDebugOverlay).toBe('function');
+    });
+
+    test('toggleDebugOverlay_is_a_no_op_when_debug_root_missing (round 128 helper-level)', () => {
+        // When the host page
+        // doesn't provide
+        // `#debug-overlay-root`,
+        // toggleDebugOverlay
+        // silently no-ops. Mirror
+        // of the round-117 helper
+        // contract — the helper is
+        // null-safe so a missing
+        // mount point doesn't throw.
+        const app = makeApp();
+        // Remove the mount
+        // point (added by
+        // makeRefs() in some
+        // test setups).
+        const existing = document.getElementById('debug-overlay-root');
+        existing?.remove();
+        // Call the method —
+        // should not throw.
+        expect(() => app.toggleDebugOverlay()).not.toThrow();
+    });
+
+    test('toggleDebugOverlay_flips_hidden_attribute_on_debug_root (round 128 e2e)', () => {
+        // Standard e2e: open +
+        // close flips the hidden
+        // attribute. Mirror of
+        // the round-112 test for
+        // the P key.
+        const app = makeApp();
+        const root = document.getElementById('debug-overlay-root')!;
+        // Render the panel
+        // explicitly with hidden
+        // (renderDebugOverlay
+        // overwrites innerHTML
+        // so any pre-existing
+        // `hidden` attribute is
+        // gone after the
+        // construction).
+        root.setAttribute('hidden', '');
+        expect(root.hasAttribute('hidden')).toBe(true);
+        app.toggleDebugOverlay();
+        expect(root.hasAttribute('hidden')).toBe(false);
+        app.toggleDebugOverlay();
+        expect(root.hasAttribute('hidden')).toBe(true);
+    });
+
+    test('bootstrap_keydown_handler_full_path_D_to_toggleDebugOverlay (round 128)', () => {
+        // File-content regression:
+        // the bootstrap keydown
+        // switch MUST route
+        // `toggle-debug-overlay`
+        // to
+        // `app.toggleDebugOverlay()`.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/case\s+'toggle-debug-overlay':\s*app\.toggleDebugOverlay\(\);\s*break;/);
+    });
+
+    test('BINDING_DESCRIPTIONS_for_D_documents_round_128_DebugOverlay (round 128 reverse)', () => {
+        // The D key has a
+        // BINDING_DESCRIPTIONS
+        // row that mentions
+        // DebugOverlay + 防抖器
+        // (the Chinese for
+        // debouncer) so the
+        // help overlay reveals
+        // the panel's purpose.
+        const dRow = BINDING_DESCRIPTIONS.find((d) => d.key === 'D');
+        expect(dRow).toBeDefined();
+        expect(dRow?.action).toMatch(/调试/);
+        expect(dRow?.action).toMatch(/防抖/);
+    });
+
+    test('App_wires_renderDebugOverlay_when_debug_root_is_provided (round 128)', () => {
+        // When the App is
+        // constructed with a
+        // `debugOverlayRoot`
+        // ref, the handle is
+        // non-null. The handle
+        // is what the
+        // setInterval ticks.
+        const app = makeApp();
+        const handle = cast<{ debugOverlayHandle: { refresh: () => void } | null }>(app).debugOverlayHandle;
+        expect(handle).not.toBeNull();
+        expect(typeof handle?.refresh).toBe('function');
+    });
+
+    test('App_wires_setInterval_200ms_for_debug_overlay_refresh (round 128)', () => {
+        // The setInterval
+        // timer for the
+        // DebugOverlay panel
+        // is non-null when
+        // the mount point is
+        // provided. (We can't
+        // easily assert the
+        // 200ms interval
+        // without advancing
+        // fake timers — this
+        // test pins that the
+        // timer is set up.)
+        const app = makeApp();
+        const timer = cast<{ debugOverlayTimer: ReturnType<typeof setInterval> | null }>(app).debugOverlayTimer;
+        expect(timer).not.toBeNull();
+        // Cleanup so the
+        // test doesn't leave
+        // a dangling timer.
+        if (timer) clearInterval(timer);
+    });
+
+    test('index_html_has_debug_overlay_root_mount_point (round 128)', () => {
+        // The mount point
+        // `<div
+        // id="debug-overlay-root">`
+        // exists in index.html
+        // — defensive against
+        // accidental deletion
+        // of the mount point
+        // (which would
+        // silently break the D
+        // key).
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/<div[^>]*id="debug-overlay-root"/);
+    });
+
+    test('index_html_has_btn_debug_overlay_button_for_mouse_players (round 128)', () => {
+        // The mouse button
+        // counterpart exists
+        // in the controls bar
+        // with the data-key
+        // attribute. Mirror
+        // of round-119 test
+        // for btn-biome-library.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/<button[^>]*id="btn-debug-overlay"[^>]*data-key="D"/);
+        // The label should
+        // contain the
+        // keyboard shortcut
+        // so mouse-only
+        // players learn it.
+        expect(html).toMatch(/id="btn-debug-overlay"[^>]*>[\s\S]*?\(D\)/);
+    });
+
+    test('index_html_has_debug_overlay_css_rules (round 128)', () => {
+        // The CSS rule for the
+        // panel exists in the
+        // stylesheet. Without
+        // it the panel would
+        // render unstyled.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/#debug-overlay-root\[hidden\]\s*\{\s*display:\s*none;\s*\}/);
+        expect(html).toMatch(/\.debug-overlay-panel\s*\{/);
+        expect(html).toMatch(/\.debug-overlay-row\s*\{/);
+    });
+
+    test('main_ts_passes_4_debouncers_to_renderDebugOverlay (round 128)', () => {
+        // File-content
+        // regression: the
+        // `renderDebugOverlay`
+        // call in main.ts MUST
+        // pass all 4
+        // debouncer instances
+        // (loadGame /
+        // saveGame /
+        // rollWorldEvent /
+        // enterAtom). A
+        // regression that
+        // silently drops one
+        // would leave the
+        // panel showing only
+        // 3 rows.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.debouncerLoadGame[\s\S]*?chineseLabel:\s*'读取存档'/);
+        expect(main).toMatch(/this\.debouncerSaveGame[\s\S]*?chineseLabel:\s*'保存游戏'/);
+        expect(main).toMatch(/this\.debouncerRollWorldEvent[\s\S]*?chineseLabel:\s*'世界事件'/);
+        expect(main).toMatch(/this\.debouncerEnterAtom[\s\S]*?chineseLabel:\s*'进入 atom'/);
     });
 });
 

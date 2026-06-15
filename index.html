@@ -101,6 +101,77 @@
       #god-root[hidden] { display: none; }
       #economy-root[hidden] { display: none; }
       #epoch-root[hidden] { display: none; }
+      /* Round 128 — debug-overlay-root:
+         defensive [hidden] override for
+         the 12th panel-toggle key (D).
+         Mirror of the round-121
+         god/economy/epoch pattern. */
+      #debug-overlay-root[hidden] { display: none; }
+      /* Round 128 — DebugOverlay panel
+         styles. Compact 6-column grid
+         (label / action / round / window
+         / ms since / status). Each
+         row is a monospace grid so the
+         numbers align vertically for
+         easy scanning. */
+      .debug-overlay-panel {
+          font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+          font-size: 12px;
+          min-width: 320px;
+          max-width: calc(100vw - 32px);
+          box-sizing: border-box;
+      }
+      .debug-overlay-title {
+          font-weight: 600;
+          margin-bottom: 8px;
+          font-size: 13px;
+          color: #ffd166;
+      }
+      .debug-overlay-header,
+      .debug-overlay-row {
+          display: grid;
+          grid-template-columns: 80px 110px 60px 60px 90px 60px;
+          gap: 6px;
+          padding: 3px 0;
+          align-items: center;
+      }
+      .debug-overlay-header {
+          color: #aaa;
+          border-bottom: 1px solid #444;
+          margin-bottom: 4px;
+      }
+      .debug-overlay-row .debug-overlay-action {
+          color: #e0e0e0;
+      }
+      .debug-overlay-row .debug-overlay-name {
+          color: #6cf;
+      }
+      .debug-overlay-row .debug-overlay-round {
+          color: #888;
+          font-size: 11px;
+      }
+      .debug-overlay-row .debug-overlay-window {
+          color: #ccc;
+          text-align: right;
+      }
+      .debug-overlay-row .debug-overlay-since {
+          color: #ddd;
+          text-align: right;
+      }
+      .debug-overlay-row .debug-overlay-status {
+          font-weight: 600;
+          text-align: center;
+          border-radius: 3px;
+          padding: 1px 4px;
+      }
+      .debug-overlay-status.is-open {
+          color: #6f6;
+          background: rgba(102, 255, 102, 0.08);
+      }
+      .debug-overlay-status.is-debouncing {
+          color: #f66;
+          background: rgba(255, 102, 102, 0.12);
+      }
       .settings-panel {
         background: rgba(11, 11, 34, 0.92);
         border: 1px solid var(--neon-cyan, #4ecdc4);
@@ -609,6 +680,21 @@
          keyboard shortcut + the mouse
          button). -->
     <div class="panel" id="biome-library-root"></div>
+    <!-- Round 128 — debug-overlay-root: home for the
+         round-128 `renderDebugOverlay` panel
+         showing the 4 `ActionDebouncer`
+         instances' runtime state (action label /
+         introducing round tag / current window /
+         ms since last stamp / currently
+         debouncing?). Hidden by default; the D
+         key + the `btn-debug-overlay` mouse
+         button toggle the `hidden` attribute via
+         App.toggleDebugOverlay(). The panel is
+         built at runtime by renderDebugOverlay
+         (it owns its innerHTML). The mount point
+         itself is just an empty div that the
+         helper targets. -->
+    <div class="panel" id="debug-overlay-root"></div>
     <!-- Round 112 — settings-root: home for the
          round-111 SettingsPanel (audio mute, locale,
          debounce-window knob). Hidden by default; the
@@ -665,6 +751,19 @@
            round-23 BiomeLibraryPanel
            showing the 6 biomes. -->
       <button class="ctl toggle-btn" id="btn-biome-library" data-key="B">🌍 生物群系 (B)</button>
+      <!-- Round 128 — D-key mouse
+           counterpart. Opens /
+           closes the
+           `DebugOverlay` panel
+           showing the 4
+           ActionDebouncer
+           instances' runtime
+           state. Developer + QA
+           tool (the Q key's
+           StatsPanel is the
+           player-facing
+           counterpart). -->
+      <button class="ctl toggle-btn" id="btn-debug-overlay" data-key="D">🔧 调试 (D)</button>
       <!-- Round 121 — 3 mouse
            buttons for the G / N / O
            3-key batch (god-console /

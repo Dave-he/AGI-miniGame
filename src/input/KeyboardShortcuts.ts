@@ -65,7 +65,26 @@ export type KeyboardAction =
     | { kind: 'toggle-biome-library' }
     | { kind: 'toggle-god-console-panel' }
     | { kind: 'toggle-economy' }
-    | { kind: 'toggle-epoch' };
+    | { kind: 'toggle-epoch' }
+    // Round 128 — D key toggles the
+    // DebugOverlay panel
+    // (`#debug-overlay-root`). The
+    // panel shows the 4
+    // `ActionDebouncer` instances'
+    // runtime state (window / ms
+    // since last stamp / is the
+    // debouncer currently
+    // swallowing calls). The D
+    // mnemonic stands for "Debug"
+    // — the panel is meant for
+    // QA + dev debugging, not
+    // regular players. The Q key
+    // already shows round-40
+    // StatsPanel (the player-
+    // facing aggregate stats),
+    // so D is the developer-
+    // facing counterpart.
+    | { kind: 'toggle-debug-overlay' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -307,6 +326,22 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // (god-console / economy
     // / epoch).
     { key: 'O',    action: '切换纪元面板' },
+    // Round 128 — the D key
+    // toggles the DebugOverlay
+    // panel (`#debug-overlay-root`).
+    // The panel shows the 4
+    // ActionDebouncer instances'
+    // runtime state — which
+    // debouncer is currently
+    // blocking, how long since
+    // the last stamp, current
+    // window size. Developer +
+    // QA tool, not for regular
+    // players (the Q key's
+    // StatsPanel is the
+    // player-facing aggregate
+    // stats counterpart).
+    { key: 'D',    action: '切换调试信息面板 (4 个防抖器)' },
 ];
 
 /**
@@ -352,6 +387,19 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
  * section reads as a
  * quick-reference card.
  *
+ * Round 128 — extended from
+ * 11 to 12 keys to include
+ * the D key for the
+ * DebugOverlay panel (the
+ * developer + QA overlay
+ * showing the 4
+ * ActionDebouncer instances'
+ * runtime state). D is a
+ * natural mnemonic for
+ * "Debug" + a free QWERTY
+ * key. 12-key panel-toggle
+ * group is now complete.
+ *
  * Kept in `KeyboardShortcuts.ts`
  * (rather than `main.ts`)
  * so the contract is
@@ -375,6 +423,7 @@ export const PANEL_TOGGLE_DESCRIPTIONS: ReadonlyArray<{ key: string; action: str
     { key: 'G', action: 'DM God 控制台' },
     { key: 'N', action: '经济面板 (货币/库存)' },
     { key: 'O', action: '纪元面板' },
+    { key: 'D', action: '调试信息面板 (4 防抖器)' },
 ];
 
 /**
@@ -575,6 +624,23 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'o':
         case 'O':
             return { kind: 'toggle-epoch' };
+        // Round 128 — D key toggles the
+        // DebugOverlay panel
+        // (`#debug-overlay-root`). The
+        // panel is the developer-facing
+        // counterpart to the Q key's
+        // StatsPanel — it shows the 4
+        // ActionDebouncer instances'
+        // runtime state so QA + devs
+        // can answer "why didn't my save
+        // fire?" without digging through
+        // the source. The case-
+        // insensitive mirror matches
+        // the round-85 R / round-91 `
+        // / round-119 B conventions.
+        case 'd':
+        case 'D':
+            return { kind: 'toggle-debug-overlay' };
         default:
             return null;
     }
