@@ -41,6 +41,12 @@
 import { App } from './main';
 import type { SceneBlueprintSnapshot } from './world/WorldState';
 import { makeWasmStub } from './test-utils/sceneGenWasmStub';
+import {
+    enterDimensionWithStub,
+    enterDimensionWithFailingWasm,
+    enterAtomWithStub,
+    makeBridgeBlueprint,
+} from './test-utils/enterDimensionHelpers';
 
 // ---------------------------------------------------------------------------
 // Test fixtures — small, in-file, no .fixture file dependencies.
@@ -1566,21 +1572,6 @@ describe('App — round 69 WasmLatencyStats wiring', () => {
 // ---------------------------------------------------------------------------
 
 describe('App — round 80 e2e: bridge → themeToScene → WorldState + HUD', () => {
-    function makeBridgeBlueprint(seed: number, visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon', musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse') {
-        return {
-            id: `dim_${visualStyle}_${seed}`,
-            name: `e2e ${visualStyle}`,
-            description: 'round 80 e2e fixture',
-            atomIds: ['tower_defense'],
-            atomWeights: { tower_defense: 1 },
-            difficulty: 0.5,
-            rules: [],
-            rewards: [],
-            theme: { name: 'e2e', visualStyle, musicMood, colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1'] },
-            timeLimitSecs: 60,
-            objectives: [],
-        };
-    }
 
     // Round 82 — `makeWasmStub` is now a shared helper in
     // `src/test-utils/sceneGenWasmStub.ts`. Imported at the
@@ -1876,115 +1867,10 @@ describe('App — round 80 e2e: bridge → themeToScene → WorldState + HUD', (
 // ---------------------------------------------------------------------------
 
 describe('App — round 84 e2e: WASM mid-stream failure → TS mirror fallback', () => {
-    function makeBridgeBlueprint(seed: number, visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon', musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse') {
-        return {
-            id: `dim_${visualStyle}_${seed}_r84`,
-            name: `e2e r84 ${visualStyle}`,
-            description: 'round 84 e2e fixture',
-            atomIds: ['tower_defense'],
-            atomWeights: { tower_defense: 1 },
-            difficulty: 0.5,
-            rules: [],
-            rewards: [],
-            theme: { name: 'e2e_r84', visualStyle, musicMood, colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1'] },
-            timeLimitSecs: 60,
-            objectives: [],
-        };
-    }
-
-    /**
-     * Run `enterNewDimension` with a custom-failing WASM stub.
-     * Returns a reference to the App + the `stubSideEffects`
-     * spy bag (so the test can assert on the WorldState +
-     * HUD side effects). Mirrors the round-80 `stubSideEffects`
-     * pattern but inlines the spy setup (this block is small
-     * enough that lifting to a shared helper would be
-     * premature).
-     */
-    async function enterDimensionWithFailingWasm(
-        app: App,
-        seed: number,
-        failingThemeToScene: () => string,
-    ) {
-        jest
-            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
-            .mockImplementation(async () => ({
-                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e r84' },
-                atomIds: ['tower_defense'],
-                blueprint: makeBridgeBlueprint(seed, 'fantasy', 'cheerful'),
-                modules: [],
-                seed,
-                configSource: 'wasm',
-            }));
-        // The failing stub: the round-82 `makeWasmStub`
-        // provides the version stamp + the 4 other
-        // functions, but `theme_to_scene_json` is
-        // overridden with a custom failure.
-        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = {
-            ...makeWasmStub(),
-            theme_to_scene_json: failingThemeToScene,
-        };
-        // Side-effect surface stubs.
-        jest
-            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
-            .mockReturnValue(['mock_npc_a']);
-        jest
-            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn(app as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition')
-            .mockImplementation(() => undefined);
-        // The round-72 event chain write is needed
-        // for `lastSceneEventChain` to be populated
-        // by the TS mirror. Don't stub it.
-        jest
-            .spyOn((app as unknown as { worldState: { clearFailedSnapshot: () => void } }).worldState, 'clearFailedSnapshot')
-            .mockImplementation(() => undefined);
-        // HUD setters — silent no-ops.
-        jest
-            .spyOn((app as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { setMinimap: (m: string | null) => void } }).hud, 'setMinimap')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { setLastSceneEventChain: (c: unknown) => void } }).hud, 'setLastSceneEventChain')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { setNpcMindsSnapshot: (s: unknown) => void } }).hud, 'setNpcMindsSnapshot')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { hideRecoveryBanner: () => void } }).hud, 'hideRecoveryBanner')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { setBackupAvailable: (b: boolean) => void } }).hud, 'setBackupAvailable')
-            .mockImplementation(() => undefined);
-        const spyBag = {
-            updateLastSceneBlueprintFull: jest
-                .spyOn((app as unknown as { worldState: { updateLastSceneBlueprintFull: (s: unknown) => void } }).worldState, 'updateLastSceneBlueprintFull')
-                .mockImplementation(() => undefined),
-        };
-        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
-        return spyBag;
-    }
+    // Round 90 — the inline `makeBridgeBlueprint` +
+    // `enterDimensionWithFailingWasm` were extracted to
+    // `src/test-utils/enterDimensionHelpers.ts`. The tests
+    // below call the imported helper directly.
 
     afterEach(() => {
         jest.restoreAllMocks();
@@ -2136,116 +2022,21 @@ describe('App — round 84 e2e: WASM mid-stream failure → TS mirror fallback',
 // ---------------------------------------------------------------------------
 
 describe('App — round 83 e2e: rollback rehydrate from WASM-stub snapshot', () => {
-    // Local helper — `makeBridgeBlueprint` is identical to
-    // the round-80 fixture. Inlined here (instead of reaching
-    // into the round-80 describe's scope) so this block is
-    // self-contained.
-    function makeBridgeBlueprint(seed: number, visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon', musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse') {
-        return {
-            id: `dim_${visualStyle}_${seed}_r83`,
-            name: `e2e r83 ${visualStyle}`,
-            description: 'round 83 e2e fixture',
-            atomIds: ['tower_defense'],
-            atomWeights: { tower_defense: 1 },
-            difficulty: 0.5,
-            rules: [],
-            rewards: [],
-            theme: { name: 'e2e_r83', visualStyle, musicMood, colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1'] },
-            timeLimitSecs: 60,
-            objectives: [],
-        };
-    }
-
-    /**
-     * Drive a full `enterNewDimension` cycle with a custom
-     * `makeWasmStub` configuration. Returns a reference to
-     * the App for further assertions + the in-process stub
-     * for any post-call tweaks.
-     *
-     * **Critical**: we do NOT spy on
-     * `worldState.updateLastSceneBlueprintFull`,
-     * `worldState.clearFailedSnapshot`, or
-     * `worldState.setLastSceneEventChain` — those are the
-     * round-49/72/53 write paths that populate
-     * `lastSceneBlueprint` / `lastSceneEventChain` /
-     * `lastFailedSnapshot`. The round-80 test stubs them
-     * (because that test asserts on the spy calls, not the
-     * persisted state). The round-83 test, by contrast,
-     * needs the REAL writes to land so the rollback can
-     * capture + restore them. Stubbing them would short-
-     * circuit the persistence and the rollback would have
-     * nothing to restore.
-     */
-    async function enterDimensionWithStub(
-        app: App,
-        seed: number,
-        visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon',
-        musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse',
-        wasmOverrides: Parameters<typeof makeWasmStub>[0] = {},
-    ) {
-        jest
-            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
-            .mockImplementation(async () => ({
-                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e r83' },
-                atomIds: ['tower_defense'],
-                blueprint: makeBridgeBlueprint(seed, visualStyle, musicMood),
-                modules: [],
-                seed,
-                configSource: 'wasm',
-            }));
-        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = makeWasmStub(wasmOverrides);
-        // Side-effect surface stubs — the rollback
-        // re-render path needs these. The round-50
-        // real-render pipeline calls into scene/audio
-        // for the visual + audio; the rollback's
-        // Step 3 re-invokes it. Stubbing them keeps
-        // the test free of WebGL + AudioContext.
-        jest
-            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
-            .mockReturnValue(['mock_npc_a']);
-        jest
-            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn(app as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition')
-            .mockImplementation(() => undefined);
-        // HUD setters — silent no-ops so the test
-        // asserts on the WorldState, not the HUD.
-        jest
-            .spyOn((app as unknown as { hud: { setLastBiome: (b: string | null) => void } }).hud, 'setLastBiome')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { setMinimap: (m: string | null) => void } }).hud, 'setMinimap')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { setLastSceneBlueprint: (s: unknown) => void } }).hud, 'setLastSceneBlueprint')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { setNpcMindsSnapshot: (s: unknown) => void } }).hud, 'setNpcMindsSnapshot')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { hideRecoveryBanner: () => void } }).hud, 'hideRecoveryBanner')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { hud: { setBackupAvailable: (b: boolean) => void } }).hud, 'setBackupAvailable')
-            .mockImplementation(() => undefined);
-        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
-    }
+    // Round 90 — the inline `makeBridgeBlueprint` +
+    // `enterDimensionWithStub` were extracted to
+    // `src/test-utils/enterDimensionHelpers.ts`. The tests
+    // below call the imported helper directly.
+    //
+    // **Critical anti-regression**: the imported helper
+    // deliberately does NOT spy on
+    // `worldState.updateLastSceneBlueprintFull`,
+    // `worldState.clearFailedSnapshot`, or
+    // `worldState.setLastSceneEventChain` — those are the
+    // round-49/72/53 write paths. The round-83 test needs
+    // the REAL writes to land so the rollback can capture
+    // + restore them. Stubbing them would short-circuit the
+    // persistence and the rollback would have nothing to
+    // restore.
 
     afterEach(() => {
         jest.restoreAllMocks();
@@ -2446,77 +2237,18 @@ describe('App — round 89 e2e: setLastBiomeAccent wiring', () => {
     // the round-80 + round-83 fixture. Inlined
     // here (not module-scoped) so this block is
     // self-contained.
-    function makeBridgeBlueprintR89(
-        seed: number,
-        visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon',
-        musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse',
-    ) {
-        return {
-            id: `dim_${visualStyle}_${seed}_r89`,
-            name: `e2e r89 ${visualStyle}`,
-            description: 'round 89 e2e fixture',
-            atomIds: ['tower_defense'],
-            atomWeights: { tower_defense: 1 },
-            difficulty: 0.5,
-            rules: [],
-            rewards: [],
-            theme: { name: 'e2e_r89', visualStyle, musicMood, colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1'] },
-            timeLimitSecs: 60,
-            objectives: [],
-        };
-    }
-
-    // Stub the bridge + sceneGenWasm + side-effect
-    // surfaces that `enterAtom` touches. The
-    // `enterAtom` path (round-65) is the one that
-    // pushes `setLastBiome` + `setLastBiomeAccent`
-    // (round-87) into the HUD; `enterNewDimension`
-    // itself does NOT push the biome into the HUD
-    // (only the keyboard 1-8 jump path does).
-    async function enterAtomAccentTest(
-        app: App,
-        seed: number,
-        visualStyle: 'cyberpunk' | 'fantasy' | 'space' | 'underwater' | 'desert' | 'dungeon',
-        musicMood: 'epic' | 'mysterious' | 'cheerful' | 'tense' | 'melancholic' | 'pulse',
-        wasmOverrides: Parameters<typeof makeWasmStub>[0] = {},
-    ): Promise<void> {
-        jest
-            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
-            .mockImplementation(async () => ({
-                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'e2e r89' },
-                atomIds: ['tower_defense'],
-                blueprint: makeBridgeBlueprintR89(seed, visualStyle, musicMood),
-                modules: [],
-                seed,
-                configSource: 'wasm',
-            }));
-        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = makeWasmStub(wasmOverrides);
-        jest
-            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
-            .mockReturnValue(['mock_npc_a']);
-        jest
-            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn(app as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition')
-            .mockImplementation(() => undefined);
-        await (app as unknown as { enterAtom: (atomId: string) => Promise<void> }).enterAtom('tower_defense');
-    }
+    // Round 90 — the inline `makeBridgeBlueprintR89` +
+    // `enterAtomAccentTest` were extracted to
+    // `src/test-utils/enterDimensionHelpers.ts` as
+    // `makeBridgeBlueprint` (with a rationaleTag param) +
+    // `enterAtomWithStub`. The tests below call the
+    // imported helper directly.
+    //
+    // **Why no HUD-setter stubs here**: the round-89
+    // tests spy on the real HUD writes to assert on the
+    // round-87 `setLastBiomeAccent` wiring. The
+    // `enterAtomWithStub` helper does NOT stub HUD
+    // setters (matching the round-89 inline behavior).
 
     afterEach(() => {
         jest.restoreAllMocks();
@@ -2532,7 +2264,7 @@ describe('App — round 89 e2e: setLastBiomeAccent wiring', () => {
         const setAccent = jest
             .spyOn((app as unknown as { hud: { setLastBiomeAccent: (c: string | null) => void } }).hud, 'setLastBiomeAccent')
             .mockImplementation(() => undefined);
-        await enterAtomAccentTest(app, 0xFEED0001, 'fantasy', 'mysterious', {
+        await enterAtomWithStub(app, 0xFEED0001, 'fantasy', 'mysterious', {
             biomeId: 'forest',
         });
         expect(setAccent).toHaveBeenCalledWith('#90c290');
@@ -2589,7 +2321,7 @@ describe('App — round 89 e2e: setLastBiomeAccent wiring', () => {
         // we call backupFailedSnapshot directly
         // to keep the test focused on the
         // rollback restore step.
-        await enterAtomAccentTest(app, 0xFEED0002, 'fantasy', 'melancholic', {
+        await enterAtomWithStub(app, 0xFEED0002, 'fantasy', 'melancholic', {
             biomeId: 'ice',
         });
         (app as unknown as { worldState: { backupFailedSnapshot: (b: unknown) => void } }).worldState.backupFailedSnapshot({
