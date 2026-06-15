@@ -3831,6 +3831,227 @@ describe('App — round 107: rollWorldEvent time-based debounce', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Round 109 — `enterAtom` time-based debounce (操控性好 UX
+// improvement, 4th `ActionDebouncer` use case after
+// round-104 loadGame + round-106 saveGame + round-107
+// rollWorldEvent).
+//
+// The async `enterAtom` method (main.ts:983, round-65
+// keyboard 1-8 jump path) has the WORST dual-call problem
+// of the 4 debounced methods: the `await
+// bridge.planAndLoad` in the middle means the first call
+// hasn't completed when the second one starts, so they're
+// both in-flight simultaneously — worse than the round-99
+// sync `enterNewDimension` dual-call. Without the debounce,
+// a rapid double-tap on keyboard '3' (jump to atom 3)
+// would double-call:
+//   1. `bridge.planAndLoad` (waste network/disk +
+//      duplicate analytics + 2x round-50 telemetry gate).
+//   2. `themeToSceneWithFallback` (waste compute +
+//      duplicate round-68 in-browser latency analytics).
+//   3. `renderWfcDungeon` (visible flicker between two
+//      atom scenes).
+//   4. `setBiomeAtmosphere` (visible atmosphere pop +
+//      breaks round-93 fogColor determinism).
+//   5. `spawnNpcWave` (visible double-NPC spawn).
+//   6. `narrate()` (visible double-narration).
+//   7. `hud.log('进入次元: ...')` (duplicate log line).
+//
+// The debounce check at the top of `enterAtom` short-
+// circuits the second call BEFORE any of these side
+// effects fire. The stamp is placed at the BEGINNING
+// of the body (round-107 contract) because `enterAtom`
+// has two early-return paths (`!atomId`, `!known`) and
+// a network-failure catch — stamp-at-start is more
+// user-friendly because the second tap is blocked even
+// on failure (no network spam-retry).
+//
+// The 3 contracts pinned here are:
+//   1. Two rapid `enterAtom` calls within 500ms → the
+//      second short-circuits BEFORE `bridge.planAndLoad`
+//      is called (call count === 1).
+//   2. Two `enterAtom` calls with `Date.now()` advanced
+//      past 500ms between them → BOTH reach
+//      `bridge.planAndLoad` (call count === 2).
+//   3. The short-circuited second call emits a Chinese-
+//      localized log line `[orchestrator] 距上次
+//      enterAtom 仅 Xms < 500ms 窗口，跳过本次调用
+//      (round 109 防御)`. The 4th use case
+//      demonstrates the round-108 `ActionDebouncer`
+//      helper class works for new code.
+//
+// The 3 tests use a SHARED `installSideEffectStubs`
+// helper from `enterDimensionHelpers.ts` (round-98
+// public export) to install the standard
+// bridge/vault/scene/HUD spy chain, then add the
+// `enterAtom`-specific bridge.planAndLoad spy on top.
+// ---------------------------------------------------------------------------
+
+describe('App — round 109: enterAtom time-based debounce', () => {
+    test('enterAtom_called_twice_within_500ms_short_circuits_second', () => {
+        // The headline contract: the second call
+        // within the debounce window short-
+        // circuits BEFORE `bridge.planAndLoad`
+        // is reached. A regression that drops
+        // the debounce check (or moves it
+        // AFTER the early-return paths) would
+        // silently re-introduce the
+        // double-bridge-call + double-render
+        // + double-narration + duplicate-log
+        // chain.
+        //
+        // We DON'T need to wait for the
+        // async enterAtom to resolve — the
+        // second call is debounced
+        // SYNCHRONOUSLY at the top of the
+        // body, BEFORE the `await
+        // bridge.planAndLoad`. So the
+        // second call's `bridge.planAndLoad`
+        // is never reached even if the first
+        // call is still in-flight.
+        const app = makeApp();
+        // Stub `bridge.planAndLoad` to return
+        // a minimal blueprint (mirrors the
+        // round-90 enterDimensionWithStub
+        // shape) so enterAtom can proceed
+        // past the bridge call.
+        const fakeBlueprint = {
+            seed: 1,
+            atomIds: ['match3'],
+            blueprint: {
+                id: 'test-1',
+                name: 'test',
+                archetype: 'cyberpunk',
+                atomIds: ['match3'],
+                difficulty: 1,
+            },
+        };
+        const planSpy = jest
+            .spyOn(
+                (app as unknown as { bridge: { planAndLoad: (req: unknown) => Promise<unknown> } }).bridge,
+                'planAndLoad',
+            )
+            .mockResolvedValue(fakeBlueprint as unknown as never);
+        // First call enters the body. It
+        // will await planAndLoad (resolves
+        // immediately because mocked). After
+        // it resolves, it tries to render,
+        // but the scene is null in jsdom
+        // — we don't care about the render,
+        // just whether planAndLoad was
+        // called.
+        (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3').catch(() => undefined);
+        // The first call is async — wait
+        // for it to settle so its
+        // planAndLoad call counts.
+        // The second call is sync-debounced
+        // (the check happens at the top of
+        // the body BEFORE the await), so
+        // we don't need to wait for the
+        // second call to settle. We add
+        // `.catch(() => undefined)` to
+        // suppress the unhandled promise
+        // rejection that arises from the
+        // jsdom render path (canvas
+        // getContext not implemented, HUD
+        // render on undefined dimension) —
+        // those failures are out of scope
+        // for the debounce contract (the
+        // test only asserts on planAndLoad
+        // call count, not the post-render
+        // body).
+        (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3').catch(() => undefined);
+        // First call reaches planAndLoad
+        // (mocked to resolve immediately).
+        // Second call short-circuits
+        // (planAndLoad NOT called again).
+        expect(planSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('enterAtom_called_twice_after_500ms_runs_both (debounce is time-based, not one-shot)', () => {
+        // The debounce is time-based, not a
+        // one-shot latch. Once the window
+        // passes, the user can jump again.
+        const app = makeApp();
+        const fakeBlueprint = {
+            seed: 1,
+            atomIds: ['match3'],
+            blueprint: {
+                id: 'test-1',
+                name: 'test',
+                archetype: 'cyberpunk',
+                atomIds: ['match3'],
+                difficulty: 1,
+            },
+        };
+        const planSpy = jest
+            .spyOn(
+                (app as unknown as { bridge: { planAndLoad: (req: unknown) => Promise<unknown> } }).bridge,
+                'planAndLoad',
+            )
+            .mockResolvedValue(fakeBlueprint as unknown as never);
+        (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3').catch(() => undefined);
+        // Advance `Date.now()` past the 500ms
+        // debounce window so the second call
+        // runs. Uses the `ENTER_ATOM_DEBOUNCE_MS`
+        // static constant for symmetry with
+        // round-104/106/107 after-window
+        // tests.
+        const future = Date.now() + (app as unknown as { ENTER_ATOM_DEBOUNCE_MS: number }).ENTER_ATOM_DEBOUNCE_MS + 100;
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(future);
+        (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3').catch(() => undefined);
+        nowSpy.mockRestore();
+        // Both calls reached planAndLoad.
+        expect(planSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('enterAtom_within_500ms_logs_chinese_skip_message (round 109)', () => {
+        // The short-circuited second call
+        // emits a Chinese-localized log line
+        // so the player can see WHY their
+        // second '3' keypress was ignored.
+        // The `[orchestrator]` prefix
+        // disambiguates from other
+        // enterAtom log lines (e.g.
+        // `[kb]` for the keyboard binding,
+        // `[scene]` for the render). The
+        // 4th use case demonstrates the
+        // round-108 `ActionDebouncer`
+        // helper class works for new code.
+        const app = makeApp();
+        const logSpy = jest
+            .spyOn((app as unknown as { hud: { log: (s: string) => void } }).hud, 'log')
+            .mockImplementation(() => undefined);
+        const fakeBlueprint = {
+            seed: 1,
+            atomIds: ['match3'],
+            blueprint: {
+                id: 'test-1',
+                name: 'test',
+                archetype: 'cyberpunk',
+                atomIds: ['match3'],
+                difficulty: 1,
+            },
+        };
+        jest
+            .spyOn(
+                (app as unknown as { bridge: { planAndLoad: (req: unknown) => Promise<unknown> } }).bridge,
+                'planAndLoad',
+            )
+            .mockResolvedValue(fakeBlueprint as unknown as never);
+        (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3').catch(() => undefined);
+        (app as unknown as { enterAtom: (id: string) => Promise<void> }).enterAtom('match3').catch(() => undefined);
+        const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(lines).toMatch(
+            new RegExp(
+                `\\[orchestrator\\] 距上次 enterAtom 仅 \\d+ms`
+                + ` < ${500}ms 窗口.*round 109 防御`,
+            ),
+        );
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Round 100 — `enterNewDimension` WASM-success path positive
 // assertion (auto-generated logic).
 //
