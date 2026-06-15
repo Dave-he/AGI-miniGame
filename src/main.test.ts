@@ -77,6 +77,7 @@ interface AppRefsLike {
     progressionRoot: HTMLElement;
     economyRoot: HTMLElement;
     epochRoot: HTMLElement;
+    achievementsRoot?: HTMLElement;
 }
 
 function makeRefs(): AppRefsLike {
@@ -92,7 +93,24 @@ function makeRefs(): AppRefsLike {
     economyRoot.id = 'economy-root';
     const epochRoot = document.createElement('div');
     epochRoot.id = 'epoch-root';
-    return { canvas, hudRoot, progressionRoot, economyRoot, epochRoot };
+    // Round 118 — add the
+    // achievements-root so
+    // the round-118 panel-level
+    // tests can exercise the
+    // actual App constructor
+    // wiring (constructor calls
+    // `renderAchievementsPanel`
+    // when the ref is provided).
+    // Append to body so the
+    // element is findable via
+    // `document.getElementById`
+    // (the round-118 tests
+    // need to read root.innerHTML
+    // post-construction).
+    const achievementsRoot = document.createElement('div');
+    achievementsRoot.id = 'achievements-root';
+    document.body.appendChild(achievementsRoot);
+    return { canvas, hudRoot, progressionRoot, economyRoot, epochRoot, achievementsRoot };
 }
 
 function makeApp(): App {
@@ -5611,6 +5629,88 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
         const app = makeApp();
         (app as unknown as { toggleAchievements: () => void }).toggleAchievements();
         expect(root.hasAttribute('hidden')).toBe(true);
+    });
+});
+
+describe('App — round 118: renderAchievementsPanel actual wiring (round-115 follow-up, 操控性好)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+        document.getElementById('achievements-root')?.remove();
+    });
+
+    // -----------------------------------------------------------------
+    // App-level wiring — the round-115
+    // mount point + V key + toggle
+    // method are now backed by an
+    // actual panel render.
+    // -----------------------------------------------------------------
+
+    test('App_wires_renderAchievementsPanel_when_achievements_root_is_provided (round 118)', () => {
+        // makeRefs() in this test
+        // file now creates the
+        // #achievements-root div
+        // (round-118 change) so the
+        // App constructor can call
+        // `renderAchievementsPanel`
+        // and assign the result to
+        // `this.achievementsHandle`.
+        // The handle is non-null.
+        const app = makeApp();
+        const handle = (app as unknown as { achievementsHandle?: { refresh: () => void } | null }).achievementsHandle;
+        expect(handle).not.toBeNull();
+        expect(typeof handle!.refresh).toBe('function');
+    });
+
+    test('renderAchievementsPanel_renders_into_achievements_root (round 118)', () => {
+        // The App constructor must
+        // call `renderAchievementsPanel`
+        // on the worldState.player
+        // during construction, so
+        // the root div contains the
+        // .achievements-panel
+        // wrapper before any
+        // explicit refresh().
+        const app = makeApp();
+        const root = document.getElementById('achievements-root')!;
+        // Constructor should have
+        // rendered the initial
+        // empty state.
+        expect(root.innerHTML).toContain('achievements-panel');
+        expect(root.innerHTML).toContain('achievements-empty');
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test: the
+    // AchievementsPanel module
+    // exists and is imported by
+    // main.ts.
+    // -----------------------------------------------------------------
+
+    test('src_ui_has_AchievementsPanel_ts_module (round 118)', () => {
+        const path = require('path');
+        const fs = require('fs');
+        const file = path.resolve(__dirname, 'ui', 'AchievementsPanel.ts');
+        expect(fs.existsSync(file)).toBe(true);
+    });
+
+    test('main_ts_imports_renderAchievementsPanel (round 118)', () => {
+        const path = require('path');
+        const fs = require('fs');
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/import.*renderAchievementsPanel.*from.*\.\/ui\/AchievementsPanel/);
+    });
+
+    test('main_ts_constructs_achievementsHandle_when_achievementsRoot_ref_is_provided (round 118)', () => {
+        const path = require('path');
+        const fs = require('fs');
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        // The constructor must call
+        // `renderAchievementsPanel`
+        // with the worldState.player
+        // and store the handle in
+        // `this.achievementsHandle`.
+        expect(main).toMatch(/renderAchievementsPanel\(/);
+        expect(main).toMatch(/this\.achievementsHandle\s*=/);
     });
 });
 

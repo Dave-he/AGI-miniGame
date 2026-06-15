@@ -64,6 +64,17 @@ import { DimensionVault } from './world/DimensionVault';
 import { renderVaultPanel, VaultPanelHandle } from './ui/VaultPanel';
 import { NpcMind, NpcRegistry, makeEntry } from './world/NpcMind';
 import { renderNpcMindPanel, NpcMindPanelHandle } from './ui/NpcMindPanel';
+// Round 118 — AchievementsPanel
+// module. The mount point +
+// V key + App.toggleAchievements
+// were added in round-115; round
+// 118 ships the actual
+// `renderAchievementsPanel`
+// function (sourcing from
+// `PlayerProfile.achievements`)
+// and wires it into the App
+// constructor.
+import { renderAchievementsPanel, AchievementsPanelHandle } from './ui/AchievementsPanel';
 // Round 48 — `themeToScene` itself is no longer called from main.ts;
 // the WASM bridge below wraps it. The `ThemeInput` type alias is
 // still needed to type the input to the bridge.
@@ -224,6 +235,23 @@ class App {
     /** Round 21 — per-NPC memory + disposition. */
     private npcMinds: NpcRegistry;
     private npcMindHandle: NpcMindPanelHandle | null = null;
+    /**
+     * Round 118 — achievements
+     * panel handle. The handle's
+     * `refresh()` re-renders the
+     * `<div id="achievements-root">`
+     * from the current
+     * `worldState.player.achievements`
+     * list. Wired in the constructor
+     * (after the V key toggle /
+     * `mount point` were added in
+     * round-115) so the panel shows
+     * the latest list whenever
+     * the player adds an achievement
+     * (or the host app refreshes
+     * the snapshot).
+     */
+    private achievementsHandle: AchievementsPanelHandle | null = null;
     /** Monotonic turn counter for NpcMemoryEntry.turn. */
     private npcTurn = 0;
     /**
@@ -648,6 +676,35 @@ class App {
         }
         if (refs.npcMindRoot) {
             this.npcMindHandle = renderNpcMindPanel(refs.npcMindRoot, this.npcMinds, this.i18n);
+        }
+        // Round 118 — wire the
+        // AchievementsPanel. The
+        // mount point + V key +
+        // App.toggleAchievements
+        // were added in round-115;
+        // round-118 ships the actual
+        // `renderAchievementsPanel`
+        // function (sourcing from
+        // `PlayerProfile.achievements`)
+        // and wires it into the App
+        // constructor. Mirrors the
+        // round-20 `renderVaultPanel`
+        // pattern exactly (root
+        // ref + i18n). No
+        // `setInterval` refresh
+        // because the
+        // `achievements` list only
+        // changes on
+        // `addAchievement(id)` calls
+        // — the host can call
+        // `this.achievementsHandle?.refresh()`
+        // explicitly when needed.
+        if (refs.achievementsRoot) {
+            this.achievementsHandle = renderAchievementsPanel(
+                refs.achievementsRoot,
+                this.worldState.player,
+                this.i18n,
+            );
         }
         this.dslExec = new DslExecutor(this.scene, {
             log: (line) => this.hud.log(line),
