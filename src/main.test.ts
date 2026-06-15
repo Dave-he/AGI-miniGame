@@ -3303,6 +3303,153 @@ describe('App — round 99: enterNewDimension dual-call race e2e (auto-generated
         // for round-23).
         expect(lines).toMatch(/\[orchestrator\] 已有 enterNewDimension 进行中.*round 102 防御/);
     });
+
+    test('enterNewDimension_first_call_throws_resets_isEntering_for_retry (round 103)', async () => {
+        // Round 103 — closes a subtle gap in the
+        // round-102 contract. The `try/finally`
+        // block at line 528-561 of main.ts MUST
+        // reset `isEntering = false` even when
+        // `_enterNewDimensionImpl` THROWS (the
+        // bridge plan fails, the WASM module
+        // throws, the WFC dungeon gen is corrupt,
+        // etc). If the `finally` block were
+        // missing or only ran on the success
+        // path, the user's first failed call
+        // would silently lock the orchestrator
+        // into a "stuck" state — every subsequent
+        // Space-tap would be a no-op, and the
+        // user would think the game was broken.
+        //
+        // We stub `bridge.planAndLoad` to throw
+        // on the FIRST call only, then let the
+        // SECOND call succeed normally. If the
+        // guard resets, both calls reach the
+        // bridge (call count === 2). If the
+        // guard does NOT reset, the second call
+        // short-circuits to a no-op (call count
+        // === 1) and the test fails.
+        const app = makeApp();
+        const bridgeSpy = jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementationOnce(async () => {
+                throw new Error('round 103 simulated bridge failure');
+            })
+            .mockImplementationOnce(async () => ({
+                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'r103_retry' },
+                atomIds: ['tower_defense'],
+                blueprint: {
+                    id: 'dim_r103_retry',
+                    name: 'r103 retry fixture',
+                    description: 'r103',
+                    atomIds: ['tower_defense'],
+                    atomWeights: { tower_defense: 1 },
+                    difficulty: 0.5,
+                    rules: [],
+                    rewards: [],
+                    theme: { name: 'r103_retry', visualStyle: 'fantasy', musicMood: 'cheerful', colorPalette: ['#fff'] },
+                    timeLimitSecs: 60,
+                    objectives: [],
+                },
+                modules: [],
+                seed: 999,
+                configSource: 'wasm',
+            }));
+        // Install the round-98 side-effect stubs
+        // so the second call's success path
+        // doesn't throw on the scene/audio/npc
+        // writes.
+        installSideEffectStubs(app);
+        installHudSetterStubs(app);
+
+        // First call — throws. The promise
+        // rejection is swallowed silently
+        // (we don't `await` it through a
+        // try/catch; jest's unhandled rejection
+        // detection is off in this suite, see
+        // the round-94 tests for the same
+        // pattern).
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension()
+            .catch(() => {
+                // Expected — bridge.planAndLoad
+                // threw on the first call.
+            });
+        // Second call — must NOT short-circuit.
+        // If `isEntering` was not reset in the
+        // `finally` block, this call hits the
+        // early-return and the bridge is not
+        // reached.
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+        // Both calls reached the bridge. The
+        // first threw (call 1), the second
+        // succeeded (call 2). A regression that
+        // drops the `finally` reset would
+        // leave `isEntering = true` after the
+        // throw, causing the second call to
+        // short-circuit (call count === 1).
+        expect(bridgeSpy.mock.calls.length).toBe(2);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 103 — `loadGame` in-flight guard abandoned (rejected design).
+//
+// Round 103 originally proposed adding a `private isLoading = false`
+// in-flight guard to `loadGame`, mirroring the round-102 `isEntering`
+// pattern. The carry-over from round-102's MEMORY.md listed this as
+// a candidate because a rapid double-tap on `#btn-load` (line 1951)
+// or the L keyboard shortcut (line 2019) would invoke the round-50
+// rehydration pipeline twice. The most visible side effect would
+// be the round-50 event-chain `setTimeout` schedule being doubled
+// (line 1824) — every event in the saved event chain would fire
+// TWICE, doubling the per-event `npcMinds.broadcast` calls.
+//
+// Why abandoned: `loadGame` is SYNCHRONOUS, not async like
+// `enterNewDimension`. The round-102 `try/finally` guard only
+// works because `enterNewDimensionImpl` `await`s the bridge
+// plan, leaving the public method in a "pending" state while
+// the body runs. A second `enterNewDimension` call within
+// that window hits the early-return. But `loadGame` runs to
+// completion in a single synchronous tick — the `try/finally`
+// releases the guard before the second call arrives. Two
+// sequential test calls (`loadGame(); loadGame();`) both run
+// end-to-end, with no in-flight window to guard.
+//
+// The CORRECT fix for the loadGame double-tap is a TIME-BASED
+// debounce (e.g. ignore button clicks within 500ms of the last
+// load), not a `try/finally` in-flight guard. A debounce
+// guard is a different pattern (`setTimeout`-based release
+// instead of `try/finally`) and warrants its own round.
+//
+// Round 103 SCOPE: only the round-102 isEntering reset-on-throw
+// test (1 new test) survives from the original round 103 plan.
+// The loadGame describe block above this comment is the
+// documentation marker for "rejected design — see round 104
+// candidate for the time-based debounce approach".
+// ---------------------------------------------------------------------------
+
+describe('App — round 103: loadGame in-flight guard (rejected, see comments above)', () => {
+    test('loadGame_called_twice_sequential_runs_both (synchronous release of guard)', () => {
+        // Documents WHY a `try/finally` in-flight guard
+        // doesn't help for `loadGame`. Two sequential
+        // test calls both reach `save.restore()` because
+        // the synchronous `try/finally` releases the
+        // guard before the second call arrives. This
+        // test is intentionally non-strict (it doesn't
+        // assert === 1) — it documents the rejection
+        // evidence so a future refactor that tries to
+        // re-add the guard sees the empirical reason it
+        // didn't work.
+        const app = makeApp();
+        const restoreSpy = jest
+            .spyOn((app as unknown as { save: { restore: () => boolean } }).save, 'restore')
+            .mockImplementation(() => false);
+        (app as unknown as { loadGame: () => void }).loadGame();
+        (app as unknown as { loadGame: () => void }).loadGame();
+        // Both calls reach restore. This is the
+        // evidence that a `try/finally` guard is the
+        // wrong pattern for sync `loadGame`.
+        expect(restoreSpy.mock.calls.length).toBe(2);
+    });
 });
 
 // ---------------------------------------------------------------------------
