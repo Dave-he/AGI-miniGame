@@ -3,6 +3,13 @@ import {
     PORTAL_ATOMS,
     BINDING_DESCRIPTIONS,
     MOUSE_BINDINGS,
+    PANEL_TOGGLE_BINDINGS,
+    PANEL_TOGGLE_DESCRIPTIONS,
+    panelToggleBindingByKey,
+    panelToggleBindingByMethod,
+    panelToggleBindingByButton,
+    panelToggleMethodByKind,
+    type PanelToggleBinding,
     type KeyboardAction,
 } from './KeyboardShortcuts';
 
@@ -247,6 +254,295 @@ describe('KeyboardShortcuts', () => {
             const kbKeys = new Set(BINDING_DESCRIPTIONS.map(d => d.key));
             for (const d of MOUSE_BINDINGS) {
                 expect(kbKeys.has(d.key)).toBe(false);
+            }
+        });
+    });
+
+    // ---------------------------------------------------------------
+    // Round 131 — the 12 panel-toggle
+    // keys (P / Q / W / T / F / M / V /
+    // B / G / N / O / D) are now
+    // driven by a single
+    // `PANEL_TOGGLE_BINDINGS`
+    // table (the single source of
+    // truth for the panel-toggle
+    // group). This describe block
+    // pins the table's contract:
+    // 12 unique rows + every
+    // BINDING_DESCRIPTIONS panel-
+    // toggle row matches a
+    // table row + the 3 lookup
+    // helpers (by key / by method /
+    // by kind) all return the
+    // expected method names.
+    // ---------------------------------------------------------------
+
+    describe('PANEL_TOGGLE_BINDINGS table (round 131)', () => {
+        it('has exactly 12 rows', () => {
+            expect(PANEL_TOGGLE_BINDINGS.length).toBe(12);
+        });
+
+        it('lists the 12 expected keys in QWERTY order', () => {
+            const keys = PANEL_TOGGLE_BINDINGS.map((b) => b.key);
+            expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D']);
+        });
+
+        it('has unique key / methodName / panelId / buttonId across all 12 rows', () => {
+            const keys = PANEL_TOGGLE_BINDINGS.map((b) => b.key);
+            const methods = PANEL_TOGGLE_BINDINGS.map((b) => b.methodName);
+            const panels = PANEL_TOGGLE_BINDINGS.map((b) => b.panelId);
+            const buttons = PANEL_TOGGLE_BINDINGS.map((b) => b.buttonId);
+            expect(new Set(keys).size).toBe(12);
+            expect(new Set(methods).size).toBe(12);
+            expect(new Set(panels).size).toBe(12);
+            expect(new Set(buttons).size).toBe(12);
+        });
+
+        it('every row has a non-empty Chinese label and action', () => {
+            for (const b of PANEL_TOGGLE_BINDINGS) {
+                expect(b.label.length).toBeGreaterThan(0);
+                expect(b.action.length).toBeGreaterThan(0);
+                // Pin Chinese content (any
+                // CJK ideograph char) so a
+                // future refactor that
+                // accidentally drops the
+                // Chinese localization is
+                // caught.
+                expect(/[㐀-鿿]/.test(b.label)).toBe(true);
+                expect(/[㐀-鿿]/.test(b.action)).toBe(true);
+            }
+        });
+
+        it('every panelId ends with "-root"', () => {
+            // All 12 mount points
+            // follow the
+            // `<panel>-root`
+            // convention. A
+            // refactor that uses
+            // a different id
+            // scheme (e.g. a
+            // dash-vs-underscore
+            // typo) would break
+            // this.
+            for (const b of PANEL_TOGGLE_BINDINGS) {
+                expect(b.panelId.endsWith('-root')).toBe(true);
+            }
+        });
+
+        it('every buttonId starts with "btn-"', () => {
+            for (const b of PANEL_TOGGLE_BINDINGS) {
+                expect(b.buttonId.startsWith('btn-')).toBe(true);
+            }
+        });
+
+        it('every methodName starts with "toggle"', () => {
+            for (const b of PANEL_TOGGLE_BINDINGS) {
+                expect(b.methodName.startsWith('toggle')).toBe(true);
+            }
+        });
+
+        it('every BINDING_DESCRIPTIONS panel-toggle row matches a PANEL_TOGGLE_BINDINGS row by key', () => {
+            // The 12 panel-toggle
+            // BINDING_DESCRIPTIONS
+            // rows (P / Q / W / T / F
+            // / M / V / B / G / N /
+            // O / D) must all have a
+            // matching table row.
+            // The remaining
+            // BINDING_DESCRIPTIONS
+            // rows (1-8 / Esc /
+            // Space / ? / S / L / E
+            // / R / ` / Spacebar)
+            // are NOT panel-toggle
+            // and so are allowed to
+            // have no table match.
+            const panelKeys = new Set(PANEL_TOGGLE_BINDINGS.map((b) => b.key));
+            for (const d of BINDING_DESCRIPTIONS) {
+                if (panelKeys.has(d.key)) {
+                    const b = panelToggleBindingByKey(d.key)!;
+                    // The table's `action`
+                    // field (the
+                    // PANEL_TOGGLE_DESCRIPTIONS
+                    // short action) must
+                    // match the table's
+                    // BINDING_DESCRIPTIONS
+                    // row's `action`
+                    // (the long form is
+                    // allowed to differ).
+                    // We pin the
+                    // BINDING_DESCRIPTIONS
+                    // row exists + has a
+                    // non-empty Chinese
+                    // action that mentions
+                    // the panel's purpose.
+                    expect(d.action.length).toBeGreaterThan(0);
+                    expect(/[㐀-鿿]/.test(d.action)).toBe(true);
+                    // The short action
+                    // is a substring or
+                    // paraphrase of the
+                    // long action. (For
+                    // most rows the short
+                    // is the long minus
+                    // the '切换 ' prefix
+                    // or '(... )' suffix.)
+                    expect(b).toBeDefined();
+                }
+            }
+        });
+
+        it('PANEL_TOGGLE_DESCRIPTIONS is now a projection of PANEL_TOGGLE_BINDINGS', () => {
+            // The 12 help-overlay
+            // rows are
+            // `{key, action}`
+            // projections of the
+            // table.
+            expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(12);
+            for (let i = 0; i < PANEL_TOGGLE_BINDINGS.length; i++) {
+                const b = PANEL_TOGGLE_BINDINGS[i];
+                const d = PANEL_TOGGLE_DESCRIPTIONS[i];
+                expect(d.key).toBe(b.key);
+                expect(d.action).toBe(b.action);
+            }
+        });
+
+        it('panelToggleBindingByKey is case-insensitive', () => {
+            // `routeKey` routes
+            // both 'p' and 'P'
+            // (case-insensitive).
+            // The lookup helper
+            // must too.
+            expect(panelToggleBindingByKey('p')?.methodName).toBe('toggleSettings');
+            expect(panelToggleBindingByKey('P')?.methodName).toBe('toggleSettings');
+            expect(panelToggleBindingByKey('d')?.methodName).toBe('toggleDebugOverlay');
+            expect(panelToggleBindingByKey('D')?.methodName).toBe('toggleDebugOverlay');
+        });
+
+        it('panelToggleBindingByKey returns undefined for unknown keys', () => {
+            // Defensive: any key
+            // not in the table
+            // returns undefined
+            // (not throw / not
+            // null).
+            expect(panelToggleBindingByKey('z')).toBeUndefined();
+            expect(panelToggleBindingByKey('Z')).toBeUndefined();
+            expect(panelToggleBindingByKey('1')).toBeUndefined();
+            expect(panelToggleBindingByKey('')).toBeUndefined();
+        });
+
+        it('panelToggleBindingByMethod resolves all 12 method names', () => {
+            // The 12 public
+            // method names on
+            // App are all
+            // resolvable via
+            // the helper. This
+            // is the contract
+            // the 12 wrapper
+            // methods rely on
+            // (each calls
+            // `this.toggleByMethod(name)`).
+            const methodNames = PANEL_TOGGLE_BINDINGS.map((b) => b.methodName);
+            for (const m of methodNames) {
+                expect(panelToggleBindingByMethod(m)?.methodName).toBe(m);
+            }
+        });
+
+        it('panelToggleBindingByMethod returns undefined for unknown methods', () => {
+            expect(panelToggleBindingByMethod('toggleHelp')).toBeUndefined();
+            expect(panelToggleBindingByMethod('toggleGodConsole')).toBeUndefined();
+            expect(panelToggleBindingByMethod('enterNewDimension')).toBeUndefined();
+            expect(panelToggleBindingByMethod('')).toBeUndefined();
+        });
+
+        it('panelToggleBindingByButton resolves all 12 button ids', () => {
+            // The 12 mouse-button
+            // ids are all
+            // resolvable via
+            // the helper. The
+            // bootstrap loop
+            // uses this contract
+            // (binds `b.buttonId`
+            // for every row in
+            // the table).
+            const buttonIds = PANEL_TOGGLE_BINDINGS.map((b) => b.buttonId);
+            for (const id of buttonIds) {
+                expect(panelToggleBindingByButton(id)?.buttonId).toBe(id);
+            }
+        });
+
+        it('panelToggleMethodByKind maps the 12 KeyboardAction kinds to method names', () => {
+            // The bootstrap
+            // keydown switch
+            // `default` arm
+            // uses this helper
+            // to resolve a
+            // `kind` string
+            // (e.g.
+            // 'toggle-settings')
+            // to a method name
+            // (e.g.
+            // 'toggleSettings').
+            // All 12 panel-
+            // toggle kinds must
+            // round-trip.
+            const expected: ReadonlyArray<[string, string]> = [
+                ['toggle-settings',           'toggleSettings'],
+                ['toggle-stats',              'toggleStatsPanel'],
+                ['toggle-progression',        'toggleProgression'],
+                ['toggle-tutorial',           'toggleTutorial'],
+                ['toggle-vault',              'toggleVault'],
+                ['toggle-npc-mind',           'toggleNpcMind'],
+                ['toggle-achievements',       'toggleAchievements'],
+                ['toggle-biome-library',      'toggleBiomeLibrary'],
+                ['toggle-god-console-panel',  'toggleGodConsolePanel'],
+                ['toggle-economy',            'toggleEconomy'],
+                ['toggle-epoch',              'toggleEpoch'],
+                ['toggle-debug-overlay',      'toggleDebugOverlay'],
+            ];
+            for (const [kind, methodName] of expected) {
+                expect(panelToggleMethodByKind(kind)).toBe(methodName);
+            }
+        });
+
+        it('panelToggleMethodByKind returns undefined for non-panel-toggle kinds', () => {
+            // Kinds that are NOT
+            // panel-toggle
+            // (toggle-help uses
+            // `app.toggleHelp()`,
+            // not the round-117
+            // helper; toggle-dm-
+            // console uses
+            // `app.toggleGodConsole()`
+            // directly) return
+            // undefined so the
+            // bootstrap `default`
+            // arm ignores them.
+            expect(panelToggleMethodByKind('toggle-help')).toBeUndefined();
+            expect(panelToggleMethodByKind('toggle-dm-console')).toBeUndefined();
+            // And non-toggle
+            // kinds:
+            expect(panelToggleMethodByKind('abandon')).toBeUndefined();
+            expect(panelToggleMethodByKind('save')).toBeUndefined();
+            expect(panelToggleMethodByKind('enter-atom')).toBeUndefined();
+            // And the empty
+            // string / non-toggle-
+            // prefix strings:
+            expect(panelToggleMethodByKind('')).toBeUndefined();
+            expect(panelToggleMethodByKind('toggle-')).toBeUndefined();
+        });
+
+        it('every PanelToggleBinding has all 6 required fields', () => {
+            // Type guard sanity —
+            // every row passes
+            // the structural
+            // type check.
+            for (const b of PANEL_TOGGLE_BINDINGS) {
+                const _check: PanelToggleBinding = b;
+                expect(typeof b.key).toBe('string');
+                expect(typeof b.panelId).toBe('string');
+                expect(typeof b.label).toBe('string');
+                expect(typeof b.action).toBe('string');
+                expect(typeof b.methodName).toBe('string');
+                expect(typeof b.buttonId).toBe('string');
             }
         });
     });

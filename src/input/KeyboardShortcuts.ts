@@ -410,21 +410,199 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
  * row here + the
  * corresponding BINDING_DESCRIPTIONS
  * row.
+ *
+ * Round 131 — the 12-row
+ * list is now a projection
+ * of the new
+ * `PANEL_TOGGLE_BINDINGS`
+ * table (the single source
+ * of truth for the
+ * 12 panel-toggle keys:
+ * keyboard letter + DOM id
+ * + log label + help-section
+ * action + method name +
+ * mouse-button id). The
+ * table is what the App
+ * uses to (1) wire its 12
+ * `toggleX()` 1-line wrapper
+ * methods, (2) bind the 12
+ * mouse buttons, and
+ * (3) derive this help-
+ * section projection. Any
+ * future toggle addition
+ * (round-131+ follow-up
+ * candidates like Z / K /
+ * I keys) now adds ONE row
+ * to `PANEL_TOGGLE_BINDINGS`
+ * and the rest of the
+ * surface follows.
  */
-export const PANEL_TOGGLE_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }> = [
-    { key: 'P', action: '设置 (声音/语言/防抖窗口)' },
-    { key: 'Q', action: '统计面板' },
-    { key: 'W', action: '进度面板' },
-    { key: 'T', action: '教程面板' },
-    { key: 'F', action: '档案库面板' },
-    { key: 'M', action: 'NPC 心智面板' },
-    { key: 'V', action: '成就面板' },
-    { key: 'B', action: '生物群系图鉴' },
-    { key: 'G', action: 'DM God 控制台' },
-    { key: 'N', action: '经济面板 (货币/库存)' },
-    { key: 'O', action: '纪元面板' },
-    { key: 'D', action: '调试信息面板 (4 防抖器)' },
+export interface PanelToggleBinding {
+    /** Keyboard letter (e.g. 'P'). Routes through routeKey() case-insensitively. */
+    key: string;
+    /** KeyboardAction `kind` string (e.g. 'toggle-settings'). Used by panelToggleMethodByKind. */
+    kind: string;
+    /** DOM id of the panel's mount point (e.g. 'settings-root'). Used by togglePanel(rootId, ...). */
+    panelId: string;
+    /** Chinese log label used in the open/close log line (e.g. '设置浮层'). */
+    label: string;
+    /** Short action text shown in the 3rd help-overlay section (e.g. '设置 (声音/语言/防抖窗口)'). */
+    action: string;
+    /** Public method name on the App class (e.g. 'toggleSettings'). */
+    methodName: string;
+    /** Mouse-button DOM id (e.g. 'btn-settings'). Used by the bootstrap bind() loop. */
+    buttonId: string;
+}
+
+/**
+ * Round 131 — single source of truth for the
+ * 12 panel-toggle keyboard shortcuts + their
+ * corresponding mouse buttons. The 12 wrapper
+ * methods on App, the 12 bind() calls in the
+ * bootstrap, and `PANEL_TOGGLE_DESCRIPTIONS`
+ * are all derived from this table.
+ *
+ * Adding a new panel-toggle (round-131+
+ * follow-up) means adding one row here +
+ * the corresponding `routeKey` switch case +
+ * the corresponding `KeyboardAction` union
+ * member (TypeScript unions can't be generated
+ * from runtime data). Everything else flows
+ * automatically.
+ *
+ * The 12 entries are intentionally in QWERTY
+ * order (P / Q / W / T / F / M / V / B / G / N
+ * / O / D) so a `find()` lookup is fast and
+ * a future `keyof PanelToggleBinding[]` index
+ * is deterministic. Round 120 / 121 / 128
+ * 8 / 11 / 12-key growth is reflected here.
+ */
+export const PANEL_TOGGLE_BINDINGS: ReadonlyArray<PanelToggleBinding> = [
+    // P — settings (round 111 + 112)
+    { key: 'P', kind: 'toggle-settings',          panelId: 'settings-root',      label: '设置浮层',         action: '设置 (声音/语言/防抖窗口)', methodName: 'toggleSettings',         buttonId: 'btn-settings' },
+    // Q — stats (round 63/64 + 113)
+    // Note: kind 'toggle-stats' but method name has extra 'Panel' suffix
+    // — the explicit `kind` field in the table makes the (kind → method)
+    // mapping data, not derived string-munging.
+    { key: 'Q', kind: 'toggle-stats',             panelId: 'stats-root',         label: '统计面板',         action: '统计面板',                  methodName: 'toggleStatsPanel',       buttonId: 'btn-stats' },
+    // W — progression (round 65 + 113)
+    { key: 'W', kind: 'toggle-progression',       panelId: 'progression-root',   label: '进度面板',         action: '进度面板',                  methodName: 'toggleProgression',      buttonId: 'btn-progression' },
+    // T — tutorial (round 86+ + 114)
+    { key: 'T', kind: 'toggle-tutorial',          panelId: 'tutorial-root',      label: '教程浮层',         action: '教程面板',                  methodName: 'toggleTutorial',         buttonId: 'btn-tutorial' },
+    // F — vault (round 20 + 114)
+    { key: 'F', kind: 'toggle-vault',             panelId: 'vault-root',         label: '档案库面板',       action: '档案库面板',                methodName: 'toggleVault',            buttonId: 'btn-vault' },
+    // M — NPC mind (round 21 + 114)
+    { key: 'M', kind: 'toggle-npc-mind',         panelId: 'npc-mind-root',      label: 'NPC 心智面板',    action: 'NPC 心智面板',              methodName: 'toggleNpcMind',          buttonId: 'btn-npc-mind' },
+    // V — achievements (round 22 + 115)
+    { key: 'V', kind: 'toggle-achievements',     panelId: 'achievements-root',  label: '成就面板',         action: '成就面板',                  methodName: 'toggleAchievements',     buttonId: 'btn-achievements' },
+    // B — biome library (round 23 + 119)
+    { key: 'B', kind: 'toggle-biome-library',    panelId: 'biome-library-root', label: '生物群系图鉴',     action: '生物群系图鉴',              methodName: 'toggleBiomeLibrary',     buttonId: 'btn-biome-library' },
+    // G — DM God console panel (round 66 + 121)
+    { key: 'G', kind: 'toggle-god-console-panel',panelId: 'god-root',           label: 'DM God 控制台',   action: 'DM God 控制台',             methodName: 'toggleGodConsolePanel',  buttonId: 'btn-god-panel' },
+    // N — economy (round 25 + 121)
+    { key: 'N', kind: 'toggle-economy',          panelId: 'economy-root',       label: '经济面板',         action: '经济面板 (货币/库存)',     methodName: 'toggleEconomy',          buttonId: 'btn-economy' },
+    // O — epoch (round 65 + 121)
+    { key: 'O', kind: 'toggle-epoch',            panelId: 'epoch-root',         label: '纪元面板',         action: '纪元面板',                  methodName: 'toggleEpoch',            buttonId: 'btn-epoch' },
+    // D — debug overlay (round 128)
+    { key: 'D', kind: 'toggle-debug-overlay',    panelId: 'debug-overlay-root', label: '调试信息',         action: '调试信息面板 (4 防抖器)',  methodName: 'toggleDebugOverlay',     buttonId: 'btn-debug-overlay' },
 ];
+
+/**
+ * Round 131 — `PANEL_TOGGLE_DESCRIPTIONS` is
+ * now a projection of `PANEL_TOGGLE_BINDINGS`.
+ * Kept as a separate `const` (not just an
+ * `export const … = …`) so the existing
+ * imports in main.ts + main.test.ts continue
+ * to work without churn. The shape (`{ key,
+ * action }`) is preserved so the round-120 /
+ * 121 / 128 reverse-coverage tests still pass.
+ */
+export const PANEL_TOGGLE_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }> =
+    PANEL_TOGGLE_BINDINGS.map((b) => ({ key: b.key, action: b.action }));
+
+/**
+ * Round 131 — fast O(1) lookup helpers for
+ * `PANEL_TOGGLE_BINDINGS`. The map keys are
+ * case-folded so case-insensitive lookups
+ * (matching the routeKey 'p' | 'P' contract)
+ * work without a scan.
+ */
+const PANEL_TOGGLE_BINDINGS_BY_KEY: ReadonlyMap<string, PanelToggleBinding> =
+    new Map(PANEL_TOGGLE_BINDINGS.map((b) => [b.key.toLowerCase(), b] as const));
+
+const PANEL_TOGGLE_BINDINGS_BY_METHOD: ReadonlyMap<string, PanelToggleBinding> =
+    new Map(PANEL_TOGGLE_BINDINGS.map((b) => [b.methodName, b] as const));
+
+const PANEL_TOGGLE_BINDINGS_BY_BUTTON: ReadonlyMap<string, PanelToggleBinding> =
+    new Map(PANEL_TOGGLE_BINDINGS.map((b) => [b.buttonId, b] as const));
+
+/**
+ * Round 131 — look up a panel-toggle binding
+ * by its keyboard letter. Case-insensitive
+ * (matches routeKey's case-insensitive
+ * routing). Returns undefined for unknown
+ * keys.
+ */
+export function panelToggleBindingByKey(key: string): PanelToggleBinding | undefined {
+    return PANEL_TOGGLE_BINDINGS_BY_KEY.get(key.toLowerCase());
+}
+
+/**
+ * Round 131 — look up a panel-toggle binding
+ * by its public method name
+ * (e.g. 'toggleSettings'). Returns undefined
+ * for unknown methods.
+ */
+export function panelToggleBindingByMethod(methodName: string): PanelToggleBinding | undefined {
+    return PANEL_TOGGLE_BINDINGS_BY_METHOD.get(methodName);
+}
+
+/**
+ * Round 131 — look up a panel-toggle binding
+ * by its mouse-button DOM id
+ * (e.g. 'btn-settings'). Returns undefined
+ * for unknown button ids.
+ */
+export function panelToggleBindingByButton(buttonId: string): PanelToggleBinding | undefined {
+    return PANEL_TOGGLE_BINDINGS_BY_BUTTON.get(buttonId);
+}
+
+/**
+ * Round 131 — derive the App method name
+ * (e.g. 'toggleSettings') from a
+ * `KeyboardAction` `kind` string
+ * (e.g. 'toggle-settings'). Returns
+ * undefined for kinds that don't match a
+ * panel-toggle entry (e.g. 'toggle-help'
+ * uses `app.toggleHelp()`, not the
+ * round-117 `togglePanel` helper).
+ *
+ * This lets the bootstrap keydown switch
+ * collapse 12 `case 'toggle-X':
+ * app.toggleX(); break;` arms into a
+ * single lookup arm (used in the
+ * round-131 refactor of main.ts).
+ *
+ * The mapping is a direct table lookup by
+ * the `kind` field (round 131: the kind
+ * is now a per-row field, not a derived
+ * string). An earlier version tried to
+ * derive the method name by camelCasing
+ * the kind suffix (e.g. 'toggle-stats' →
+ * 'toggleStats') but that broke for the
+ * `toggle-stats → toggleStatsPanel` pair
+ * (the method has an extra 'Panel'
+ * suffix that doesn't appear in the
+ * kind). The explicit per-row `kind`
+ * field avoids the brittleness.
+ */
+const PANEL_TOGGLE_BINDINGS_BY_KIND: ReadonlyMap<string, PanelToggleBinding> =
+    new Map(PANEL_TOGGLE_BINDINGS.map((b) => [b.kind, b] as const));
+
+export function panelToggleMethodByKind(kind: string): string | undefined {
+    const b = PANEL_TOGGLE_BINDINGS_BY_KIND.get(kind);
+    return b ? b.methodName : undefined;
+}
 
 /**
  * Round 59 — mouse / pointer bindings, rendered as a second

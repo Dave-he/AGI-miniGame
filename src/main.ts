@@ -31,7 +31,7 @@ import { SaveSystem } from './world/SaveSystem';
 import { AIEngine, BalanceTuner } from './ai/AIEngine';
 import { NPCDialogueAI, NPCProfile } from './ai/NPCDialogueAI';
 import { AIBridge, ATOM_MANIFEST } from './gameplay/AIBridge';
-import { routeKey, BINDING_DESCRIPTIONS, MOUSE_BINDINGS, PANEL_TOGGLE_DESCRIPTIONS } from './input/KeyboardShortcuts';
+import { routeKey, BINDING_DESCRIPTIONS, MOUSE_BINDINGS, PANEL_TOGGLE_DESCRIPTIONS, PANEL_TOGGLE_BINDINGS, panelToggleBindingByKey, panelToggleBindingByMethod, panelToggleMethodByKind } from './input/KeyboardShortcuts';
 import { GameplayManager, SynthesisModule, CardModule } from './gameplay/GameplayManager';
 import { DslExecutor } from './scene/DslExecutor';
 import { HotReloadController } from './scene/HotReloadController';
@@ -1660,8 +1660,16 @@ class App {
      * future panel-toggle additions (round-117+ follow-ups like
      * B / G / D / Z keys) only need a new 1-line wrapper + a new
      * mount point in index.html.
+     *
+     * Round 131 — body now resolves the panel-toggle
+     * binding by method name from the
+     * `PANEL_TOGGLE_BINDINGS` table (the single
+     * source of truth) and delegates to
+     * `toggleByMethod(name)`. The hard-coded
+     * `'settings-root' / '设置浮层' / 'P'` triplet
+     * is now data, not code.
      */
-    toggleSettings(): void { this.togglePanel('settings-root', '设置浮层', 'P'); }
+    toggleSettings(): void { this.toggleByMethod('toggleSettings'); }
 
     /**
      * Round 113 — toggle the stats panel overlay. The
@@ -1673,7 +1681,7 @@ class App {
      *
      * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleStatsPanel(): void { this.togglePanel('stats-root', '统计面板', 'Q'); }
+    toggleStatsPanel(): void { this.toggleByMethod('toggleStatsPanel'); }
 
     /**
      * Round 113 — toggle the progression panel
@@ -1686,7 +1694,7 @@ class App {
      *
      * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleProgression(): void { this.togglePanel('progression-root', '进度面板', 'W'); }
+    toggleProgression(): void { this.toggleByMethod('toggleProgression'); }
 
     /**
      * Round 114 — toggle the tutorial overlay. The
@@ -1701,7 +1709,7 @@ class App {
      *
      * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleTutorial(): void { this.togglePanel('tutorial-root', '教程浮层', 'T'); }
+    toggleTutorial(): void { this.toggleByMethod('toggleTutorial'); }
 
     /**
      * Round 114 — toggle the vault panel. The
@@ -1715,7 +1723,7 @@ class App {
      *
      * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleVault(): void { this.togglePanel('vault-root', '档案库面板', 'F'); }
+    toggleVault(): void { this.toggleByMethod('toggleVault'); }
 
     /**
      * Round 114 — toggle the NPC mind panel.
@@ -1729,7 +1737,7 @@ class App {
      *
      * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleNpcMind(): void { this.togglePanel('npc-mind-root', 'NPC 心智面板', 'M'); }
+    toggleNpcMind(): void { this.toggleByMethod('toggleNpcMind'); }
 
     /**
      * Round 115 — toggle the
@@ -1758,7 +1766,7 @@ class App {
      *
      * Round 117 — body folded into `togglePanel` helper.
      */
-    toggleAchievements(): void { this.togglePanel('achievements-root', '成就面板', 'V'); }
+    toggleAchievements(): void { this.toggleByMethod('toggleAchievements'); }
 
     /**
      * Round 119 — toggle the
@@ -1784,7 +1792,7 @@ class App {
      * makes the 8th toggle
      * method a 1-line change).
      */
-    toggleBiomeLibrary(): void { this.togglePanel('biome-library-root', '生物群系图鉴', 'B'); }
+    toggleBiomeLibrary(): void { this.toggleByMethod('toggleBiomeLibrary'); }
 
     /**
      * Round 121 — G key
@@ -1812,7 +1820,7 @@ class App {
      * / `[kb] ${label}已关闭`
      * format.
      */
-    toggleGodConsolePanel(): void { this.togglePanel('god-root', 'DM God 控制台', 'G'); }
+    toggleGodConsolePanel(): void { this.toggleByMethod('toggleGodConsolePanel'); }
 
     /**
      * Round 121 — N key
@@ -1828,7 +1836,7 @@ class App {
      * panel's primary
      * content).
      */
-    toggleEconomy(): void { this.togglePanel('economy-root', '经济面板', 'N'); }
+    toggleEconomy(): void { this.toggleByMethod('toggleEconomy'); }
 
     /**
      * Round 121 — O key
@@ -1841,7 +1849,7 @@ class App {
      * via the round-117
      * `togglePanel` helper.
      */
-    toggleEpoch(): void { this.togglePanel('epoch-root', '纪元面板', 'O'); }
+    toggleEpoch(): void { this.toggleByMethod('toggleEpoch'); }
 
     /**
      * Round 128 — D key
@@ -1867,7 +1875,7 @@ class App {
      * player-facing aggregate
      * counterpart).
      */
-    toggleDebugOverlay(): void { this.togglePanel('debug-overlay-root', '调试信息', 'D'); }
+    toggleDebugOverlay(): void { this.toggleByMethod('toggleDebugOverlay'); }
 
     /**
      * Round 117 — shared panel-toggle
@@ -1949,6 +1957,34 @@ class App {
             el.setAttribute('hidden', '');
             this.hud.log(`[kb] ${label}已关闭`);
         }
+    }
+
+    /**
+     * Round 131 — the 12 public
+     * `toggleX()` wrappers all
+     * delegate here. Resolves the
+     * `PanelToggleBinding` by method
+     * name from the
+     * `PANEL_TOGGLE_BINDINGS` table
+     * (the single source of truth)
+     * and forwards to
+     * `togglePanel(b.panelId, b.label,
+     * b.key)`. A no-op (silent
+     * early return) for unknown
+     * method names — this should
+     * never happen in production
+     * (the 12 method names are
+     * hard-coded in the wrapper
+     * bodies) but the guard makes
+     * the helper safe to call from
+     * a future programmatic
+     * dispatch path (e.g. a
+     * plugin / macro system).
+     */
+    private toggleByMethod(methodName: string): void {
+        const b = panelToggleBindingByMethod(methodName);
+        if (!b) return;
+        this.togglePanel(b.panelId, b.label, b.key);
     }
 
     /**
@@ -2980,67 +3016,34 @@ async function bootstrap(): Promise<void> {
     // to the P key shortcut. Opens /
     // closes the round-111
     // SettingsPanel.
-    bind('btn-settings',  () => app.toggleSettings());
-    // Round 116 — 6 mouse-button
-    // counterparts to the
-    // round-113/114/115 panel-toggle
-    // keyboard shortcuts (Q / W / T /
-    // F / M / V). Each button routes
-    // to the same `app.toggleX()`
-    // method that the bootstrap
-    // keydown switch dispatches —
-    // so the keyboard and mouse
-    // entry points are fully
-    // symmetric. 7-button toggle
-    // cluster (⚙ settings P +
-    // 📊 stats Q + ⏳ progression W
-    // + 📖 tutorial T + 📚 vault F
-    // + 🧠 npc-mind M + 🏅
-    // achievements V).
-    bind('btn-stats',         () => app.toggleStatsPanel());
-    bind('btn-progression',   () => app.toggleProgression());
-    bind('btn-tutorial',      () => app.toggleTutorial());
-    bind('btn-vault',         () => app.toggleVault());
-    bind('btn-npc-mind',      () => app.toggleNpcMind());
-    bind('btn-achievements',  () => app.toggleAchievements());
-    // Round 119 — B key mouse
-    // counterpart. Opens /
-    // closes the
-    // `BiomeLibraryPanel`.
-    bind('btn-biome-library', () => app.toggleBiomeLibrary());
-    // Round 121 — 3 mouse
-    // button counterparts to
-    // the round-121 G / N / O
-    // keyboard shortcuts
-    // (god-console / economy /
-    // epoch panels). The 3
-    // buttons extend the
-    // round-116 7-button
-    // toggle cluster + the
-    // round-119 8th biome-
-    // library button to 11
-    // buttons total. Same
-    // case-insensitive
-    // mirror convention as
-    // the keyboard keys —
-    // the btn- route +
-    // the kb- route call
-    // the same `app.toggleX()`
-    // method.
-    bind('btn-god-panel',  () => app.toggleGodConsolePanel());
-    bind('btn-economy',    () => app.toggleEconomy());
-    bind('btn-epoch',      () => app.toggleEpoch());
-    // Round 128 — D key mouse
-    // counterpart. Opens /
-    // closes the
-    // `DebugOverlay` panel
-    // showing the 4
-    // ActionDebouncer
-    // instances' runtime
-    // state. 12th button in
-    // the round-116-121
-    // toggle cluster.
-    bind('btn-debug-overlay', () => app.toggleDebugOverlay());
+    // Round 131 — the 12 panel-toggle
+    // mouse button binds (round-112
+    // to round-128) are now
+    // generated from the
+    // `PANEL_TOGGLE_BINDINGS` table
+    // (the single source of truth
+    // for the panel-toggle group).
+    // Each row's `buttonId` /
+    // `methodName` pair is what
+    // the loop wires; the closure
+    // captures the row so the
+    // iteration variable can't
+    // drift across rounds.
+    for (const b of PANEL_TOGGLE_BINDINGS) {
+        // The closure captures `b` per iteration
+        // (a `for…of` loop creates a new binding
+        // per step, so the 12 closures don't
+        // share a single `b`). The dispatch is
+        // by public method-name lookup so the
+        // App's 12 `toggleX()` surface stays
+        // the contract — the private
+        // `toggleByMethod` is an internal
+        // implementation detail.
+        bind(b.buttonId, () => {
+            const fn = (app as unknown as Record<string, () => void>)[b.methodName];
+            if (typeof fn === 'function') fn.call(app);
+        });
+    }
     bind('btn-complete',  () => app.completeRun(2500, [
         { itemId: 'gold', quantity: 100 },
         { itemId: 'gem',  quantity: 5 },
@@ -3157,156 +3160,32 @@ async function bootstrap(): Promise<void> {
             // GodConsole class itself manages open/close
             // state, so the toggle is idempotent.
             case 'toggle-dm-console': app.toggleGodConsole(); break;
-            // Round 112 — P key shortcut
-            // for the round-111
-            // SettingsPanel. The panel
-            // itself is rendered into
-            // `<div id="settings-root">`
-            // (see index.html + the
-            // AppRefs construction in
-            // main.ts). The shortcut
-            // calls the same
-            // `toggleSettings()` that
-            // the round-112 `btn-settings`
-            // button does; the App's
-            // `toggleSettings` flips
-            // the `hidden` attribute,
-            // so the toggle is
-            // idempotent.
-            case 'toggle-settings':  app.toggleSettings(); break;
-            // Round 113 — Q key shortcut
-            // for the round-63/64
-            // StatsPanel. The panel
-            // itself is rendered into
-            // `<div id="stats-root">`
-            // via `renderStatsPanel`
-            // during construction. The
-            // shortcut calls the same
-            // `toggleStatsPanel()` that
-            // (if a `btn-stats` button
-            // is added later) the
-            // mouse counterpart would
-            // call; the method flips
-            // the `hidden` attribute,
-            // so the toggle is
-            // idempotent.
-            case 'toggle-stats':      app.toggleStatsPanel(); break;
-            // Round 113 — W key shortcut
-            // for the round-65
-            // ProgressionUI. The UI is
-            // rendered into
-            // `<div id="progression-root">`
-            // via `new ProgressionUI`
-            // during construction. The
-            // shortcut calls the same
-            // `toggleProgression()` that
-            // (if a `btn-progression`
-            // button is added later)
-            // the mouse counterpart
-            // would call; the method
-            // flips the `hidden`
-            // attribute, so the toggle
-            // is idempotent.
-            case 'toggle-progression': app.toggleProgression(); break;
-            // Round 114 — T / F / M
-            // shortcuts for the
-            // tutorial / vault /
-            // NPC-mind panels. The
-            // panel content is
-            // rendered into
-            // `<div id="tutorial-root">`,
-            // `<div id="vault-root">`,
-            // `<div id="npc-mind-root">`
-            // during construction.
-            // The shortcuts call
-            // the same
-            // `toggleX()` methods
-            // that the round-114
-            // bootstrap switch
-            // dispatches; each
-            // method flips the
-            // `hidden` attribute,
-            // so the toggles are
-            // idempotent.
-            case 'toggle-tutorial':  app.toggleTutorial(); break;
-            case 'toggle-vault':     app.toggleVault(); break;
-            case 'toggle-npc-mind':  app.toggleNpcMind(); break;
-            // Round 115 — V key for
-            // the achievements panel.
-            // The panel content is
-            // rendered into
-            // `<div id="achievements-root">`
-            // (currently empty in
-            // round-115; the round-22
-            // follow-up will populate
-            // it from
-            // `worldState.player.achievements`).
-            // The shortcut calls the
-            // same `toggleAchievements()`
-            // method that the mouse
-            // entry point (round-115
-            // follow-up `btn-achievements`)
-            // will dispatch; the method
-            // flips the `hidden`
-            // attribute, so the toggle
-            // is idempotent.
-            case 'toggle-achievements': app.toggleAchievements(); break;
-            // Round 119 — B key for
-            // the biome library
-            // panel. The panel
-            // content is rendered
-            // into
-            // `<div id="biome-library-root">`
-            // during construction.
-            // The shortcut calls
-            // the same
-            // `toggleBiomeLibrary()`
-            // method that the
-            // round-119 mouse entry
-            // point
-            // (`btn-biome-library`)
-            // dispatches; the
-            // method flips the
-            // `hidden` attribute,
-            // so the toggle is
-            // idempotent.
-            case 'toggle-biome-library': app.toggleBiomeLibrary(); break;
-            // Round 121 — G / N / O
-            // 3-key batch. All 3
-            // route through the
-            // round-117 `togglePanel`
-            // helper, so the
-            // keydown switch
-            // collapses to 3
-            // one-liners. The G
-            // key is distinct from
-            // the round-91 `~/``
-            // key (which routes to
-            // `toggle-dm-console`
-            // and calls
-            // `godConsole.toggle()`
-            // directly) so the
-            // backtick shortcut
-            // keeps its
-            // pre-round-121 log
-            // format.
-            case 'toggle-god-console-panel': app.toggleGodConsolePanel(); break;
-            case 'toggle-economy':          app.toggleEconomy();          break;
-            case 'toggle-epoch':            app.toggleEpoch();            break;
-            // Round 128 — D key for
-            // the DebugOverlay panel.
-            // The shortcut calls the
-            // same `toggleDebugOverlay()`
-            // method that the
-            // mouse entry point
-            // (`btn-debug-overlay`)
-            // dispatches; the
-            // method flips the
-            // `hidden` attribute via
-            // the round-117
-            // `togglePanel` helper, so
-            // the toggle is idempotent.
-            case 'toggle-debug-overlay':    app.toggleDebugOverlay();    break;
+            // Round 131 — the 12 panel-toggle cases
+            // (toggle-settings / toggle-stats /
+            // toggle-progression / toggle-tutorial /
+            // toggle-vault / toggle-npc-mind /
+            // toggle-achievements / toggle-biome-library
+            // / toggle-god-console-panel / toggle-economy
+            // / toggle-epoch / toggle-debug-overlay)
+            // are now collapsed to a single
+            // `panelToggleMethodByKind` lookup. The
+            // 12 case arms that lived here from
+            // round 112 → 128 are gone — adding
+            // a 13th panel-toggle (round-131+
+            // follow-up) now needs (1) a new
+            // KeyboardAction union member, (2)
+            // a new routeKey case, and (3) one
+            // new row in `PANEL_TOGGLE_BINDINGS`.
+            // The dispatch table follows
+            // automatically.
+            default: {
+                const methodName = panelToggleMethodByKind(action.kind);
+                if (methodName) {
+                    const fn = (app as unknown as Record<string, () => void>)[methodName];
+                    if (typeof fn === 'function') fn.call(app);
+                }
+                break;
+            }
         }
         // Only swallow the event when we actually handled it so
         // tab navigation, Esc-into-fullscreen-exit etc. still
