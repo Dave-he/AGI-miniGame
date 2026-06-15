@@ -28,6 +28,19 @@
  * (e.g. round-95 adds a new HUD setter) is applied once here
  * rather than N times in main.test.ts.
  *
+ * **Round 98 promotion**: the two install helpers
+ * (`installSideEffectStubs` + `installHudSetterStubs`) were
+ * promoted from private (file-internal `function`) to public
+ * (`export function`) so the round-97 sceneGenWasm=null helper
+ * in main.test.ts could call them directly. Pre-round-98 the
+ * round-97 helper inlined ~50 lines of the same jest.spyOn
+ * setup that round-90 already had privately — a maintenance
+ * hazard (a future change to the App's side-effect surface
+ * would have to be applied in 4 places: round-90 helpers +
+ * round-97 inline copy + round-94 inline copy + any future
+ * test that needs them). Round 98 makes `installSideEffectStubs`
+ * and `installHudSetterStubs` the single source of truth.
+ *
  * **Extraction rationale** (mirrors the round-82
  * `sceneGenWasmStub` pattern):
  *   1. Single source of truth for the side-effect surface.
@@ -105,13 +118,20 @@ export function makeBridgeBlueprint(
 }
 
 // ---------------------------------------------------------------------------
-// Internal: install the shared side-effect stubs onto an App.
+// Public export (round 98): install the shared side-effect stubs
+// onto an App. Exported so external test files (e.g. main.test.ts
+// round-97's sceneGenWasm=null helper) can reuse the same surface
+// without duplicating the 9-spy setup. The round-90 helpers below
+// call this internally — they are the canonical callers, but the
+// export exists for cases where the high-level helpers don't fit
+// (e.g. a test that drives `enterNewDimension` with `sceneGenWasm
+// = null`, which the round-90 helpers don't support).
+//
 // Returns nothing; the spies live on the App instance via
-// jest.spyOn so the test can `jest.restoreAllMocks()` to
-// clean up.
+// jest.spyOn so the test can `jest.restoreAllMocks()` to clean up.
 // ---------------------------------------------------------------------------
 
-function installSideEffectStubs(app: App): void {
+export function installSideEffectStubs(app: App): void {
     // scene.* surface — WebGL-free stubs.
     jest
         .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
@@ -143,14 +163,15 @@ function installSideEffectStubs(app: App): void {
 }
 
 // ---------------------------------------------------------------------------
-// Internal: install the HUD-setter silent no-ops. These are
-// shared across all three helpers, but `enterDimensionWithFailingWasm`
-// (round-84) ALSO stubs `setLastSceneEventChain` and `setBackupAvailable`
-// because the round-72/53 failure path is under test. The asymmetry is
-// preserved via the `withExtra` parameter.
+// Public export (round 98): install the HUD-setter silent no-ops.
+// Exported for symmetry with `installSideEffectStubs`. The
+// `withExtra` parameter preserves the round-84 asymmetry —
+// `enterDimensionWithFailingWasm` ALSO stubs `setLastSceneEventChain`
+// and `setBackupAvailable` because the round-72/53 failure path is
+// under test.
 // ---------------------------------------------------------------------------
 
-function installHudSetterStubs(
+export function installHudSetterStubs(
     app: App,
     withExtra: { setLastSceneEventChain?: boolean; setBackupAvailable?: boolean } = {},
 ): void {

@@ -12,6 +12,15 @@
  * circuits the round-83 rollback rehydrate test) would
  * cascade into N confusing failures.
  *
+ * **Round 98 — public export contract**: the two install
+ * helpers (`installSideEffectStubs` + `installHudSetterStubs`)
+ * are now public exports. The round-97 sceneGenWasm=null
+ * helper in main.test.ts calls them directly. The describe
+ * block at the bottom of this file pins the round-98 public
+ * surface so a future refactor that drops a spy (e.g. removes
+ * the `syncNpcDisposition` install) is caught immediately,
+ * not silently at the round-97 test that depends on it.
+ *
  * **Why a stand-alone file** (not just the round-90 in-line
  * assertions in `main.test.ts`):
  *   1. The helpers' value proposition is the side-effect
@@ -48,6 +57,8 @@ import {
     enterDimensionWithFailingWasm,
     enterAtomWithStub,
     makeBridgeBlueprint,
+    installSideEffectStubs,
+    installHudSetterStubs,
 } from './enterDimensionHelpers';
 
 // ---------------------------------------------------------------------------
@@ -411,6 +422,159 @@ describe('enterAtomWithStub — surface (round 90)', () => {
             const fn = obj[method] as { _isMockFunction?: boolean };
             expect(fn).toBeDefined();
             expect(fn._isMockFunction).toBe(true);
+        }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// `installSideEffectStubs` + `installHudSetterStubs` (round 98) —
+// public exports. The round-97 sceneGenWasm=null helper in
+// main.test.ts now calls these directly (it used to inline
+// ~50 lines of the same jest.spyOn setup). Pin the public
+// surface so a future refactor that drops a spy fails here,
+// not silently at the round-97 test.
+// ---------------------------------------------------------------------------
+
+describe('installSideEffectStubs — public export surface (round 98)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('installs_9_spies_on_scene_audio_npcMinds_and_syncNpcDisposition', () => {
+        // The 9-spy surface is the round-90 contract. Every
+        // App that runs `enterNewDimension` needs these
+        // installed for the test to be headless (no WebGL,
+        // no AudioContext, no real NPCs). The 9 spies are:
+        //   scene: renderWfcDungeon, spawnNpcWave,
+        //          setBiomeAtmosphere (3)
+        //   audio: setBiomeAmbient, setBiomeSfx (2)
+        //   npcMinds: loadFromSnapshots, clear (2)
+        //   private: syncNpcDisposition (1)
+        //   + sceneGenWasm: handled by the caller, not here
+        const app = makeApp();
+        installSideEffectStubs(app);
+        const scene = (app as unknown as { scene: Record<string, unknown> }).scene;
+        const audio = (app as unknown as { audio: Record<string, unknown> }).audio;
+        const npcMinds = (app as unknown as { npcMinds: Record<string, unknown> }).npcMinds;
+        const appPriv = app as unknown as { syncNpcDisposition: unknown };
+        for (const [obj, method] of [
+            [scene, 'renderWfcDungeon'],
+            [scene, 'spawnNpcWave'],
+            [scene, 'setBiomeAtmosphere'],
+            [audio, 'setBiomeAmbient'],
+            [audio, 'setBiomeSfx'],
+            [npcMinds, 'loadFromSnapshots'],
+            [npcMinds, 'clear'],
+        ] as const) {
+            const fn = obj[method] as { _isMockFunction?: boolean };
+            expect(fn).toBeDefined();
+            expect(fn._isMockFunction).toBe(true);
+        }
+        // The private method is mocked at the (app as
+        // unknown) layer — verify it's a jest mock
+        // function.
+        expect((appPriv.syncNpcDisposition as { _isMockFunction?: boolean })._isMockFunction).toBe(true);
+    });
+
+    test('does_not_install_bridge_spy_or_sceneGenWasm_or_worldState_spy', () => {
+        // Defense: a "let's also stub the bridge for
+        // convenience" refactor would silently over-mock
+        // the round-97 helper, which drives its own
+        // bridge planAndLoad return value. The contract
+        // is: `installSideEffectStubs` owns the
+        // scene/audio/npcMinds/private surface; the
+        // bridge, sceneGenWasm, and worldState are the
+        // caller's responsibility.
+        const app = makeApp();
+        installSideEffectStubs(app);
+        const bridge = (app as unknown as { bridge: { planAndLoad: unknown } }).bridge;
+        const worldState = (app as unknown as { worldState: Record<string, unknown> }).worldState;
+        expect((bridge.planAndLoad as { _isMockFunction?: boolean })._isMockFunction).toBeFalsy();
+        // worldState methods are also not stubbed.
+        // Pick a representative one to assert.
+        const updateFn = worldState.updateLastSceneBlueprintFull as { _isMockFunction?: boolean } | undefined;
+        if (updateFn !== undefined) {
+            expect(updateFn._isMockFunction).toBeFalsy();
+        }
+    });
+});
+
+describe('installHudSetterStubs — public export surface (round 98)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('default_installs_5_HUD_setters_no_extras', () => {
+        // Default = no `setLastSceneEventChain`, no
+        // `setBackupAvailable`. This matches the
+        // `enterDimensionWithStub` configuration
+        // (round-83 needs the real setLastSceneEventChain
+        // to run so the round-72 event chain persists).
+        const app = makeApp();
+        installHudSetterStubs(app);
+        const hud = (app as unknown as { hud: Record<string, unknown> }).hud;
+        for (const method of [
+            'setLastBiome',
+            'setMinimap',
+            'setLastSceneBlueprint',
+            'setNpcMindsSnapshot',
+            'hideRecoveryBanner',
+        ]) {
+            const fn = hud[method] as { _isMockFunction?: boolean } | undefined;
+            expect(fn).toBeDefined();
+            expect(fn!._isMockFunction).toBe(true);
+        }
+        // The extras are NOT installed by default.
+        for (const method of ['setLastSceneEventChain', 'setBackupAvailable']) {
+            const fn = hud[method] as { _isMockFunction?: boolean } | undefined;
+            if (fn !== undefined) {
+                expect(fn._isMockFunction).toBeFalsy();
+            }
+        }
+    });
+
+    test('with_setLastSceneEventChain_extra_installs_6_setters', () => {
+        // The `enterDimensionWithFailingWasm` (round-84)
+        // configuration. The asymmetry is load-bearing —
+        // the round-84 test asserts on
+        // updateLastSceneBlueprintFull calls, not on
+        // lastSceneEventChain reads.
+        const app = makeApp();
+        installHudSetterStubs(app, { setLastSceneEventChain: true });
+        const hud = (app as unknown as { hud: Record<string, unknown> }).hud;
+        const fn = hud.setLastSceneEventChain as { _isMockFunction?: boolean } | undefined;
+        expect(fn).toBeDefined();
+        expect(fn!._isMockFunction).toBe(true);
+        // setBackupAvailable is still NOT installed.
+        const bk = hud.setBackupAvailable as { _isMockFunction?: boolean } | undefined;
+        if (bk !== undefined) {
+            expect(bk._isMockFunction).toBeFalsy();
+        }
+    });
+
+    test('with_both_extras_installs_7_setters_for_round84_failing_path', () => {
+        // The full `enterDimensionWithFailingWasm` (round-84)
+        // configuration. Both extras are needed for the
+        // round-72/53 failure-path HUD writes that the
+        // round-84 test treats as noise.
+        const app = makeApp();
+        installHudSetterStubs(app, {
+            setLastSceneEventChain: true,
+            setBackupAvailable: true,
+        });
+        const hud = (app as unknown as { hud: Record<string, unknown> }).hud;
+        for (const method of [
+            'setLastBiome',
+            'setMinimap',
+            'setLastSceneBlueprint',
+            'setNpcMindsSnapshot',
+            'hideRecoveryBanner',
+            'setLastSceneEventChain',
+            'setBackupAvailable',
+        ]) {
+            const fn = hud[method] as { _isMockFunction?: boolean } | undefined;
+            expect(fn).toBeDefined();
+            expect(fn!._isMockFunction).toBe(true);
         }
     });
 });

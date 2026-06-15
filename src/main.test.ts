@@ -46,6 +46,8 @@ import {
     enterDimensionWithFailingWasm,
     enterAtomWithStub,
     makeBridgeBlueprint,
+    installSideEffectStubs,
+    installHudSetterStubs,
 } from './test-utils/enterDimensionHelpers';
 
 // ---------------------------------------------------------------------------
@@ -2797,53 +2799,13 @@ describe('App — round 97: sceneGenWasm=null TS-mirror fallback path (auto-gene
         (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = null;
         // The TS-mirror path still requires the side-effect
         // surface (scene / audio / npcMinds / HUD setters) to
-        // be stubbed. Same pattern as
-        // enterDimensionHelpers.installSideEffectStubs +
-        // installHudSetterStubs. We replicate the surface
-        // here (don't import the private installSideEffectStubs
-        // — that helper is round-90 internal).
-        jest
-            .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { scene: { spawnNpcWave: (n: number, h: string[]) => unknown[] } }).scene, 'spawnNpcWave')
-            .mockReturnValue(['mock_npc_a']);
-        jest
-            .spyOn((app as unknown as { scene: { setBiomeAtmosphere: (a: unknown) => void } }).scene, 'setBiomeAtmosphere')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { audio: { setBiomeAmbient: (id: string, a: unknown) => void } }).audio, 'setBiomeAmbient')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { audio: { setBiomeSfx: (id: string, a: unknown) => void } }).audio, 'setBiomeSfx')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { npcMinds: { loadFromSnapshots: (s: unknown) => void } }).npcMinds, 'loadFromSnapshots')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn((app as unknown as { npcMinds: { clear: () => void } }).npcMinds, 'clear')
-            .mockImplementation(() => undefined);
-        jest
-            .spyOn(app as unknown as { syncNpcDisposition: () => void }, 'syncNpcDisposition')
-            .mockImplementation(() => undefined);
-        const hud = (app as unknown as {
-            hud: {
-                setLastBiome: (b: string | null) => void;
-                setMinimap: (m: string | null) => void;
-                setLastSceneBlueprint: (s: unknown) => void;
-                setLastSceneEventChain: (c: unknown) => void;
-                setNpcMindsSnapshot: (s: unknown) => void;
-                hideRecoveryBanner: () => void;
-                setBackupAvailable: (b: boolean) => void;
-            };
-        }).hud;
-        jest.spyOn(hud, 'setLastBiome').mockImplementation(() => undefined);
-        jest.spyOn(hud, 'setMinimap').mockImplementation(() => undefined);
-        jest.spyOn(hud, 'setLastSceneBlueprint').mockImplementation(() => undefined);
-        jest.spyOn(hud, 'setLastSceneEventChain').mockImplementation(() => undefined);
-        jest.spyOn(hud, 'setNpcMindsSnapshot').mockImplementation(() => undefined);
-        jest.spyOn(hud, 'hideRecoveryBanner').mockImplementation(() => undefined);
-        jest.spyOn(hud, 'setBackupAvailable').mockImplementation(() => undefined);
+        // be stubbed. Round 98 — call the round-90 helpers
+        // (now public exports) instead of duplicating ~50
+        // lines of jest.spyOn setup. The 7/5 HUD-setter
+        // asymmetry is irrelevant here (no extra flags), so
+        // we get the same coverage as enterDimensionWithStub.
+        installSideEffectStubs(app);
+        installHudSetterStubs(app);
         await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
     }
 
