@@ -1165,6 +1165,19 @@ class App {
                 refs.dslCodexRoot,
                 () => this.currentDslRule,
                 () => this.lastDslOutcome,
+                // Round 134 — pass the
+                // `HotReloadController`
+                // `getRuleHistory()`
+                // ring-buffer getter
+                // so the DslCodex
+                // panel can render
+                // the last 5
+                // successfully-
+                // applied rules as
+                // a "历史" list
+                // below the main
+                // codex block.
+                () => this.hot.getRuleHistory(),
                 this.i18n,
             );
         }

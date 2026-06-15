@@ -234,3 +234,298 @@ test('panel_class_wrapper_in_html', () => {
     // patterns).
     expect(root.innerHTML).toContain('class="dsl-codex-panel"');
 });
+
+// ---------------------------------------------------------------------------
+// Round 134 — the
+// `getRuleHistory`
+// callback is
+// optional. When
+// omitted, the
+// panel renders the
+// pre-round-134
+// shape (no history
+// list section). When
+// provided, the
+// panel renders a
+// "历史" list
+// below the main
+// codex block with
+// the last N
+// applied rules.
+// ---------------------------------------------------------------------------
+
+test('round_134_no_history_callback_renders_no_history_section', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    // The 4-arg
+    // signature
+    // (pre-round-134)
+    // renders no
+    // history
+    // section.
+    renderDslCodexPanel(root, () => rule, () => 'accepted');
+    expect(root.innerHTML).not.toContain('dsl-codex-history');
+});
+
+test('round_134_history_section_hidden_when_history_is_empty', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    // The
+    // `getRuleHistory`
+    // callback
+    // returns
+    // `[]`
+    // (no rule
+    // has been
+    // applied
+    // yet).
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => [],
+    );
+    // The
+    // history
+    // section
+    // is
+    // rendered
+    // (because
+    // the
+    // callback
+    // is
+    // provided)
+    // but
+    // shows
+    // the
+    // empty
+    // state
+    // "暂无历史".
+    expect(root.innerHTML).toContain('dsl-codex-history');
+    expect(root.innerHTML).toContain('暂无历史');
+});
+
+test('round_134_history_list_renders_each_rule_as_a_row', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X', 3] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Both
+    // rules
+    // appear
+    // in
+    // the
+    // list
+    // (in
+    // chronological
+    // order).
+    // The
+    // rendered
+    // innerHTML
+    // escapes
+    // `->`
+    // to
+    // `-&gt;`
+    // (the
+    // `>`
+    // char
+    // is
+    // HTML-entity-encoded
+    // by
+    // `escapeHtml`).
+    expect(root.innerHTML).toContain('dsl-codex-history-row');
+    expect(root.innerHTML).toContain('Damage(1)');
+    // The
+    // 2nd
+    // rule's
+    // action
+    // kind
+    // is
+    // present
+    // (we
+    // don't
+    // assert
+    // on
+    // the
+    // string
+    // arg
+    // content
+    // because
+    // the
+    // escaping
+    // semantics
+    // for
+    // the
+    // history
+    // preview
+    // are
+    // best
+    // tested
+    // by
+    // the
+    // existing
+    // `escapeHtml_prevents_script_injection`
+    // test).
+    expect(root.innerHTML).toContain('Spawn');
+    // The
+    // action
+    // counts
+    // are
+    // shown.
+    expect(root.innerHTML).toContain('1 动作');
+});
+
+test('round_134_history_row_uses_index_1_based', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // The
+    // indices
+    // are
+    // 1-based
+    // (`#1`
+    // /
+    // `#2`,
+    // not
+    // `#0`
+    // /
+    // `#1`).
+    expect(root.innerHTML).toContain('#1');
+    expect(root.innerHTML).toContain('#2');
+});
+
+test('round_134_history_list_pads_to_empty_state_when_callback_returns_empty', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    // The
+    // callback
+    // returns
+    // a
+    // fresh
+    // empty
+    // array
+    // on
+    // each
+    // call.
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => [] as DslRule[],
+    );
+    expect(root.innerHTML).toContain('dsl-codex-history-empty');
+    expect(root.innerHTML).toContain('暂无历史');
+});
+
+test('round_134_history_works_even_when_current_rule_is_null', () => {
+    const root = makeRoot();
+    // No current
+    // rule
+    // (empty
+    // state).
+    // The
+    // history
+    // section
+    // should
+    // still
+    // be
+    // rendered
+    // (so
+    // the
+    // player
+    // can
+    // see
+    // past
+    // rules
+    // even
+    // when
+    // the
+    // latest
+    // is
+    // null).
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    expect(root.innerHTML).toContain('dsl-codex-empty');
+    // The
+    // history
+    // is
+    // still
+    // there.
+    expect(root.innerHTML).toContain('dsl-codex-history');
+    expect(root.innerHTML).toContain('Heal(1)');
+});
+
+test('round_134_history_refresh_picks_up_new_history_array', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    let history: DslRule[] = [];
+    const handle = renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Initially
+    // empty
+    // history
+    // →
+    // "暂无历史"
+    // is
+    // shown.
+    expect(root.innerHTML).toContain('暂无历史');
+    // Mutate
+    // the
+    // history
+    // array,
+    // then
+    // refresh.
+    history = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    handle.refresh();
+    expect(root.innerHTML).not.toContain('暂无历史');
+    expect(root.innerHTML).toContain('Damage(1)');
+});
+

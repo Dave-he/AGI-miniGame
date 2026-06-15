@@ -77,6 +77,56 @@ export class HotReloadController {
      * event stream.
      */
     private activeRule: DslRule | null = null;
+    /**
+     * Round 134 — bounded
+     * ring buffer of the
+     * last
+     * `HISTORY_CAPACITY`
+     * successfully-applied
+     * rules (in
+     * chronological order
+     * — index 0 is the
+     * oldest, the last
+     * index is the
+     * newest). Populated
+     * inside `applyNow()`
+     * once the rule has
+     * been applied; older
+     * entries are dropped
+     * once the buffer
+     * reaches
+     * `HISTORY_CAPACITY`.
+     * The round-134
+     * DslCodex panel
+     * history list reads
+     * this via a getter
+     * (`getRuleHistory()`)
+     * so the player can
+     * see the AGI's last
+     * few generated
+     * rules, not just
+     * the most recent
+     * one.
+     */
+    private ruleHistory: DslRule[] = [];
+    /**
+     * Round 134 — the
+     * maximum number of
+     * rules to keep in
+     * the ring buffer
+     * history. 5 is a
+     * sweet spot: long
+     * enough for the
+     * player to spot
+     * the AGI's pattern
+     * of recent
+     * generations,
+     * short enough to
+     * fit in the codex
+     * panel without
+     * scrolling.
+     */
+    private static readonly HISTORY_CAPACITY = 5;
 
     constructor(exec: DslExecutor, cfg: HotReloadConfig = DEFAULT_HOT_RELOAD_CONFIG) {
         this.exec = exec;
@@ -112,6 +162,35 @@ export class HotReloadController {
      * stores the rule.
      */
     getActiveRule(): DslRule | null { return this.activeRule; }
+    /**
+     * Round 134 — getter
+     * for the ring-buffer
+     * history of
+     * successfully-
+     * applied rules. The
+     * returned array is
+     * a fresh copy (so
+     * a caller can't
+     * mutate the
+     * controller's
+     * internal state)
+     * and is in
+     * chronological
+     * order (index 0 =
+     * oldest, last index
+     * = newest). The
+     * `DslCodex` history
+     * list reads this
+     * via a callback so
+     * the panel updates
+     * the moment
+     * `applyNow()` runs.
+     * Returns an empty
+     * array when no rule
+     * has been applied
+     * yet.
+     */
+    getRuleHistory(): DslRule[] { return this.ruleHistory.slice(); }
 
     /** Begin a hot-reload. Returns true if accepted, false if rate-limited. */
     begin(dsl: string): boolean {
@@ -210,6 +289,29 @@ export class HotReloadController {
         this.exec.apply(rule);
         this.state = 'shielded';
         this.charge = 1;
+        // Round 134 —
+        // push the
+        // applied rule
+        // onto the
+        // ring-buffer
+        // history. If
+        // the buffer is
+        // full, drop
+        // the oldest
+        // entry (FIFO).
+        // The DslCodex
+        // panel reads
+        // this via
+        // `getRuleHistory()`
+        // so the player
+        // sees the last
+        // 5 rules, not
+        // just the
+        // most-recent.
+        this.ruleHistory.push(rule);
+        if (this.ruleHistory.length > HotReloadController.HISTORY_CAPACITY) {
+            this.ruleHistory.shift();
+        }
         this.emit({ state: 'shielded', charge: 1, dsl, rule });
         setTimeout(() => {
             this.state = 'applied';

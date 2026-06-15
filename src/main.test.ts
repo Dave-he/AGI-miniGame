@@ -7969,6 +7969,66 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
     });
 });
 
+describe('App — round 134: DslCodexPanel history list (操控性好 UX — last 5 rules)', () => {
+    test('App_wires_getRuleHistory_callback_to_dsl_codex_panel (round 134)', () => {
+        // The App constructor
+        // passes the
+        // `HotReloadController`
+        // `getRuleHistory()`
+        // ring-buffer getter
+        // as the round-134
+        // 4th argument to
+        // `renderDslCodexPanel`.
+        // A regression that
+        // drops this
+        // callback (or
+        // changes the
+        // arity) would
+        // disable the
+        // history list
+        // section in the
+        // codex panel.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        // Flexible
+        // regex
+        // (the
+        // actual
+        // call
+        // has
+        // newlines
+        // between
+        // args).
+        expect(main).toMatch(/renderDslCodexPanel\s*\([\s\S]*?refs\.dslCodexRoot[\s\S]*?this\.currentDslRule[\s\S]*?this\.lastDslOutcome[\s\S]*?this\.hot\.getRuleHistory\(\)/);
+    });
+
+    test('HotReloadController_exposes_getRuleHistory_getter (round 134)', () => {
+        // The new public
+        // `getRuleHistory()`
+        // getter is the
+        // contract the
+        // DslCodex panel
+        // reads to render
+        // the last 5
+        // applied rules.
+        const fs = require('fs');
+        const path = require('path');
+        const hot = fs.readFileSync(path.resolve(__dirname, 'scene', 'HotReloadController.ts'), 'utf-8');
+        expect(hot).toMatch(/getRuleHistory\s*\(\s*\)\s*:\s*DslRule\[\]/);
+    });
+
+    test('HotReloadController_has_history_ring_buffer (round 134)', () => {
+        // The private
+        // `ruleHistory: DslRule[]`
+        // field is the
+        // ring-buffer
+        // backing store.
+        const fs = require('fs');
+        const path = require('path');
+        const hot = fs.readFileSync(path.resolve(__dirname, 'scene', 'HotReloadController.ts'), 'utf-8');
+        expect(hot).toMatch(/private\s+ruleHistory\s*:\s*DslRule\[\]/);
+    });
+});
+
 describe('App — round 122: settings-panel CSS responsive layout for narrow screens (操控性好 mobile/portrait)', () => {
     // -----------------------------------------------------------------
     // The round-111 SettingsPanel

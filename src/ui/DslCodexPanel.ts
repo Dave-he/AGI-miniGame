@@ -1,5 +1,5 @@
 /**
- * DslCodexPanel — round-133.
+ * DslCodexPanel — round-133 + round-134.
  *
  * Renders the AGI's most recently
  * generated / hot-reloaded `DslRule`
@@ -8,7 +8,7 @@
  * overlay inside
  * `<div id="dsl-codex-root">`.
  *
- * Shows:
+ * Round 133 — shows:
  *   - the rule's source DSL
  *     (the raw `DslRule` rendered
  *     as `On(<event>) -> <action>(...)`)
@@ -24,6 +24,22 @@
  *     hot-reload was rejected
  *     (round-48 frequency
  *     limit or format error)
+ *
+ * Round 134 — also shows:
+ *   - the last N successfully-
+ *     applied rules from the
+ *     `HotReloadController`
+ *     `getRuleHistory()` ring
+ *     buffer (default capacity
+ *     5). Rendered as a small
+ *     "历史" list below the
+ *     main codex block so the
+ *     player can spot the AGI's
+ *     pattern of recent
+ *     generations. Each row
+ *     shows the source DSL +
+ *     the action count for
+ *     quick scanning.
  *
  * Auto-refreshes via a `refresh`
  * callback the host wires to the
@@ -45,6 +61,12 @@
  * + 1 wrapper method body +
  * everything else follows
  * automatically.
+ *
+ * Round 134 extends the panel
+ * with a history list (no
+ * additional panel-toggle
+ * needed — the K key is still
+ * the single entry point).
  */
 
 import type { DslRule } from '../dsl/MemeCompiler';
@@ -115,10 +137,76 @@ function renderActionRows(rule: DslRule): string {
     }).join('');
 }
 
+/**
+ * Round 134 — render
+ * the rule history
+ * list. The list is
+ * the last N applied
+ * rules in
+ * chronological order
+ * (oldest first, newest
+ * last). Each row is
+ * a small clickable
+ * preview of the
+ * source DSL + the
+ * action count.
+ *
+ * The list is rendered
+ * below the main
+ * codex block as a
+ * "历史" section. When
+ * the history is empty
+ * (no rule has been
+ * applied yet), the
+ * "暂无历史" empty
+ * state is shown.
+ */
+function renderHistoryList(history: ReadonlyArray<DslRule>): string {
+    if (history.length === 0) {
+        return `<div class="dsl-codex-history-empty">暂无历史</div>`;
+    }
+    const rows = history.map((rule, i) => {
+        const source = ruleToSource(rule);
+        // Cap the row
+        // preview at
+        // 80 chars
+        // (long rules
+        // would
+        // otherwise
+        // stretch the
+        // panel).
+        const preview = source.length > 80 ? source.slice(0, 77) + '…' : source;
+        return `
+            <div class="dsl-codex-history-row">
+                <span class="dsl-codex-history-idx">#${i + 1}</span>
+                <span class="dsl-codex-history-source">${escapeHtml(preview)}</span>
+                <span class="dsl-codex-history-actions">${rule.actions.length} 动作</span>
+            </div>
+        `;
+    }).join('');
+    return `<div class="dsl-codex-history-list">${rows}</div>`;
+}
+
 export function renderDslCodexPanel(
     root: HTMLElement,
     getCurrentRule: () => DslRule | null,
     getLastOutcome: () => 'accepted' | 'rejected' | 'none',
+    /**
+     * Round 134 —
+     * optional
+     * callback for
+     * the rule
+     * history. If
+     * omitted, the
+     * history list
+     * section is
+     * hidden (so
+     * pre-round-134
+     * callers don't
+     * need to pass
+     * it).
+     */
+    getRuleHistory?: () => ReadonlyArray<DslRule>,
     i18n?: { t: (k: string, p?: any) => string },
 ): DslCodexPanelHandle {
     const t = (k: string, params?: any) => i18n ? i18n.t(k, params) : k;
@@ -131,6 +219,7 @@ export function renderDslCodexPanel(
                 <div class="dsl-codex-panel">
                     <div class="dsl-codex-title">${escapeHtml(t('dslCodex.title'))}</div>
                     <div class="dsl-codex-empty">暂无 DSL — 按 1-8 进入 atom 后由 AGI 自动生成</div>
+                    ${getRuleHistory ? renderHistoryList(getRuleHistory()) : ''}
                 </div>
             `;
             return;
@@ -154,6 +243,10 @@ export function renderDslCodexPanel(
                 <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.breakdown'))}</div>
                 ${renderEventRow(rule)}
                 ${renderActionRows(rule)}
+                ${getRuleHistory ? `
+                    <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))}</div>
+                    ${renderHistoryList(getRuleHistory())}
+                ` : ''}
             </div>
         `;
     };
