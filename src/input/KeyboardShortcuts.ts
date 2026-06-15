@@ -25,6 +25,7 @@
  *   L       — load game
  *   E       — roll a world event
  *   R       — rollback to last good state (round 85)
+ *   `/~     — toggle DM God console (round 91)
  *
  * Anything else is ignored (returns `null`). The mapping is locked
  * by the index.html help overlay and the 8-portal palette in
@@ -39,7 +40,8 @@ export type KeyboardAction =
     | { kind: 'save' }
     | { kind: 'load' }
     | { kind: 'event' }
-    | { kind: 'rollback' };
+    | { kind: 'rollback' }
+    | { kind: 'toggle-dm-console' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -77,6 +79,17 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     { key: 'L',    action: '读取存档' },
     { key: 'E',    action: '触发一次世界事件' },
     { key: 'R',    action: '回滚到上次成功的状态' },
+    // Round 91 — the backtick/tilde key toggles the DM
+    // God console. The DM console is the entry point for
+    // `dm run <cmd>` lines that drive the round-66
+    // `onDimension` callback (and the round-87
+    // `setLastBiomeAccent` wiring it transitively
+    // triggers). Showing `~/`` in the help overlay as a
+    // single entry reflects that the two key outputs
+    // share the same physical key — `ev.key` is `` ` ``
+    // unshifted and `~` shifted, but both are routed
+    // to the same action.
+    { key: '`',    action: '切换 DM God 控制台' },
 ];
 
 /**
@@ -133,6 +146,17 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'r':
         case 'R':
             return { kind: 'rollback' };
+        // Round 91 — backtick/tilde toggles the DM God
+        // console. Both `ev.key` outputs (` and ~) route
+        // to the same action so the player doesn't have
+        // to remember which keyboard layout shift-state
+        // they're in. The DM console is the entry point
+        // for `dm run <cmd>` lines that drive the
+        // round-66 onDimension callback + round-87
+        // setLastBiomeAccent wiring.
+        case '`':
+        case '~':
+            return { kind: 'toggle-dm-console' };
         default:
             return null;
     }

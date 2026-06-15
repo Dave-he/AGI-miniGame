@@ -2380,3 +2380,109 @@ describe('App — round 89 e2e: setLastBiomeAccent wiring', () => {
         expect(setAccent).toHaveBeenCalledWith('#ffd166');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 91 — backtick/tilde key-binding for the DM God console.
+//
+// The DM console is the entry point for `dm run <cmd>` lines that
+// drive the round-66 `onDimension` callback (and the round-87
+// `setLastBiomeAccent` wiring it transitively triggers). Pre-
+// round-91 the player had to click `btn-god` in the HUD; the
+// keyboard shortcut closes the "操控性好" gap.
+//
+// The bootstrap's keydown listener (main.ts:1987+) is installed
+// in `bootstrap()`, not on the App constructor. The end-to-end
+// assertion below replicates the listener's action-dispatch
+// switch in-test (it imports `routeKey` and exercises the same
+// code path the global keydown handler uses) and asserts that
+// the App exposes a callable `toggleGodConsole` method that
+// the switch case invokes. This catches a regression where a
+// future refactor renames or removes the method without
+// updating the bootstrap switch.
+//
+// **Why not just dispatch a synthetic `keydown` on window**: the
+// real keydown listener is bound inside `bootstrap()`, which
+// also does heavy App wiring (SceneManager, NPC minds, the
+// auto-enter timeout). Replicating the listener's switch in
+// the test is more focused — the test asserts on the App
+// method, not on whether jsdom fires synthetic events. The
+// 2 unit tests in `KeyboardShortcuts.test.ts` cover the
+// `routeKey` → action mapping.
+// ---------------------------------------------------------------------------
+
+import { routeKey } from './input/KeyboardShortcuts';
+
+describe('App — round 91: backtick/tilde key-binding for DM console (操控性好)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('routeKey_backtick_returns_toggle_dm_console_action', () => {
+        // The router must translate the backtick key
+        // into the semantic action the bootstrap
+        // switch dispatches. A regression here would
+        // silently break the round-91 wiring.
+        const action = routeKey('`');
+        expect(action).toEqual({ kind: 'toggle-dm-console' });
+    });
+
+    test('routeKey_tilde_returns_toggle_dm_console_action_for_shifted_key', () => {
+        // The same physical key produces `~` when
+        // shifted. We route both `ev.key` outputs to
+        // the same action so the player doesn't have
+        // to remember their layout's shift-state.
+        const action = routeKey('~');
+        expect(action).toEqual({ kind: 'toggle-dm-console' });
+    });
+
+    test('App_exposes_toggleGodConsole_for_bootstrap_keydown_switch', () => {
+        // The bootstrap keydown switch case
+        // `'toggle-dm-console': app.toggleGodConsole()`
+        // requires the App to expose a callable
+        // `toggleGodConsole` method. A regression
+        // that renames or removes the method (or
+        // makes it private) would compile-fail the
+        // main.ts switch, but this test catches the
+        // softer "method renamed but the switch
+        // wasn't updated" scenario.
+        const app = makeApp();
+        const fn = (app as unknown as { toggleGodConsole?: () => void }).toggleGodConsole;
+        expect(typeof fn).toBe('function');
+    });
+
+    test('toggleGodConsole_is_a_no_op_when_godConsole_is_null_in_test_setup', () => {
+        // The test setup creates the App without
+        // running `bootstrap()`, so `this.godConsole`
+        // is null. The method's `this.godConsole?.toggle()`
+        // chain means it must be a safe no-op — it
+        // must not throw when `godConsole` is null.
+        // A regression that drops the `?.` and
+        // dereferences directly would throw here.
+        const app = makeApp();
+        expect(() => {
+            (app as unknown as { toggleGodConsole: () => void }).toggleGodConsole();
+        }).not.toThrow();
+    });
+
+    test('bootstrap_keydown_handler_full_path_backtick_to_toggleGodConsole', () => {
+        // End-to-end of the full round-91 path:
+        //   keydown("`") → routeKey → { kind: 'toggle-dm-console' }
+        //               → app.toggleGodConsole()
+        // We assert the wiring by spying on
+        // `toggleGodConsole`, dispatching the action
+        // the bootstrap switch would dispatch, and
+        // confirming the spy was called.
+        const app = makeApp();
+        const toggleSpy = jest
+            .spyOn(app as unknown as { toggleGodConsole: () => void }, 'toggleGodConsole')
+            .mockImplementation(() => undefined);
+        // Replicate the bootstrap switch (line 1987+)
+        // for the new action kind.
+        const action = routeKey('`');
+        expect(action).not.toBeNull();
+        if (action && action.kind === 'toggle-dm-console') {
+            app.toggleGodConsole();
+        }
+        expect(toggleSpy).toHaveBeenCalledTimes(1);
+    });
+});

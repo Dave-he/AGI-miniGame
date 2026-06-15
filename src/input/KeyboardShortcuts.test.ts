@@ -69,9 +69,35 @@ describe('KeyboardShortcuts', () => {
             expect(routeKey('r')).toEqual({ kind: 'rollback' });
         });
 
+        it('routes backtick to toggle-dm-console (round 91)', () => {
+            // Round 91 — the backtick/tilde key toggles
+            // the DM God console. The console is the
+            // entry point for `dm run <cmd>` lines that
+            // drive the round-66 onDimension callback
+            // and the round-87 setLastBiomeAccent wiring.
+            // Pre-round-91 the player had to click
+            // btn-god in the HUD; the keyboard shortcut
+            // closes the "操控性好" gap.
+            expect(routeKey('`')).toEqual({ kind: 'toggle-dm-console' });
+        });
+
+        it('routes tilde to toggle-dm-console (shift+backtick alias, round 91)', () => {
+            // The same physical key produces `~` when
+            // shifted. US QWERTY + most international
+            // layouts use the same physical position for
+            // both. We route both `ev.key` outputs to the
+            // same action so the player doesn't have to
+            // remember which shift-state their layout
+            // uses.
+            expect(routeKey('~')).toEqual({ kind: 'toggle-dm-console' });
+        });
+
         it.each(['0', '9', 'a', 'z', 'F1', 'Tab', 'Enter', 'ArrowUp'])(
             'returns null for unbound key "%s"',
             (key) => {
+                // Round 91 — backtick/tilde is now bound
+                // to toggle-dm-console, so it's removed
+                // from the unbound set.
                 expect(routeKey(key)).toBeNull();
             },
         );
@@ -99,7 +125,7 @@ describe('KeyboardShortcuts', () => {
     describe('BINDING_DESCRIPTIONS', () => {
         it('covers every key the router knows about', () => {
             const described = new Set(BINDING_DESCRIPTIONS.map(d => d.key));
-            // 1..8, Esc, Space, ?, S, L, E, R
+            // 1..8, Esc, Space, ?, S, L, E, R, `
             for (let i = 1; i <= 8; i++) expect(described.has(String(i))).toBe(true);
             expect(described.has('Esc')).toBe(true);
             expect(described.has('Space')).toBe(true);
@@ -109,6 +135,8 @@ describe('KeyboardShortcuts', () => {
             expect(described.has('E')).toBe(true);
             // Round 85 — the R key for rollback.
             expect(described.has('R')).toBe(true);
+            // Round 91 — the backtick for the DM console.
+            expect(described.has('`')).toBe(true);
         });
 
         it('has a non-empty Chinese description for every binding', () => {

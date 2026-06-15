@@ -1979,6 +1979,17 @@ async function bootstrap(): Promise<void> {
             // shortcut can't gate visually, so a
             // defensive no-op is the right default).
             case 'rollback':   app.rollbackToLastGood(); break;
+            // Round 91 — backtick/tilde toggles the DM
+            // God console. The console is the entry
+            // point for `dm run <cmd>` lines that drive
+            // the round-66 onDimension callback (and the
+            // round-87 setLastBiomeAccent wiring it
+            // transitively triggers). The shortcut calls
+            // the same `toggleGodConsole` that the
+            // round-66 `btn-god` button does; the
+            // GodConsole class itself manages open/close
+            // state, so the toggle is idempotent.
+            case 'toggle-dm-console': app.toggleGodConsole(); break;
         }
         // Only swallow the event when we actually handled it so
         // tab navigation, Esc-into-fullscreen-exit etc. still
