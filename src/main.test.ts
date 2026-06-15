@@ -4930,3 +4930,301 @@ describe('App — round 113: Q / W key toggles for stats + progression panels (�
     });
 });
 
+// ---------------------------------------------------------------------------
+// Round 114 — T / F / M key shortcuts to toggle the
+// round-20 vault panel + round-21 NPC mind
+// panel + the on-demand tutorial overlay
+// (操控性好).
+//
+// Rounds 112 + 113 added the P / Q / W
+// shortcuts for the settings / stats /
+// progression panels. Round 114 closes
+// the panel-toggle group by adding the
+// remaining 3 panels. The 6 toggle
+// shortcuts now cover every always-
+// visible + on-demand panel:
+//
+//   T = tutorial  (on-demand)
+//   F = vault     (round-20)
+//   M = npc-mind  (round-21)
+//   P = settings  (round-112)
+//   Q = stats     (round-113)
+//   W = progression (round-113)
+//
+// The keys are intentionally spread
+// across the keyboard (T / F / M vs the
+// adjacent P / Q / W) so the muscle
+// memory doesn't conflict.
+//
+// This block pins:
+//   1. `routeKey('t' | 'T')` → toggle-tutorial
+//   2. `routeKey('f' | 'F')` → toggle-vault
+//   3. `routeKey('m' | 'M')` → toggle-npc-mind
+//   4. App exposes `toggleTutorial()` method
+//   5. App exposes `toggleVault()` method
+//   6. App exposes `toggleNpcMind()` method
+//   7. `toggleTutorial()` no-op when
+//      `#tutorial-root` is missing
+//   8. `toggleVault()` no-op when
+//      `#vault-root` is missing
+//   9. `toggleNpcMind()` no-op when
+//      `#npc-mind-root` is missing
+//  10. `toggleTutorial()` flips `hidden`
+//      on `#tutorial-root` (e2e)
+//  11. `toggleVault()` flips `hidden`
+//      on `#vault-root` (e2e)
+//  12. `toggleNpcMind()` flips `hidden`
+//      on `#npc-mind-root` (e2e)
+//  13. bootstrap keydown full path:
+//      keydown("T") → app.toggleTutorial()
+//  14. bootstrap keydown full path:
+//      keydown("F") → app.toggleVault()
+//  15. bootstrap keydown full path:
+//      keydown("M") → app.toggleNpcMind()
+//  16. BINDING_DESCRIPTIONS for T
+//      documents the tutorial panel
+//  17. BINDING_DESCRIPTIONS for F
+//      documents the vault panel
+//  18. BINDING_DESCRIPTIONS for M
+//      documents the NPC mind panel
+//  19. index.html has the 3 mount
+//      points + 3 [hidden] CSS rules
+// ---------------------------------------------------------------------------
+
+describe('App — round 114: T / F / M key toggles for tutorial + vault + NPC mind panels (操控性好)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+        // Always clean up any test-created
+        // nodes so the next test sees a
+        // fresh DOM.
+        document.getElementById('tutorial-root')?.remove();
+        document.getElementById('vault-root')?.remove();
+        document.getElementById('npc-mind-root')?.remove();
+    });
+
+    // -----------------------------------------------------------------
+    // routeKey coverage (lowercase + shifted, 3 panels × 2 cases = 6)
+    // -----------------------------------------------------------------
+
+    test('routeKey_t_returns_toggle_tutorial_action', () => {
+        const action = routeKey('t');
+        expect(action).toEqual({ kind: 'toggle-tutorial' });
+    });
+
+    test('routeKey_T_returns_toggle_tutorial_action_for_shifted_key', () => {
+        const action = routeKey('T');
+        expect(action).toEqual({ kind: 'toggle-tutorial' });
+    });
+
+    test('routeKey_f_returns_toggle_vault_action', () => {
+        const action = routeKey('f');
+        expect(action).toEqual({ kind: 'toggle-vault' });
+    });
+
+    test('routeKey_F_returns_toggle_vault_action_for_shifted_key', () => {
+        const action = routeKey('F');
+        expect(action).toEqual({ kind: 'toggle-vault' });
+    });
+
+    test('routeKey_m_returns_toggle_npc_mind_action', () => {
+        const action = routeKey('m');
+        expect(action).toEqual({ kind: 'toggle-npc-mind' });
+    });
+
+    test('routeKey_M_returns_toggle_npc_mind_action_for_shifted_key', () => {
+        const action = routeKey('M');
+        expect(action).toEqual({ kind: 'toggle-npc-mind' });
+    });
+
+    // -----------------------------------------------------------------
+    // App exposes the 3 methods (defense against
+    // a refactor that renames / removes them)
+    // -----------------------------------------------------------------
+
+    test('App_exposes_toggleTutorial_for_bootstrap_keydown_switch', () => {
+        const app = makeApp();
+        const fn = (app as unknown as { toggleTutorial?: () => void }).toggleTutorial;
+        expect(typeof fn).toBe('function');
+    });
+
+    test('App_exposes_toggleVault_for_bootstrap_keydown_switch', () => {
+        const app = makeApp();
+        const fn = (app as unknown as { toggleVault?: () => void }).toggleVault;
+        expect(typeof fn).toBe('function');
+    });
+
+    test('App_exposes_toggleNpcMind_for_bootstrap_keydown_switch', () => {
+        const app = makeApp();
+        const fn = (app as unknown as { toggleNpcMind?: () => void }).toggleNpcMind;
+        expect(typeof fn).toBe('function');
+    });
+
+    // -----------------------------------------------------------------
+    // No-op when DOM element is missing
+    // -----------------------------------------------------------------
+
+    test('toggleTutorial_is_a_no_op_when_tutorial_root_is_missing_from_DOM', () => {
+        const app = makeApp();
+        expect(() => {
+            (app as unknown as { toggleTutorial: () => void }).toggleTutorial();
+        }).not.toThrow();
+    });
+
+    test('toggleVault_is_a_no_op_when_vault_root_is_missing_from_DOM', () => {
+        const app = makeApp();
+        expect(() => {
+            (app as unknown as { toggleVault: () => void }).toggleVault();
+        }).not.toThrow();
+    });
+
+    test('toggleNpcMind_is_a_no_op_when_npc_mind_root_is_missing_from_DOM', () => {
+        const app = makeApp();
+        expect(() => {
+            (app as unknown as { toggleNpcMind: () => void }).toggleNpcMind();
+        }).not.toThrow();
+    });
+
+    // -----------------------------------------------------------------
+    // e2e: flips the `hidden` attribute on the real DOM
+    // -----------------------------------------------------------------
+
+    test('toggleTutorial_flips_hidden_attribute_on_tutorial_root (round 114 e2e)', () => {
+        document.body.innerHTML += '<div id="tutorial-root"></div>';
+        const root = document.getElementById('tutorial-root')!;
+        expect(root.hasAttribute('hidden')).toBe(false);
+        const app = makeApp();
+        (app as unknown as { toggleTutorial: () => void }).toggleTutorial();
+        expect(root.hasAttribute('hidden')).toBe(true);
+        (app as unknown as { toggleTutorial: () => void }).toggleTutorial();
+        expect(root.hasAttribute('hidden')).toBe(false);
+    });
+
+    test('toggleVault_flips_hidden_attribute_on_vault_root (round 114 e2e)', () => {
+        document.body.innerHTML += '<div id="vault-root"></div>';
+        const root = document.getElementById('vault-root')!;
+        expect(root.hasAttribute('hidden')).toBe(false);
+        const app = makeApp();
+        (app as unknown as { toggleVault: () => void }).toggleVault();
+        expect(root.hasAttribute('hidden')).toBe(true);
+        (app as unknown as { toggleVault: () => void }).toggleVault();
+        expect(root.hasAttribute('hidden')).toBe(false);
+    });
+
+    test('toggleNpcMind_flips_hidden_attribute_on_npc_mind_root (round 114 e2e)', () => {
+        document.body.innerHTML += '<div id="npc-mind-root"></div>';
+        const root = document.getElementById('npc-mind-root')!;
+        expect(root.hasAttribute('hidden')).toBe(false);
+        const app = makeApp();
+        (app as unknown as { toggleNpcMind: () => void }).toggleNpcMind();
+        expect(root.hasAttribute('hidden')).toBe(true);
+        (app as unknown as { toggleNpcMind: () => void }).toggleNpcMind();
+        expect(root.hasAttribute('hidden')).toBe(false);
+    });
+
+    // -----------------------------------------------------------------
+    // Bootstrap keydown full path (round-85/91/112/113
+    // spy pattern extended to T / F / M)
+    // -----------------------------------------------------------------
+
+    test('bootstrap_keydown_handler_full_path_T_to_toggleTutorial (round 114 e2e)', () => {
+        const app = makeApp();
+        const toggleSpy = jest
+            .spyOn(app as unknown as { toggleTutorial: () => void }, 'toggleTutorial')
+            .mockImplementation(() => undefined);
+        const action = routeKey('T');
+        expect(action).not.toBeNull();
+        if (action && action.kind === 'toggle-tutorial') {
+            (app as unknown as { toggleTutorial: () => void }).toggleTutorial();
+        }
+        expect(toggleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('bootstrap_keydown_handler_full_path_F_to_toggleVault (round 114 e2e)', () => {
+        const app = makeApp();
+        const toggleSpy = jest
+            .spyOn(app as unknown as { toggleVault: () => void }, 'toggleVault')
+            .mockImplementation(() => undefined);
+        const action = routeKey('F');
+        expect(action).not.toBeNull();
+        if (action && action.kind === 'toggle-vault') {
+            (app as unknown as { toggleVault: () => void }).toggleVault();
+        }
+        expect(toggleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('bootstrap_keydown_handler_full_path_M_to_toggleNpcMind (round 114 e2e)', () => {
+        const app = makeApp();
+        const toggleSpy = jest
+            .spyOn(app as unknown as { toggleNpcMind: () => void }, 'toggleNpcMind')
+            .mockImplementation(() => undefined);
+        const action = routeKey('M');
+        expect(action).not.toBeNull();
+        if (action && action.kind === 'toggle-npc-mind') {
+            (app as unknown as { toggleNpcMind: () => void }).toggleNpcMind();
+        }
+        expect(toggleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // -----------------------------------------------------------------
+    // BINDING_DESCRIPTIONS reverse coverage (3 panels)
+    // -----------------------------------------------------------------
+
+    test('BINDING_DESCRIPTIONS_for_T_documents_tutorial_panel', () => {
+        const tRow = BINDING_DESCRIPTIONS.find((d) => d.key === 'T');
+        expect(tRow).toBeDefined();
+        expect(tRow!.action).toContain('教程');
+        expect(routeKey('T')).toEqual({ kind: 'toggle-tutorial' });
+        expect(routeKey('t')).toEqual({ kind: 'toggle-tutorial' });
+    });
+
+    test('BINDING_DESCRIPTIONS_for_F_documents_vault_panel', () => {
+        const fRow = BINDING_DESCRIPTIONS.find((d) => d.key === 'F');
+        expect(fRow).toBeDefined();
+        expect(fRow!.action).toContain('档案库');
+        expect(routeKey('F')).toEqual({ kind: 'toggle-vault' });
+        expect(routeKey('f')).toEqual({ kind: 'toggle-vault' });
+    });
+
+    test('BINDING_DESCRIPTIONS_for_M_documents_npc_mind_panel', () => {
+        const mRow = BINDING_DESCRIPTIONS.find((d) => d.key === 'M');
+        expect(mRow).toBeDefined();
+        expect(mRow!.action).toContain('NPC');
+        expect(routeKey('M')).toEqual({ kind: 'toggle-npc-mind' });
+        expect(routeKey('m')).toEqual({ kind: 'toggle-npc-mind' });
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test: 3 mount points + 3 [hidden] CSS rules
+    // -----------------------------------------------------------------
+
+    test('index_html_has_tutorial_vault_npc_mind_mount_points (round 114)', () => {
+        // The T / F / M key shortcuts
+        // call
+        // `document.getElementById('tutorial-root')`
+        // /
+        // `document.getElementById('vault-root')`
+        // /
+        // `document.getElementById('npc-mind-root')`
+        // — all 3 mount points
+        // must exist in index.html.
+        // Plus the 3 [hidden] CSS
+        // rules must be present so
+        // a future refactor that
+        // adds `display: flex` etc.
+        // doesn't accidentally
+        // override the hidden
+        // state. Mirrors the
+        // round-112/113
+        // file-content regression
+        // pattern applied to the
+        // round-114 mount points.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/id="tutorial-root"/);
+        expect(html).toMatch(/id="vault-root"/);
+        expect(html).toMatch(/id="npc-mind-root"/);
+        expect(html).toMatch(/#tutorial-root\[hidden\]/);
+        expect(html).toMatch(/#vault-root\[hidden\]/);
+        expect(html).toMatch(/#npc-mind-root\[hidden\]/);
+    });
+});
+

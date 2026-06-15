@@ -1385,6 +1385,81 @@ class App {
     }
 
     /**
+     * Round 114 — toggle the tutorial overlay. The
+     * tutorial overlay is the on-demand
+     * notification panel (`<div id="tutorial-root">`)
+     * populated by `TutorialOverlay` (round-86+).
+     * The T key shortcut lets the player re-open
+     * the notification history (read-only — the
+     * panel is also shown via `tutorial.notify`
+     * calls from the App, but the T shortcut is
+     * a manual toggle). Mirrors
+     * `toggleHelp` / `toggleSettings` /
+     * `toggleStatsPanel` /
+     * `toggleProgression` exactly.
+     */
+    toggleTutorial(): void {
+        const el = document.getElementById('tutorial-root');
+        if (!el) return;
+        const isHidden = el.hasAttribute('hidden');
+        if (isHidden) {
+            el.removeAttribute('hidden');
+            this.hud.log('[kb] 教程浮层已打开 (按 T 关闭)');
+        } else {
+            el.setAttribute('hidden', '');
+            this.hud.log('[kb] 教程浮层已关闭');
+        }
+    }
+
+    /**
+     * Round 114 — toggle the vault panel. The
+     * vault panel is the round-20 dimension
+     * history overlay (`<div id="vault-root">`)
+     * populated by `renderVaultPanel` (showing
+     * past completed/failed/abandoned
+     * dimensions). The F key shortcut gives
+     * keyboard-only players a way to hide the
+     * panel for screenshot / focus mode.
+     * Mirrors `toggleProgression` exactly.
+     */
+    toggleVault(): void {
+        const el = document.getElementById('vault-root');
+        if (!el) return;
+        const isHidden = el.hasAttribute('hidden');
+        if (isHidden) {
+            el.removeAttribute('hidden');
+            this.hud.log('[kb] 档案库面板已打开 (按 F 关闭)');
+        } else {
+            el.setAttribute('hidden', '');
+            this.hud.log('[kb] 档案库面板已关闭');
+        }
+    }
+
+    /**
+     * Round 114 — toggle the NPC mind panel.
+     * The NPC mind panel is the round-21
+     * collective-disposition + per-NPC memory
+     * overlay (`<div id="npc-mind-root">`)
+     * populated by `renderNpcMindPanel`. The
+     * M key shortcut gives keyboard-only
+     * players a way to hide the panel for
+     * screenshot / focus mode. Mirrors
+     * `toggleVault` exactly.
+     */
+    toggleNpcMind(): void {
+        const el = document.getElementById('npc-mind-root');
+        if (!el) return;
+        const isHidden = el.hasAttribute('hidden');
+        if (isHidden) {
+            el.removeAttribute('hidden');
+            this.hud.log('[kb] NPC 心智面板已打开 (按 M 关闭)');
+        } else {
+            el.setAttribute('hidden', '');
+            this.hud.log('[kb] NPC 心智面板已关闭');
+        }
+    }
+
+    /**
      * Round 35 — keep `worldState.lastNpcDisposition` in sync with
      * the NpcRegistry's current average so a save → reload cycle
      * preserves the world's mood signal. Called from every site
@@ -2543,6 +2618,29 @@ async function bootstrap(): Promise<void> {
             // attribute, so the toggle
             // is idempotent.
             case 'toggle-progression': app.toggleProgression(); break;
+            // Round 114 — T / F / M
+            // shortcuts for the
+            // tutorial / vault /
+            // NPC-mind panels. The
+            // panel content is
+            // rendered into
+            // `<div id="tutorial-root">`,
+            // `<div id="vault-root">`,
+            // `<div id="npc-mind-root">`
+            // during construction.
+            // The shortcuts call
+            // the same
+            // `toggleX()` methods
+            // that the round-114
+            // bootstrap switch
+            // dispatches; each
+            // method flips the
+            // `hidden` attribute,
+            // so the toggles are
+            // idempotent.
+            case 'toggle-tutorial':  app.toggleTutorial(); break;
+            case 'toggle-vault':     app.toggleVault(); break;
+            case 'toggle-npc-mind':  app.toggleNpcMind(); break;
         }
         // Only swallow the event when we actually handled it so
         // tab navigation, Esc-into-fullscreen-exit etc. still

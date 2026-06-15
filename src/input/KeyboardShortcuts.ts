@@ -31,6 +31,9 @@
  *   P       — toggle settings overlay (round 112)
  *   Q       — toggle stats panel (round 113)
  *   W       — toggle progression panel (round 113)
+ *   T       — toggle tutorial overlay (round 114)
+ *   F       — toggle vault panel (round 114)
+ *   M       — toggle NPC mind panel (round 114)
  *
  * Anything else is ignored (returns `null`). The mapping is locked
  * by the index.html help overlay and the 8-portal palette in
@@ -49,7 +52,10 @@ export type KeyboardAction =
     | { kind: 'toggle-dm-console' }
     | { kind: 'toggle-settings' }
     | { kind: 'toggle-stats' }
-    | { kind: 'toggle-progression' };
+    | { kind: 'toggle-progression' }
+    | { kind: 'toggle-vault' }
+    | { kind: 'toggle-npc-mind' }
+    | { kind: 'toggle-tutorial' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -146,6 +152,41 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // by default; W hides it for
     // screenshot / focus mode.
     { key: 'W',    action: '切换进度面板' },
+    // Round 114 — the F / M / T
+    // shortcuts complete the
+    // panel-toggle group. The keys
+    // are intentionally spread out
+    // (F / M / T not adjacent) so
+    // the muscle memory doesn't
+    // conflict with the P / Q / W
+    // row from round-112/113.
+    //
+    //   T = tutorial
+    //   F = vault (round-20 vault
+    //       panel showing past
+    //       dimension visits)
+    //   M = NPC mind (round-21
+    //       panel showing the
+    //       collective NPC
+    //       disposition + per-NPC
+    //       memory)
+    //
+    // The tutorial panel is shown
+    // on-demand by the App (via
+    // `tutorial.notify` calls) and
+    // stays visible after a player
+    // dismisses its notifications.
+    // The T shortcut lets the
+    // player re-open the
+    // notification history
+    // (read-only — TutorialOverlay
+    // tracks its own visibility
+    // state, so T is a manual
+    // toggle rather than a
+    // notify trigger).
+    { key: 'T',    action: '切换教程面板' },
+    { key: 'F',    action: '切换档案库面板' },
+    { key: 'M',    action: '切换 NPC 心智面板' },
 ];
 
 /**
@@ -254,6 +295,22 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'w':
         case 'W':
             return { kind: 'toggle-progression' };
+        // Round 114 — F / M / T
+        // shortcuts. All 3 use
+        // case-insensitive
+        // mirror convention
+        // (lowercase + shifted
+        // both route to the
+        // same action).
+        case 't':
+        case 'T':
+            return { kind: 'toggle-tutorial' };
+        case 'f':
+        case 'F':
+            return { kind: 'toggle-vault' };
+        case 'm':
+        case 'M':
+            return { kind: 'toggle-npc-mind' };
         default:
             return null;
     }
