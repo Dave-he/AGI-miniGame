@@ -241,7 +241,8 @@ class App {
      * Surfaced via `getCurrentDebounceWindow()`
      * for the SettingsPanel's getter.
      */
-    private currentDebounceWindowMs: 0 | 500 | 1000 | 2000 = 500;
+    private currentDebounceWindowMs: 0 | 500 | 1000 | 2000 =
+        loadDebounceMsFromStorage() ?? 500;
     /**
      * Round 126 — current difficulty tier
      * surfaced via `getCurrentDifficulty()`
@@ -259,7 +260,8 @@ class App {
      * so the picked difficulty actually
      * changes the AI's tuning bias.
      */
-    private currentDifficulty: Difficulty = 'normal';
+    private currentDifficulty: Difficulty =
+        loadDifficultyFromStorage() ?? 'normal';
     private replay: SessionReplay;
     private narration: NarrationEngine;
     private vault: DimensionVault;
@@ -469,6 +471,18 @@ class App {
         this.epoch = new EpochSystem(Date.now());
         this.save = new SaveSystem(this.worldState, this.epoch, this.progression);
         this.ai = new AIEngine(Date.now());
+        // Round 127 — sync the BalanceTuner
+        // to the persisted difficulty tier
+        // (if any). The field initializer at
+        // line ~262 already loaded the saved
+        // value into `currentDifficulty`; this
+        // call propagates it to
+        // `ai.tuner.targetWinRate` so the AI's
+        // first `suggestDifficulty` call uses
+        // the restored rate. Idempotent when
+        // the value is the default 'normal'
+        // (0.60 = constructor default).
+        this.applyDifficultySettings(this.currentDifficulty);
         this.npcAI = new NPCDialogueAI(Date.now());
         // Procedurally generate the NPC roster (round 17).
         this.npcs = new NpcFactory(Date.now()).generateRoster({ count: 5, seed: Date.now() });
@@ -860,6 +874,20 @@ class App {
             'round 109',
             (line) => this.hud.log(line),
         );
+        // Round 127 — push the restored
+        // debounce window (from
+        // localStorage, if any) down to
+        // all 4 debouncers. The field
+        // initializer at line ~244 reads
+        // localStorage; the debouncers
+        // were constructed above with
+        // the hardcoded
+        // `ACTION_DEBOUNCE_MS` (500), so
+        // this applySettings call syncs
+        // them to the persisted value.
+        // Idempotent when the value
+        // matches the default.
+        this.applyDebounceSettings(this.currentDebounceWindowMs);
         this.economy = new EconomyPanel(refs.economyRoot, this.worldState);
         this.epochPanel = new EpochPanel(refs.epochRoot, this.epoch, () => this.triggerCollapse(), this.i18n);
         // Round 54 — wire the rollback callback into the
@@ -1451,6 +1479,12 @@ class App {
         this.debouncerSaveGame.setWindowMs(ms);
         this.debouncerRollWorldEvent.setWindowMs(ms);
         this.debouncerEnterAtom.setWindowMs(ms);
+        // Round 127 — persist the picked
+        // window so a page reload keeps
+        // the player's choice (mirror of
+        // GameAudio's `agi_muted` save in
+        // `setMuted`).
+        writeDebounceMsToStorage(ms);
         const msLabel = ms === 0 ? '关闭' : `${ms}ms`;
         this.hud.log(`[settings] 防抖窗口已更新为 ${msLabel} (4 个动作同步)`);
     }
@@ -1481,6 +1515,16 @@ class App {
      */
     applyDifficultySettings(d: Difficulty): void {
         this.currentDifficulty = d;
+        // Round 127 — persist the picked
+        // difficulty tier so a page reload
+        // keeps the player's choice. Read
+        // back in the field initializer
+        // above so the BalanceTuner boot
+        // state is consistent (the
+        // constructor's `setTargetWinRate`
+        // call below runs against the
+        // restored value).
+        writeDifficultyToStorage(d);
         const rate = d === 'easy' ? 0.75 : d === 'hard' ? 0.40 : 0.60;
         this.ai.tuner.setTargetWinRate(rate);
         const label = d === 'easy' ? '简单' : d === 'hard' ? '困难' : '普通';
@@ -3124,6 +3168,70 @@ async function bootstrap(): Promise<void> {
 
 if (typeof window !== 'undefined') {
     window.addEventListener('DOMContentLoaded', () => { void bootstrap(); });
+}
+
+// Round 127 — localStorage persistence for
+// the SettingsPanel's two App-owned
+// state fields (`currentDebounceWindowMs`
+// + `currentDifficulty`). Mirrors the
+// pattern in `i18n/I18n.ts` (agi_locale)
+// + `audio/GameAudio.ts` (agi_muted).
+// Keys are namespaced under `agi_` so
+// future settings can share the prefix.
+// All reads return null on missing /
+// malformed / unavailable storage; the
+// field initializers fall back to the
+// default value (`500` / `'normal'`).
+const DEBOUNCE_STORAGE_KEY = 'agi_debounce_ms';
+const DIFFICULTY_STORAGE_KEY = 'agi_difficulty';
+
+function loadDebounceMsFromStorage(): 0 | 500 | 1000 | 2000 | null {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(DEBOUNCE_STORAGE_KEY);
+        if (raw === '0') return 0;
+        if (raw === '500') return 500;
+        if (raw === '1000') return 1000;
+        if (raw === '2000') return 2000;
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+function writeDebounceMsToStorage(ms: 0 | 500 | 1000 | 2000): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(DEBOUNCE_STORAGE_KEY, String(ms));
+    } catch {
+        // localStorage can throw in
+        // private mode / quota errors.
+        // Swallow — the in-memory state
+        // is already updated.
+    }
+}
+
+function loadDifficultyFromStorage(): Difficulty | null {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(DIFFICULTY_STORAGE_KEY);
+        if (raw === 'easy' || raw === 'normal' || raw === 'hard') return raw;
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+function writeDifficultyToStorage(d: Difficulty): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(DIFFICULTY_STORAGE_KEY, d);
+    } catch {
+        // localStorage can throw in
+        // private mode / quota errors.
+        // Swallow — the in-memory state
+        // is already updated.
+    }
 }
 
 export { App, bootstrap };

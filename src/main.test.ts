@@ -4366,6 +4366,18 @@ describe('App — round 100: sceneGenWasm=stub WASM-success path positive assert
 describe('App — round 111: applyDebounceSettings (SettingsPanel debounce window knob)', () => {
     function cast<T>(v: unknown): T { return v as T; }
 
+    // Round 127 — clear the round-127
+    // localStorage keys so the field
+    // initializers in main.ts use the
+    // default values (500ms / 'normal')
+    // instead of values left over from
+    // earlier test suites.
+    beforeEach(() => {
+        try { localStorage.removeItem('agi_debounce_ms'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_difficulty'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_muted'); } catch { /* noop */ }
+    });
+
     test('applyDebounceSettings_updates_all_4_debouncer_windows (round 111)', () => {
         const app = makeApp();
         app.applyDebounceSettings(1000);
@@ -4494,6 +4506,19 @@ describe('App — round 111: applyDebounceSettings (SettingsPanel debounce windo
 
 describe('App — round 126: applyDifficultySettings (SettingsPanel 难度 tier 切换)', () => {
     function cast<T>(v: unknown): T { return v as T; }
+
+    // Round 127 — clear the round-127
+    // localStorage keys so the
+    // `currentDifficulty` field
+    // initializer picks the default
+    // 'normal' (not a value left over
+    // from a prior suite that picked
+    // 'hard' or 'easy').
+    beforeEach(() => {
+        try { localStorage.removeItem('agi_difficulty'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_debounce_ms'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_muted'); } catch { /* noop */ }
+    });
 
     test('applyDifficultySettings_updates_currentDifficulty_field (round 126)', () => {
         // The SettingsPanel's `getCurrentDifficulty`
@@ -4663,6 +4688,185 @@ describe('App — round 126: applyDifficultySettings (SettingsPanel 难度 tier 
     });
 });
 
+// ---------------------------------------------------------------------------
+// Round 127 — localStorage persistence
+// for the SettingsPanel's 3 state values
+// (muteAtStart / debounceMsAtStart /
+// difficultyAtStart). The 4th value,
+// localeAtStart, was already persisted by
+// the I18n singleton (round ~3, key
+// `agi_locale`). Round 127 adds the
+// other 3:
+//   - GameAudio.muted    → `agi_muted`
+//   - App.currentDebounceWindowMs →
+//     `agi_debounce_ms`
+//   - App.currentDifficulty → `agi_difficulty`
+//
+// This block pins:
+//   1. The 3 keys are written on each
+//      setter call (mute click / debounce
+//      click / difficulty click).
+//   2. The keys are read at construction
+//      time — a 2nd `new App(makeRefs())`
+//      sees the restored values.
+//   3. The `agi_locale` I18n key still
+//      works (sanity — the round-127
+//      changes didn't break the
+//      pre-existing locale persistence).
+//   4. Bad / missing / empty values
+//      fall back to the defaults
+//      (500 / 'normal' / unmuted).
+//   5. The round-126 BalanceTuner rate
+//      stays in sync with the
+//      restored difficulty.
+//   6. The round-111 debouncer windows
+//      stay in sync with the restored
+//      debounce value (constructor calls
+//      `applyDebounceSettings` to push
+//      the restored value to all 4
+//      debouncers).
+// ---------------------------------------------------------------------------
+
+describe('App — round 127: localStorage persistence (操控性好 UX)', () => {
+    function cast<T>(v: unknown): T { return v as T; }
+
+    beforeEach(() => {
+        // Clear ALL round-127 keys so each
+        // test starts from a clean slate.
+        // Also clear `agi_locale` for the
+        // sanity test in case a prior
+        // SettingsPanel test set it.
+        try { localStorage.removeItem('agi_muted'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_debounce_ms'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_difficulty'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_locale'); } catch { /* noop */ }
+    });
+
+    test('applyDebounceSettings_writes_agi_debounce_ms_to_localStorage (round 127)', () => {
+        const app = makeApp();
+        app.applyDebounceSettings(0);
+        expect(localStorage.getItem('agi_debounce_ms')).toBe('0');
+        app.applyDebounceSettings(500);
+        expect(localStorage.getItem('agi_debounce_ms')).toBe('500');
+        app.applyDebounceSettings(1000);
+        expect(localStorage.getItem('agi_debounce_ms')).toBe('1000');
+        app.applyDebounceSettings(2000);
+        expect(localStorage.getItem('agi_debounce_ms')).toBe('2000');
+    });
+
+    test('applyDifficultySettings_writes_agi_difficulty_to_localStorage (round 127)', () => {
+        const app = makeApp();
+        app.applyDifficultySettings('easy');
+        expect(localStorage.getItem('agi_difficulty')).toBe('easy');
+        app.applyDifficultySettings('normal');
+        expect(localStorage.getItem('agi_difficulty')).toBe('normal');
+        app.applyDifficultySettings('hard');
+        expect(localStorage.getItem('agi_difficulty')).toBe('hard');
+    });
+
+    test('App_constructor_restores_currentDebounceWindowMs_from_localStorage (round 127 reload)', () => {
+        // Simulate a previous session
+        // where the player chose 2000ms.
+        localStorage.setItem('agi_debounce_ms', '2000');
+        const app = makeApp();
+        expect(cast<{ currentDebounceWindowMs: number }>(app).currentDebounceWindowMs).toBe(2000);
+        // The 4 debouncers should also be
+        // pushed to 2000 by the
+        // constructor's `applyDebounceSettings`
+        // call (so a queued key press
+        // right after reload uses the
+        // restored window).
+        const debouncers = cast<{
+            debouncerLoadGame: { windowSizeMs: number };
+            debouncerSaveGame: { windowSizeMs: number };
+            debouncerRollWorldEvent: { windowSizeMs: number };
+            debouncerEnterAtom: { windowSizeMs: number };
+        }>(app);
+        expect(debouncers.debouncerLoadGame.windowSizeMs).toBe(2000);
+        expect(debouncers.debouncerSaveGame.windowSizeMs).toBe(2000);
+        expect(debouncers.debouncerRollWorldEvent.windowSizeMs).toBe(2000);
+        expect(debouncers.debouncerEnterAtom.windowSizeMs).toBe(2000);
+    });
+
+    test('App_constructor_restores_currentDifficulty_from_localStorage_and_syncs_BalanceTuner (round 127 reload)', () => {
+        // Simulate a previous session
+        // where the player chose 'hard'.
+        localStorage.setItem('agi_difficulty', 'hard');
+        const app = makeApp();
+        const appCast = cast<{ currentDifficulty: string; ai: { tuner: { targetWinRate: number } } }>(app);
+        expect(appCast.currentDifficulty).toBe('hard');
+        // The constructor's
+        // `applyDifficultySettings`
+        // call propagates the restored
+        // value to the BalanceTuner so
+        // the first `suggestDifficulty`
+        // uses the right bias.
+        expect(appCast.ai.tuner.targetWinRate).toBeCloseTo(0.40);
+    });
+
+    test('App_constructor_falls_back_to_defaults_when_localStorage_missing (round 127 defense)', () => {
+        // No `agi_*` keys set. The
+        // field initializers should use
+        // the default values.
+        const app = makeApp();
+        const appCast = cast<{
+            currentDebounceWindowMs: number;
+            currentDifficulty: string;
+        }>(app);
+        expect(appCast.currentDebounceWindowMs).toBe(500);
+        expect(appCast.currentDifficulty).toBe('normal');
+    });
+
+    test('App_constructor_falls_back_to_defaults_for_malformed_localStorage (round 127 defense)', () => {
+        // Garbage values in localStorage
+        // (corrupted by a manual edit or
+        // an older app version). The
+        // loaders should reject anything
+        // outside the typed enum.
+        localStorage.setItem('agi_debounce_ms', 'banana');
+        localStorage.setItem('agi_difficulty', 'nightmare');
+        const app = makeApp();
+        const appCast = cast<{
+            currentDebounceWindowMs: number;
+            currentDifficulty: string;
+        }>(app);
+        expect(appCast.currentDebounceWindowMs).toBe(500);
+        expect(appCast.currentDifficulty).toBe('normal');
+    });
+
+    test('agi_locale_persistence_still_works_after_round_127 (round 127 sanity)', () => {
+        // The I18n singleton has its
+        // own `agi_locale` persistence
+        // (pre-round-127). Verify it
+        // still works after the
+        // round-127 changes — i.e. the
+        // round-127 `agi_muted` /
+        // `agi_debounce_ms` /
+        // `agi_difficulty` keys didn't
+        // collide with the I18n
+        // machinery.
+        // Force a known starting locale
+        // by pre-seeding localStorage —
+        // that way `setLocale(zh-CN)`
+        // will actually do the work
+        // (the real `setLocale` early-
+        // returns when the requested
+        // value matches the current
+        // value).
+        localStorage.setItem('agi_locale', 'en-US');
+        const app = makeApp();
+        const i18n1 = cast<{ i18n: { setLocale: (l: string) => void; getLocale: () => string } }>(app).i18n;
+        i18n1.setLocale('zh-CN');
+        expect(localStorage.getItem('agi_locale')).toBe('zh-CN');
+        // A 2nd App with the same
+        // localStorage should boot into
+        // 'zh-CN' (the existing I18n
+        // behavior).
+        const app2 = makeApp();
+        const i18n2 = cast<{ i18n: { getLocale: () => string } }>(app2).i18n;
+        expect(i18n2.getLocale()).toBe('zh-CN');
+    });
+});
 // ---------------------------------------------------------------------------
 // Round 112 — P key shortcut to toggle the
 // round-111 SettingsPanel overlay (操控性好).

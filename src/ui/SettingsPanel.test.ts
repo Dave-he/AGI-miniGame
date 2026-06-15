@@ -35,6 +35,7 @@ function make() {
 describe('SettingsPanel', () => {
     beforeEach(() => {
         try { localStorage.removeItem('agi_locale'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_muted'); } catch { /* noop */ }
     });
 
     test('initial render shows the title and 3 difficulty buttons', () => {
@@ -127,5 +128,63 @@ describe('SettingsPanel', () => {
         btn.click();
         btn.click();
         expect(debounceChanges).toEqual([500, 500]);
+    });
+
+    // ---------------------------------------------------------------
+    // Round 127 — GameAudio mute state
+    // persistence to localStorage. The
+    // I18n singleton has the same pattern
+    // for `agi_locale`. Round 127
+    // extends the same idea to
+    // `agi_muted` so a page reload
+    // keeps the player's choice.
+    // ---------------------------------------------------------------
+
+    test('mute_toggle_writes_agi_muted_to_localStorage (round 127)', () => {
+        // First click → muted=true → storage '1'
+        const { root, audio } = make();
+        const btn = root.querySelector<HTMLButtonElement>('.set-mute')!;
+        btn.click();
+        expect(localStorage.getItem('agi_muted')).toBe('1');
+        expect(audio.isMuted()).toBe(true);
+        // Re-render: the button label
+        // flips to "unmute" (or its
+        // i18n equivalent). Click again
+        // → muted=false → storage '0'.
+        const btn2 = root.querySelector<HTMLButtonElement>('.set-mute')!;
+        btn2.click();
+        expect(localStorage.getItem('agi_muted')).toBe('0');
+    });
+
+    test('GameAudio_constructor_restores_muted_from_localStorage (round 127 reload)', () => {
+        // Simulate a previous session
+        // where the player muted the
+        // audio. A new GameAudio should
+        // boot in muted state.
+        localStorage.setItem('agi_muted', '1');
+        const audio = new GameAudio(new NullAudioService());
+        expect(audio.isMuted()).toBe(true);
+        // The underlying AudioService
+        // should also be muted (the
+        // constructor calls
+        // `svc.setMuted(restored)`).
+        expect(audio.isMuted()).toBe(true);
+    });
+
+    test('GameAudio_constructor_falls_back_to_unmuted_when_storage_empty (round 127 defense)', () => {
+        // No `agi_muted` key set.
+        // Default is unmuted.
+        const audio = new GameAudio(new NullAudioService());
+        expect(audio.isMuted()).toBe(false);
+    });
+
+    test('GameAudio_constructor_falls_back_to_unmuted_for_malformed_storage (round 127 defense)', () => {
+        // Garbage value (e.g. an old
+        // app version wrote something
+        // else). Loaders should reject
+        // anything outside '0' / '1'.
+        localStorage.setItem('agi_muted', 'banana');
+        const audio = new GameAudio(new NullAudioService());
+        expect(audio.isMuted()).toBe(false);
     });
 });

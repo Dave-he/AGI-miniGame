@@ -43,6 +43,19 @@ export class GameAudio {
 
     constructor(svc: AudioService) {
         this.svc = svc;
+        // Round 127 — restore the muted state
+        // from localStorage so the player's
+        // choice survives a page reload. The
+        // I18n singleton has the same pattern
+        // for `agi_locale`. Defaults to
+        // unmuted when the key is missing or
+        // the storage is unavailable (SSR /
+        // private mode / quota errors).
+        const restored = readMutedFromStorage();
+        if (restored != null) {
+            this.muted = restored;
+            this.svc.setMuted(restored);
+        }
     }
 
     /** Fire a cue for a high-level game event. No-op if muted. */
@@ -61,7 +74,17 @@ export class GameAudio {
         }
     }
 
-    setMuted(muted: boolean): void { this.muted = muted; this.svc.setMuted(muted); }
+    setMuted(muted: boolean): void {
+        this.muted = muted;
+        this.svc.setMuted(muted);
+        // Round 127 — persist the player's
+        // choice so a page reload doesn't
+        // reset to unmuted. try/catch wraps
+        // the write because localStorage can
+        // throw in private mode / quota
+        // exceeded.
+        writeMutedToStorage(muted);
+    }
     isMuted(): boolean { return this.muted; }
 
     /**
@@ -112,5 +135,39 @@ export class GameAudio {
      */
     isSfxActive(biome: string | BiomeId): boolean {
         return this.svc.isSfxActive(biome);
+    }
+}
+
+// Round 127 — localStorage persistence for
+// the muted flag. Mirrors the
+// `agi_locale` pattern in
+// `i18n/I18n.ts` (lines 149, 164, 181).
+// The key is namespaced under `agi_` so
+// future AGI-miniGame settings can share
+// the same prefix.
+const MUTED_STORAGE_KEY = 'agi_muted';
+
+function readMutedFromStorage(): boolean | null {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(MUTED_STORAGE_KEY);
+        if (raw === '1' || raw === 'true') return true;
+        if (raw === '0' || raw === 'false') return false;
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+function writeMutedToStorage(muted: boolean): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(MUTED_STORAGE_KEY, muted ? '1' : '0');
+    } catch {
+        // localStorage can throw in
+        // private browsing mode or when
+        // the quota is exceeded. Swallow
+        // — the in-memory state is
+        // already updated.
     }
 }
