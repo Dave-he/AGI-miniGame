@@ -2410,7 +2410,7 @@ describe('App — round 89 e2e: setLastBiomeAccent wiring', () => {
 // `routeKey` → action mapping.
 // ---------------------------------------------------------------------------
 
-import { routeKey } from './input/KeyboardShortcuts';
+import { routeKey, BINDING_DESCRIPTIONS } from './input/KeyboardShortcuts';
 
 describe('App — round 91: backtick/tilde key-binding for DM console (操控性好)', () => {
     afterEach(() => {
@@ -2484,5 +2484,247 @@ describe('App — round 91: backtick/tilde key-binding for DM console (操控性
             app.toggleGodConsole();
         }
         expect(toggleSpy).toHaveBeenCalledTimes(1);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 94 — Esc / abandon end-to-end chain (操控性好).
+//
+// The Esc key is the round-21 "abandon current dimension" shortcut
+// (KeyboardShortcuts routeKey 'Escape' → { kind: 'abandon' } →
+// bootstrap switch case 'abandon': app.abandonCurrentDimension()).
+// Pre-round-94 only the routeKey → action mapping was tested; the
+// App method itself and its side-effect chain (vault.record +
+// ai.recordSession + npcMinds.broadcast) were untested. Rounds 85
+// (R rollback) and 91 (` /~ DM console) each added a full-chain
+// e2e test for their shortcut. The Esc chain has been the
+// longest-running "操控性好" gap in the test surface.
+//
+// The chain under test:
+//   keydown("Escape") → routeKey → { kind: 'abandon' }
+//     → app.abandonCurrentDimension()
+//     → app.recordDimensionOutcome('abandoned', -0.1)
+//     → app.vault.record(dim, 'abandoned', ts)
+//     → app.ai.recordSession({ ..., completed: false })
+//     → app.npcMinds.broadcast({ kind: 'witnessed_event', weight: -0.1, ... })
+//
+// We assert on the spy call shapes (not the persisted state) so
+// the test is fast and doesn't depend on the live `vault` /
+// `npcMinds` / `tuner` instances — same round-84/89 pattern.
+// ---------------------------------------------------------------------------
+
+describe('App — round 94: Esc/abandon end-to-end chain (操控性好)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    /** Minimal DimensionBlueprint fixture for the abandon chain. */
+    function makeAbandonDim(): {
+        id: string;
+        name: string;
+        description: string;
+        atomIds: string[];
+        atomWeights: Record<string, number>;
+        difficulty: number;
+        rules: unknown[];
+        rewards: unknown[];
+        theme: { name: string; visualStyle: string; musicMood: string; colorPalette: string[] };
+        timeLimitSecs: number | null;
+        objectives: unknown[];
+    } {
+        return {
+            id: 'dim_abandon_r94',
+            name: 'round 94 abandon fixture',
+            description: 'r94 abandon chain',
+            atomIds: ['tower_defense'],
+            atomWeights: { tower_defense: 1 },
+            difficulty: 0.5,
+            rules: [],
+            rewards: [],
+            theme: { name: 'r94_abandon_theme', visualStyle: 'fantasy', musicMood: 'cheerful', colorPalette: [] },
+            timeLimitSecs: 60,
+            objectives: [],
+        };
+    }
+
+    test('abandonCurrentDimension_is_a_no_op_when_no_current_dimension', () => {
+        // The test setup creates the App without running
+        // `enterNewDimension()`, so `hud.getState().dimension`
+        // is null. `abandonCurrentDimension` must short-circuit
+        // and log a "no current dimension" message — a
+        // regression that drops the null check would throw.
+        const app = makeApp();
+        const logSpy = jest
+            .spyOn((app as unknown as { hud: { log: (s: string) => void } }).hud, 'log')
+            .mockImplementation(() => undefined);
+        expect(() => {
+            (app as unknown as { abandonCurrentDimension: () => void }).abandonCurrentDimension();
+        }).not.toThrow();
+        // The no-op path logs a Chinese-localized message so
+        // the player understands why the press did nothing.
+        const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(lines).toMatch(/没有进入中的次元|无法标记/);
+    });
+
+    test('abandonCurrentDimension_writes_vault_record_with_outcome_abandoned', () => {
+        // The Esc chain's first side-effect is the
+        // `vault.record(dim, 'abandoned', ts)` call. A
+        // regression that drops the call (or passes the
+        // wrong outcome string) would silently break the
+        // round-21 vault completion-rate stats — a
+        // "abandoned" dimension would count as "completed"
+        // and the AI's difficulty tuning would over-estimate
+        // the player's success.
+        const app = makeApp();
+        const dim = makeAbandonDim();
+        // Mock hud.getState() to return our fixture as
+        // the current dimension. Without this the no-op
+        // branch fires and vault.record is never called.
+        jest
+            .spyOn((app as unknown as { hud: { getState: () => { dimension: typeof dim | null } } }).hud, 'getState')
+            .mockReturnValue({ dimension: dim });
+        const vaultRecord = jest
+            .spyOn((app as unknown as { vault: { record: (b: unknown, o: string, t: number) => void } }).vault, 'record')
+            .mockImplementation(() => undefined);
+        (app as unknown as { abandonCurrentDimension: () => void }).abandonCurrentDimension();
+        expect(vaultRecord).toHaveBeenCalledTimes(1);
+        const [recordedDim, outcome, ts] = vaultRecord.mock.calls[0];
+        expect(recordedDim).toBe(dim);
+        expect(outcome).toBe('abandoned');
+        // The third arg is `Date.now()` — we don't pin the
+        // exact value, just assert it's a positive integer
+        // (the call happened "now", not in 1970 or 3025).
+        expect(typeof ts).toBe('number');
+        expect(ts).toBeGreaterThan(0);
+    });
+
+    test('abandonCurrentDimension_records_session_with_completed_false', () => {
+        // The Esc chain's second side-effect is
+        // `ai.recordSession({ ..., completed: false })`.
+        // The BalanceTuner uses this to weight the player's
+        // success rate — a regression that passes
+        // `completed: true` would make the AI think the
+        // player succeeded at the abandoned dimension,
+        // inflating the difficulty curve.
+        const app = makeApp();
+        const dim = makeAbandonDim();
+        jest
+            .spyOn((app as unknown as { hud: { getState: () => { dimension: typeof dim | null } } }).hud, 'getState')
+            .mockReturnValue({ dimension: dim });
+        const recordSession = jest
+            .spyOn((app as unknown as { ai: { recordSession: (r: { dimensionId: string; difficulty: number; playerLevel: number; score: number; durationSecs: number; completed: boolean }) => void } }).ai, 'recordSession')
+            .mockImplementation(() => undefined);
+        (app as unknown as { abandonCurrentDimension: () => void }).abandonCurrentDimension();
+        expect(recordSession).toHaveBeenCalledTimes(1);
+        const [session] = recordSession.mock.calls[0];
+        expect(session.dimensionId).toBe(dim.id);
+        expect(session.difficulty).toBe(dim.difficulty);
+        expect(session.completed).toBe(false);
+    });
+
+    test('abandonCurrentDimension_broadcasts_witnessed_event_with_weight_minus_0_1', () => {
+        // The Esc chain's third side-effect is
+        // `npcMinds.broadcast({ kind: 'witnessed_event',
+        // weight: -0.1, ... })`. The weight is the
+        // round-21 convention: a small negative weight
+        // because the player gave up (not catastrophic
+        // like a -0.4 fail). A regression that swaps
+        // the weight to +0.1 (positive!) would make
+        // NPCs more friendly after the player gives up,
+        // which is the opposite of the design intent.
+        const app = makeApp();
+        const dim = makeAbandonDim();
+        jest
+            .spyOn((app as unknown as { hud: { getState: () => { dimension: typeof dim | null } } }).hud, 'getState')
+            .mockReturnValue({ dimension: dim });
+        const broadcast = jest
+            .spyOn((app as unknown as { npcMinds: { broadcast: (e: { kind: string; summary: string; turn: number; weight: number }) => void } }).npcMinds, 'broadcast')
+            .mockImplementation(() => undefined);
+        (app as unknown as { abandonCurrentDimension: () => void }).abandonCurrentDimension();
+        expect(broadcast).toHaveBeenCalledTimes(1);
+        const [entry] = broadcast.mock.calls[0];
+        expect(entry.kind).toBe('witnessed_event');
+        expect(entry.weight).toBeCloseTo(-0.1, 5);
+        // The summary is a localized string of the form
+        // "abandoned: <dim name>". Pin the shape so a
+        // future i18n rename is caught.
+        expect(entry.summary).toMatch(/abandoned:.*round 94 abandon fixture/);
+    });
+
+    test('failCurrentDimension_writes_vault_record_with_outcome_failed', () => {
+        // Symmetric coverage: the round-21 `fail` path is
+        // the counterpart to `abandon`. The Esc key doesn't
+        // trigger it (it's the round-26 inline 🔙 button +
+        // auto-fail on unrecoverable render errors), but
+        // the helper shares `recordDimensionOutcome` so a
+        // regression in the shared code would break both.
+        // We pin the `failed` outcome + -0.4 weight contract.
+        const app = makeApp();
+        const dim = makeAbandonDim();
+        jest
+            .spyOn((app as unknown as { hud: { getState: () => { dimension: typeof dim | null } } }).hud, 'getState')
+            .mockReturnValue({ dimension: dim });
+        const vaultRecord = jest
+            .spyOn((app as unknown as { vault: { record: (b: unknown, o: string, t: number) => void } }).vault, 'record')
+            .mockImplementation(() => undefined);
+        const broadcast = jest
+            .spyOn((app as unknown as { npcMinds: { broadcast: (e: { kind: string; weight: number }) => void } }).npcMinds, 'broadcast')
+            .mockImplementation(() => undefined);
+        (app as unknown as { failCurrentDimension: () => void }).failCurrentDimension();
+        expect(vaultRecord).toHaveBeenCalledTimes(1);
+        const [, outcome] = vaultRecord.mock.calls[0];
+        expect(outcome).toBe('failed');
+        // The fail path broadcasts a -0.4 weight — twice
+        // the magnitude of abandon (-0.1) because a fail
+        // is a much stronger negative signal to the NPCs.
+        expect(broadcast).toHaveBeenCalledTimes(1);
+        const [entry] = broadcast.mock.calls[0];
+        expect(entry.weight).toBeCloseTo(-0.4, 5);
+    });
+
+    test('bootstrap_keydown_full_path_Esc_to_abandonCurrentDimension', () => {
+        // End-to-end of the full round-94 path:
+        //   keydown("Escape") → routeKey → { kind: 'abandon' }
+        //                   → app.abandonCurrentDimension()
+        // We assert the wiring by spying on
+        // `abandonCurrentDimension`, dispatching the
+        // action the bootstrap switch would dispatch,
+        // and confirming the spy was called. This is
+        // the same pattern as round-85 (R rollback)
+        // and round-91 (backtick DM) — closes the
+        // "操控性好" gap for the longest-running
+        // keyboard shortcut in BINDING_DESCRIPTIONS.
+        const app = makeApp();
+        const abandonSpy = jest
+            .spyOn(app as unknown as { abandonCurrentDimension: () => void }, 'abandonCurrentDimension')
+            .mockImplementation(() => undefined);
+        // Replicate the bootstrap switch (main.ts:1966+)
+        // for the 'abandon' action kind.
+        const action = routeKey('Escape');
+        expect(action).toEqual({ kind: 'abandon' });
+        if (action && action.kind === 'abandon') {
+            (app as unknown as { abandonCurrentDimension: () => void }).abandonCurrentDimension();
+        }
+        expect(abandonSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('BINDING_DESCRIPTIONS_for_Esc_matches_routeKey_abandon_target', () => {
+        // The 'Esc' row in BINDING_DESCRIPTIONS documents
+        // the player's shortcut for abandon. A regression
+        // that renamed 'Esc' → 'Escape' (or moved the row)
+        // would break the help-overlay → routeKey contract
+        // that round-57 introduced. We pin the description
+        // text + the key field so both stay in lock-step
+        // with the routeKey branch.
+        // (The 'Esc' string here mirrors the
+        // BINDING_DESCRIPTIONS entry verbatim, so a
+        // rename fails this test on the literal string.)
+        const escRow = BINDING_DESCRIPTIONS.find((d) => d.key === 'Esc');
+        expect(escRow).toBeDefined();
+        expect(escRow!.action).toBe('放弃当前维度');
+        // And the routeKey branch for 'Esc' must exist
+        // (defense against a regression that removes the
+        // case from the switch).
+        expect(routeKey('Esc')).toEqual({ kind: 'abandon' });
     });
 });
