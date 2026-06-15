@@ -271,6 +271,11 @@ class App {
                 // on screen.
                 this.worldState.lastBiome = biome.id;
                 this.hud.setLastBiome(biome.id);
+                // Round 87 — push the biome's particle color
+                // as the HUD dim panel's left-border accent.
+                // Resolved here (not in the HUD) so the HUD
+                // module stays decoupled from BiomeAtmosphere.
+                this.hud.setLastBiomeAccent(getBiomeAtmosphere(biome.id).particleColor);
                 this.worldState.lastMinimap = renderMiniMap(dungeon.tiles, biome.id);
                 this.hud.setMinimap(this.worldState.lastMinimap);
                 // Round 71 — synthesize a content-driven event chain
@@ -884,6 +889,8 @@ class App {
             // enterNewDimension.
             this.worldState.lastBiome = biome.id;
             this.hud.setLastBiome(biome.id);
+            // Round 87 — dim panel left-border accent.
+            this.hud.setLastBiomeAccent(getBiomeAtmosphere(biome.id).particleColor);
             this.worldState.lastMinimap = renderMiniMap(dungeon.tiles, biome.id);
             this.hud.setMinimap(this.worldState.lastMinimap);
             const sceneScalars: SceneScalars = sceneBp
@@ -1507,6 +1514,17 @@ class App {
             // recovery banner and clear the backup
             // (one-deep invariant).
             this.hud.setLastBiome(this.worldState.lastBiome);
+            // Round 87 — restore the dim panel's biome
+            // accent from the backup. `lastBiome` may be
+            // null (a round-1–32 save that pre-dates the
+            // biome memory); in that case, leave the
+            // accent null too so the dim panel renders
+            // without a left border.
+            this.hud.setLastBiomeAccent(
+                this.worldState.lastBiome
+                    ? getBiomeAtmosphere(this.worldState.lastBiome).particleColor
+                    : null,
+            );
             this.hud.setNpcMindsSnapshot(this.worldState.npcMindsSnapshot);
             this.syncNpcDisposition();
             if (this.worldState.lastSceneNpcCount != null) {
@@ -1572,6 +1590,13 @@ class App {
             // snapshot into the HUD so the "上次离开
             // #biome" prompt becomes visible.
             this.hud.setLastBiome(this.worldState.lastBiome);
+            // Round 87 — restore the dim panel's biome
+            // accent from the loaded save.
+            this.hud.setLastBiomeAccent(
+                this.worldState.lastBiome
+                    ? getBiomeAtmosphere(this.worldState.lastBiome).particleColor
+                    : null,
+            );
             // Round 64 — push the round-63 lastMinimap
             // data URL into the HUD so the persistent
             // memories block renders the 80×60 PNG

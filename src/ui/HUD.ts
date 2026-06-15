@@ -33,6 +33,19 @@ export interface HUDState {
      */
     lastBiome?: string | null;
     /**
+     * Round 87 — the round-58 BiomeAtmosphere accent
+     * color for the current biome. Optional (HUDs that
+     * aren't bound to a WorldState leave it null).
+     * When set, the HUD applies it as the dim panel's
+     * left-border color so the player sees the biome's
+     * color identity at a glance. Tied to the
+     * `setLastBiomeAccent` setter — the App resolves
+     * biome → color via `getBiomeAtmosphere` and pushes
+     * it here. Decoupled from the scene module: HUD
+     * doesn't import `BiomeAtmosphere` itself.
+     */
+    lastBiomeAccent?: string | null;
+    /**
      * Round 44 — the round-33/36 lastSpeaker snapshot.
      * Optional; when set, the HUD renders a
      * "你刚才听见了 <id> 说：…" line in the stats panel
@@ -173,6 +186,30 @@ export class HUD {
      */
     setLastBiome(biome: string | null): void {
         this.state = { ...this.state, lastBiome: biome };
+        this.render();
+    }
+
+    /**
+     * Round 87 — push the current biome's accent color
+     * (typically the round-58 `getBiomeAtmosphere(biome).particleColor`
+     * or `.lightTint`) into the HUD. The HUD applies it
+     * as the dim panel's left-border color so the
+     * player's eye is drawn to the "current biome"
+     * signal every time the panel renders. Pass `null`
+     * to clear the accent (e.g. on a fresh game where
+     * no biome has been entered yet).
+     *
+     * **Why a separate setter from `setLastBiome`**: the
+     * two are conceptually distinct — `lastBiome` is a
+     * world-state snapshot (the round-43 "where I last
+     * was" prompt), while `lastBiomeAccent` is a
+     * presentation hint derived from the biome's
+     * atmosphere. Splitting them keeps the HUD decoupled
+     * from the scene module: the App resolves
+     * biome → color and pushes it; the HUD just renders.
+     */
+    setLastBiomeAccent(color: string | null): void {
+        this.state = { ...this.state, lastBiomeAccent: color };
         this.render();
     }
 
@@ -532,7 +569,7 @@ export class HUD {
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gem'))}</span><b>${s.gem}</b></div>
                 <div class="hud-row"><span>Score</span><b>${s.score}</b></div>
             </div>
-            <div class="hud-panel hud-dim">
+            <div class="hud-panel hud-dim" style="${s.lastBiomeAccent ? `border-left: 4px solid ${escapeHtml(s.lastBiomeAccent)};` : ''}">
                 <div class="hud-title">${escapeHtml(this.i18n.t('hud.dim'))}</div>
                 <div class="hud-dim-name">${escapeHtml(dimName)}</div>
                 <div class="hud-row"><span>玩法</span><b>${escapeHtml(dimAtoms)}</b></div>

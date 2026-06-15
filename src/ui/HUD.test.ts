@@ -954,6 +954,95 @@ describe('HUD — round 73 setLastSceneEventChain', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Round 87 — `setLastBiomeAccent` & dim-panel left-border.
+//
+// Before round 87, the HUD dim panel was visually flat
+// (just a `hud-panel hud-dim` card). Now the dim panel
+// carries a 4px left border tinted with the biome's
+// `particleColor` from `BiomeAtmosphere`. The HUD
+// receives the color as a plain string (decoupled from
+// the scene module — App resolves biome → color and
+// pushes the value). Setting it to `null` removes the
+// border entirely (e.g. a round-1 save that pre-dates
+// the biome memory has no accent).
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 87 setLastBiomeAccent & dim-panel left-border', () => {
+    function mountHud(): { hud: HUD; root: HTMLElement } {
+        return makeHud();
+    }
+
+    test('setLastBiomeAccent_pushes_into_state', () => {
+        const { hud } = mountHud();
+        expect(hud.getState().lastBiomeAccent).toBeUndefined();
+        hud.setLastBiomeAccent('#88ccff');
+        expect(hud.getState().lastBiomeAccent).toBe('#88ccff');
+        hud.setLastBiomeAccent(null);
+        expect(hud.getState().lastBiomeAccent).toBeNull();
+    });
+
+    test('dim_panel_renders_with_left_border_when_accent_set', () => {
+        // The forest biome uses #88ccff as its
+        // particleColor; the dim panel's inline
+        // `style` attribute must carry the matching
+        // `border-left: 4px solid #88ccff` rule.
+        const { hud, root } = mountHud();
+        hud.setLastBiomeAccent('#88ccff');
+        const dimPanel = root.querySelector('.hud-panel.hud-dim')!;
+        expect(dimPanel).not.toBeNull();
+        const style = dimPanel.getAttribute('style') ?? '';
+        expect(style).toContain('border-left');
+        expect(style).toContain('4px');
+        expect(style).toContain('solid');
+        expect(style).toContain('#88ccff');
+    });
+
+    test('dim_panel_renders_without_border_style_when_accent_null', () => {
+        // A null accent is the "no biome memory yet"
+        // state. The dim panel must not carry a
+        // `border-left` rule — the panel stays flat.
+        const { hud, root } = mountHud();
+        // Explicitly null: even after a non-null
+        // round-trip, nulling it out must clear the
+        // style attr.
+        hud.setLastBiomeAccent('#88ccff');
+        hud.setLastBiomeAccent(null);
+        const dimPanel = root.querySelector('.hud-panel.hud-dim')!;
+        const style = dimPanel.getAttribute('style') ?? '';
+        expect(style).not.toContain('border-left');
+    });
+
+    test('dim_panel_escapes_accent_value_to_prevent_attribute_injection', () => {
+        // The accent goes into an HTML attribute via a
+        // template-literal interpolation. A malicious
+        // value like `" onmouseover="alert(1)` could
+        // break out of the `style` attr if we didn't
+        // escape quotes. The HTML `style` attribute is
+        // CDATA-like (entities are kept literal in real
+        // browsers per HTML §13.1.2.5), so escapeHtml
+        // converts the embedded `"` to `&quot;` and the
+        // browser keeps the entire payload inside the
+        // single `style="..."` attribute. We assert the
+        // security property directly: only the `style`
+        // attribute exists, with no `onmouseover`
+        // attribute bleeding through.
+        const { hud, root } = mountHud();
+        hud.setLastBiomeAccent('" onmouseover="alert(1)');
+        const dimPanel = root.querySelector('.hud-panel.hud-dim')!;
+        // Exactly one attribute (`style`) and zero
+        // `onmouseover` attributes — the injection
+        // attempt is fully contained.
+        expect(dimPanel.hasAttribute('onmouseover')).toBe(false);
+        const style = dimPanel.getAttribute('style') ?? '';
+        // The value starts with the legitimate
+        // `border-left: 4px solid` prefix; the
+        // malicious payload sits inside the value,
+        // not as a sibling attribute.
+        expect(style.startsWith('border-left: 4px solid')).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Round 74 — `hud-memories-row-*` class-based styling.
 //
 // Before round 74, the round-69 `⚡` row and the round-73 `⏰`
