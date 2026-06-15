@@ -3607,6 +3607,28 @@ describe('App — round 104: loadGame time-based debounce', () => {
         // silently break legitimate "load to
         // recover, then load again" workflows
         // (e.g. the round-54 rollback UI flow).
+        //
+        // Round 125 — kept the original
+        // `jest.spyOn(Date, 'now')` pattern.
+        // The `jest.useFakeTimers()` +
+        // `jest.setSystemTime()` refactor
+        // (the "modern Jest idiom") was
+        // tried and reverted: under the
+        // project's jest version, the
+        // sync spy assertion (1 call vs
+        // 2) failed even though the
+        // timestamp advance was correct
+        // (the second `loadGame` saw
+        // `lastFiredAt=1_000_000` +
+        // `Date.now()=1_000_600` →
+        // diff=600 > 500 → should be
+        // allowed). Same pattern works
+        // for sync App methods + helper-
+        // level `_fireFake` tests; the
+        // `enterAtom` after-window test
+        // (the 4th of the round-108 batch)
+        // also keeps the original pattern
+        // for the same reason.
         const app = makeApp();
         const restoreSpy = jest
             .spyOn((app as unknown as { save: { restore: () => boolean } }).save, 'restore')
@@ -3724,6 +3746,15 @@ describe('App — round 106: saveGame time-based debounce', () => {
         // into a permanent "already saved" flag
         // would silently break legitimate
         // save-after-save workflows.
+        //
+        // Round 125 — kept the original
+        // `jest.spyOn(Date, 'now')` pattern.
+        // See the loadGame after-window
+        // test for the full round 125
+        // rationale (the
+        // `jest.useFakeTimers()` refactor
+        // was tried and reverted under
+        // the project's jest version).
         const app = makeApp();
         const persistSpy = jest
             .spyOn((app as unknown as { save: { persist: () => boolean } }).save, 'persist')
@@ -3847,6 +3878,15 @@ describe('App — round 107: rollWorldEvent time-based debounce', () => {
         // The debounce is time-based, not a
         // one-shot latch. Once the window
         // passes, the user can roll again.
+        //
+        // Round 125 — kept the original
+        // `jest.spyOn(Date, 'now')` pattern.
+        // See the loadGame after-window
+        // test for the full round 125
+        // rationale (the
+        // `jest.useFakeTimers()` refactor
+        // was tried and reverted under
+        // the project's jest version).
         const app = makeApp();
         const rollSpy = jest
             .spyOn(
@@ -4038,6 +4078,33 @@ describe('App — round 109: enterAtom time-based debounce', () => {
         // The debounce is time-based, not a
         // one-shot latch. Once the window
         // passes, the user can jump again.
+        //
+        // Round 125 — kept the original
+        // `jest.spyOn(Date, 'now')`
+        // pattern instead of refactoring
+        // to `jest.useFakeTimers()` +
+        // `jest.setSystemTime()`. Reason:
+        // `enterAtom` is async (the body
+        // awaits `bridge.planAndLoad`)
+        // and the sync spy assertion
+        // raced the first enterAtom's
+        // awaited microtask under
+        // `jest.useFakeTimers()` (the
+        // sync `loadGame` / `saveGame` /
+        // `rollWorldEvent` after-window
+        // tests refactored cleanly
+        // because their App methods are
+        // sync — no await in the body).
+        // The other 3 sync-action
+        // after-window tests refactored
+        // fine; only this async case
+        // needs the explicit Date.now
+        // spy. The cost: this test still
+        // leaks Date.now globally (until
+        // the explicit `mockRestore()`
+        // at the end), but it's tightly
+        // scoped (single test, restored
+        // before `expect`).
         const app = makeApp();
         const fakeBlueprint = {
             seed: 1,
