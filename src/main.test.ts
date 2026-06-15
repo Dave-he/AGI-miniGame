@@ -81,6 +81,7 @@ interface AppRefsLike {
     biomeLibraryRoot?: HTMLElement;
     settingsRoot?: HTMLElement;
     debugOverlayRoot?: HTMLElement;
+    eventLogRoot?: HTMLElement;
 }
 
 function makeRefs(): AppRefsLike {
@@ -154,6 +155,10 @@ function makeRefs(): AppRefsLike {
     debugOverlayRoot.id = 'debug-overlay-root';
     debugOverlayRoot.setAttribute('hidden', '');
     document.body.appendChild(debugOverlayRoot);
+    const eventLogRoot = document.createElement('div');
+    eventLogRoot.id = 'event-log-root';
+    eventLogRoot.setAttribute('hidden', '');
+    document.body.appendChild(eventLogRoot);
     return {
         canvas,
         hudRoot,
@@ -164,6 +169,7 @@ function makeRefs(): AppRefsLike {
         biomeLibraryRoot,
         settingsRoot,
         debugOverlayRoot,
+        eventLogRoot,
     };
 }
 
@@ -6294,13 +6300,18 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
     // (or renames it) is caught.
     // -----------------------------------------------------------------
 
-    test('App_still_exposes_all_12_toggle_methods_after_round_131_fold (round 131)', () => {
+    test('App_still_exposes_all_13_toggle_methods_after_round_132_extension (round 131/132)', () => {
         const app = makeApp();
-        // All 12 public method
+        // All 13 public method
         // names are preserved
         // through the round-131
-        // data-driven refactor.
-        // The 7 from round-117
+        // data-driven refactor +
+        // the round-132
+        // extension (added
+        // toggleEventLog for
+        // the Z-key EventLog
+        // panel). The 7 from
+        // round-117
         // (toggleSettings ...
         // toggleAchievements)
         // are still there, plus
@@ -6310,7 +6321,10 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
         // toggleGodConsolePanel,
         // toggleEconomy,
         // toggleEpoch,
-        // toggleDebugOverlay).
+        // toggleDebugOverlay),
+        // plus the round-132
+        // 13th wrapper
+        // (toggleEventLog).
         const expectedMethods = [
             'toggleSettings',
             'toggleStatsPanel',
@@ -6324,6 +6338,7 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
             'toggleEconomy',
             'toggleEpoch',
             'toggleDebugOverlay',
+            'toggleEventLog',
         ];
         for (const m of expectedMethods) {
             const fn = (app as unknown as Record<string, unknown>)[m];
@@ -6331,13 +6346,13 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
         }
     });
 
-    test('toggleByMethod_routes_12_method_names_to_correct_mount_points (round 131)', () => {
+    test('toggleByMethod_routes_13_method_names_to_correct_mount_points (round 131/132)', () => {
         // Spot-check that the
         // private toggleByMethod
         // dispatch (called by
-        // the 12 wrappers) hits
+        // the 13 wrappers) hits
         // the right mount point
-        // for each of the 12
+        // for each of the 13
         // entries. The data
         // comes from
         // `PANEL_TOGGLE_BINDINGS`,
@@ -6348,7 +6363,7 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
         // the wrong hidden
         // attribute.
         const app = makeApp();
-        // 12 (panelId, methodName)
+        // 13 (panelId, methodName)
         // pairs from the table.
         const pairs: ReadonlyArray<[string, string]> = [
             ['settings-root',       'toggleSettings'],
@@ -6363,6 +6378,7 @@ describe('App — round 117: fold 7 toggle methods to single togglePanel helper 
             ['economy-root',        'toggleEconomy'],
             ['epoch-root',          'toggleEpoch'],
             ['debug-overlay-root',  'toggleDebugOverlay'],
+            ['event-log-root',      'toggleEventLog'],
         ];
         for (const [panelId, methodName] of pairs) {
             // Ensure the mount
@@ -6677,19 +6693,22 @@ describe('App — round 120: concentrated help-overlay section for 8 panel-toggl
     // 12-key QWERTY order (round 128 added D).
     // -----------------------------------------------------------------
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_12_keys (round 120/121/128)', () => {
-        // The 12 panel-toggle
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_13_keys (round 120/121/128/132)', () => {
+        // The 13 panel-toggle
         // keys: P / Q / W / T /
         // F / M / V / B / G / N
-        // / O / D (round-128 D
-        // extension for the
-        // DebugOverlay panel).
-        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(12);
+        // / O / D / Z (round-128
+        // D extension for the
+        // DebugOverlay panel;
+        // round-132 Z extension
+        // for the EventLog
+        // panel).
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(13);
     });
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_lists_12_expected_keys (round 120/121/128)', () => {
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_13_expected_keys (round 120/121/128/132)', () => {
         const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
-        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D']);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z']);
     });
 
     test('PANEL_TOGGLE_DESCRIPTIONS_every_key_has_a_chinese_action (round 120)', () => {
@@ -6854,24 +6873,26 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
     // row order.
     // -----------------------------------------------------------------
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_12_keys (round 121/128)', () => {
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_13_keys (round 121/128/132)', () => {
         // Extends round-120
         // 8 rows by 3 new
         // panel-toggle rows
         // (G / N / O) + round-128
-        // 12th row (D).
-        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(12);
+        // 12th row (D) + round-132
+        // 13th row (Z).
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(13);
     });
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_lists_12_expected_keys (round 121/128)', () => {
-        // 12 panel-toggle keys
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_13_expected_keys (round 121/128/132)', () => {
+        // 13 panel-toggle keys
         // in QWERTY order. The
         // round-120 8 keys are
         // preserved + 3 new
         // keys (G / N / O) +
-        // round-128 D key.
+        // round-128 D key +
+        // round-132 Z key.
         const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
-        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D']);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z']);
     });
 
     test('PANEL_TOGGLE_DESCRIPTIONS_G_N_O_rows_have_chinese_actions (round 121)', () => {
@@ -7054,7 +7075,7 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         expect(main).not.toMatch(/bind\('btn-epoch',\s*\(\)\s*=>\s*app\.toggleEpoch\(\)\)/);
     });
 
-    test('main_ts_help_overlay_header_says_12_keys (round 121/128)', () => {
+    test('main_ts_help_overlay_header_says_13_keys (round 121/128/132)', () => {
         // The 3rd section header
         // in the help overlay
         // (round-120
@@ -7062,16 +7083,18 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         // says "面板开关 (8 键)"
         // pre-round-121,
         // "面板开关 (11 键)"
-        // post-round-121, and
+        // post-round-121,
         // "面板开关 (12 键)"
-        // post-round-128. The
-        // round-128 update is
+        // post-round-128, and
+        // "面板开关 (13 键)"
+        // post-round-132. The
+        // round-132 update is
         // important so a player
         // scanning the section
         // knows how many keys
         // are listed.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toMatch(/面板开关 \(12 键\)/);
+        expect(main).toMatch(/面板开关 \(13 键\)/);
     });
 });
 
@@ -7451,6 +7474,229 @@ describe('App — round 128: D-key DebugOverlay panel (4 debouncer stats)', () =
         expect(main).toMatch(/playerLevel:\s*this\.progression\.level/);
         expect(main).toMatch(/currentBiome:\s*this\.worldState\.lastBiome/);
         expect(main).toMatch(/sessionStartedAt:\s*this\.sessionStartedAt/);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 132 — Z-key EventLog panel
+// (操控性好 UX — the 50-event
+// ring buffer from `Analytics.recent`
+// is the chronological log of
+// "what just happened in this
+// session": dimension enter /
+// complete, tutorial step, item
+// use, save, DM commands, WASM
+// latency events, etc). The 13th
+// panel-toggle key. Round 132
+// proves the round-131 data-driven
+// `PANEL_TOGGLE_BINDINGS` table
+// pays off in practice — adding a
+// 13th entry required 1 row in the
+// table + 1 routeKey case + 1
+// KeyboardAction union member +
+// 1 BINDING_DESCRIPTIONS row.
+// Everything else (wrapper method
+// body + bind() entry + help-
+// overlay 13th row + mount point +
+// button + `panelToggleMethodByKind`
+// dispatch) follows automatically.
+// ---------------------------------------------------------------------------
+
+describe('App — round 132: Z-key EventLog panel (50-event ring buffer from Analytics.recent)', () => {
+    test('routeKey_z_returns_toggle_event_log_action (round 132)', () => {
+        // Round 132 — lowercase
+        // z routes to
+        // toggle-event-log.
+        // The Z key was free
+        // in the panel-toggle
+        // group pre-round-132
+        // (no pre-existing Z
+        // mapping in routeKey),
+        // so this is a new
+        // binding, not a
+        // promotion.
+        const a = routeKey('z');
+        expect(a).not.toBeNull();
+        expect(a).toEqual({ kind: 'toggle-event-log' });
+    });
+
+    test('routeKey_Z_returns_toggle_event_log_action_for_shifted_key (round 132)', () => {
+        // Round 132 — case-
+        // insensitive mirror
+        // matches the
+        // round-85 R /
+        // round-91 ` /
+        // round-112 P /
+        // round-128 D
+        // conventions.
+        const a = routeKey('Z');
+        expect(a).not.toBeNull();
+        expect(a).toEqual({ kind: 'toggle-event-log' });
+    });
+
+    test('App_exposes_toggleEventLog_for_bootstrap_keydown_switch (round 132)', () => {
+        // The Z key's wrapper
+        // method must exist on
+        // the App for the
+        // round-131
+        // `panelToggleMethodByKind`
+        // dispatch to find it.
+        // (The App also
+        // defines
+        // `toggleEventLog()`
+        // as a 1-liner via
+        // the round-131
+        // `toggleByMethod`
+        // helper.)
+        const app = makeApp();
+        expect(typeof (app as unknown as { toggleEventLog: () => void }).toggleEventLog).toBe('function');
+    });
+
+    test('toggleEventLog_is_a_no_op_when_event_log_root_is_missing_from_DOM (round 132)', () => {
+        // If the
+        // `#event-log-root`
+        // mount point is
+        // missing from the
+        // DOM, the toggle
+        // method is a safe
+        // no-op (defensive —
+        // same contract as
+        // round-117's
+        // `togglePanel`).
+        // We simulate the
+        // missing mount point
+        // by removing the
+        // root from the DOM.
+        const app = makeApp();
+        const root = document.getElementById('event-log-root');
+        root?.remove();
+        // Should not throw.
+        (app as unknown as { toggleEventLog: () => void }).toggleEventLog();
+    });
+
+    test('toggleEventLog_flips_hidden_attribute_on_event_log_root (round 132)', () => {
+        // Happy path: the
+        // mount point is
+        // present, so the
+        // wrapper flips the
+        // `hidden` attribute
+        // and the round-117
+        // helper logs a
+        // Chinese open / close
+        // message.
+        const app = makeApp();
+        const root = document.getElementById('event-log-root') as HTMLElement;
+        expect(root).not.toBeNull();
+        const beforeHidden = root.hasAttribute('hidden');
+        (app as unknown as { toggleEventLog: () => void }).toggleEventLog();
+        const afterHidden = root.hasAttribute('hidden');
+        expect(afterHidden).toBe(!beforeHidden);
+    });
+
+    test('BINDING_DESCRIPTIONS_for_Z_documents_round_132_EventLog_panel (round 132)', () => {
+        // The 13th panel-toggle
+        // BINDING_DESCRIPTIONS
+        // row (Z) is
+        // reverse-covered —
+        // a BINDING_DESCRIPTIONS
+        // reverse-coverage
+        // test ensures the
+        // description is
+        // present + has a
+        // Chinese action.
+        const z = BINDING_DESCRIPTIONS.find((d) => d.key === 'Z');
+        expect(z).toBeDefined();
+        expect(z?.action.length).toBeGreaterThan(0);
+        expect(z?.action).toMatch(/[一-鿿]/);
+        // The action mentions
+        // the panel's purpose
+        // (event log).
+        expect(z?.action).toContain('事件');
+    });
+
+    test('index_html_has_event_log_root_for_round_132_panel (round 132)', () => {
+        // The mount point
+        // exists in the DOM
+        // (hidden by default
+        // — the Z key opens
+        // it).
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toContain('id="event-log-root"');
+        // And the mount
+        // point has the
+        // `hidden` attribute
+        // by default (so it
+        // doesn't appear on
+        // first load).
+        expect(html).toMatch(/<div class="panel" id="event-log-root" hidden>/);
+    });
+
+    test('index_html_has_btn_event_log_button_for_mouse_only_players (round 132)', () => {
+        // The 13th
+        // panel-toggle
+        // mouse button is
+        // present in the
+        // controls bar so
+        // mouse-only
+        // players can open
+        // the panel.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/<button class="ctl toggle-btn" id="btn-event-log" data-key="Z">/);
+    });
+
+    test('main_ts_imports_renderEventLogPanel (round 132)', () => {
+        // File-content
+        // regression: the
+        // App module must
+        // import the
+        // round-132 panel
+        // module.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/import\s*\{[^}]*renderEventLogPanel[^}]*\}\s*from\s*['"]\.\/ui\/EventLogPanel['"]/);
+    });
+
+    test('main_ts_wires_event_log_handle_in_constructor (round 132)', () => {
+        // The App constructor
+        // calls
+        // `renderEventLogPanel`
+        // when the
+        // `event-log-root`
+        // mount point is
+        // provided.
+        // We verify this by
+        // checking the
+        // App's eventLogRoot
+        // has been rendered
+        // (the panel content
+        // is written into
+        // the root's
+        // innerHTML).
+        const app = makeApp();
+        const root = document.getElementById('event-log-root') as HTMLElement;
+        expect(root).not.toBeNull();
+        // The
+        // `renderEventLogPanel`
+        // is called in the
+        // constructor; the
+        // root's innerHTML
+        // should now have
+        // the
+        // `.event-log-panel`
+        // wrapper.
+        expect(root.innerHTML).toContain('event-log-panel');
+    });
+
+    test('main_ts_passes_eventLogRoot_to_App_constructor (round 132)', () => {
+        // File-content
+        // regression: the
+        // bootstrap reads
+        // the
+        // `event-log-root`
+        // from the DOM and
+        // passes it to the
+        // App constructor.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/eventLogRoot:\s*eventLogRoot\s*\?\?\s*undefined/);
     });
 });
 

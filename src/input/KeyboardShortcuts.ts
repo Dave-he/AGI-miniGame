@@ -84,7 +84,32 @@ export type KeyboardAction =
     // facing aggregate stats),
     // so D is the developer-
     // facing counterpart.
-    | { kind: 'toggle-debug-overlay' };
+    | { kind: 'toggle-debug-overlay' }
+    // Round 132 — Z key toggles
+    // the EventLog panel
+    // (`#event-log-root`, populated
+    // by round-132
+    // `renderEventLogPanel`). The
+    // panel renders the 50-event
+    // ring buffer from
+    // `Analytics.recent` — the
+    // chronological log of "what
+    // just happened in this
+    // session" (dimension enter
+    // / complete, tutorial step,
+    // item use, save, DM
+    // commands, WASM latency
+    // events, etc). The Z letter
+    // was free in the panel-
+    // toggle group + sits
+    // naturally next to the QWERTY
+    // row housing the other
+    // toggle keys. This is the
+    // 13th entry in the round-131
+    // data-driven
+    // `PANEL_TOGGLE_BINDINGS`
+    // table.
+    | { kind: 'toggle-event-log' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -342,6 +367,29 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // player-facing aggregate
     // stats counterpart).
     { key: 'D',    action: '切换调试信息面板 (4 个防抖器)' },
+    // Round 132 — the Z key
+    // toggles the EventLog
+    // panel
+    // (`#event-log-root`).
+    // The panel renders
+    // the 50-event ring
+    // buffer from
+    // `Analytics.recent` —
+    // the chronological
+    // log of "what just
+    // happened in this
+    // session". The Z key
+    // is the 13th panel-
+    // toggle in the
+    // round-131 data-driven
+    // `PANEL_TOGGLE_BINDINGS`
+    // table. Z is mnemonic-
+    // friendly (was free
+    // in the panel-toggle
+    // group, no pre-
+    // existing Z mapping
+    // in routeKey).
+    { key: 'Z',    action: '切换事件日志面板 (50 条最近事件)' },
 ];
 
 /**
@@ -505,6 +553,54 @@ export const PANEL_TOGGLE_BINDINGS: ReadonlyArray<PanelToggleBinding> = [
     { key: 'O', kind: 'toggle-epoch',            panelId: 'epoch-root',         label: '纪元面板',         action: '纪元面板',                  methodName: 'toggleEpoch',            buttonId: 'btn-epoch' },
     // D — debug overlay (round 128)
     { key: 'D', kind: 'toggle-debug-overlay',    panelId: 'debug-overlay-root', label: '调试信息',         action: '调试信息面板 (4 防抖器)',  methodName: 'toggleDebugOverlay',     buttonId: 'btn-debug-overlay' },
+    // Round 132 — Z key toggles
+    // the EventLog panel
+    // (`#event-log-root`,
+    // populated by round-132
+    // `renderEventLogPanel`).
+    // The panel renders the
+    // 50-event ring buffer
+    // from `Analytics.recent`
+    // — the chronological
+    // log of "what just
+    // happened in this
+    // session" (dimension
+    // enter / complete,
+    // tutorial step, item
+    // use, save, DM
+    // commands, WASM
+    // latency events, etc).
+    // Z is mnemonic-friendly
+    // — the Z letter was
+    // free in the panel-
+    // toggle group (no
+    // pre-existing Z mapping
+    // in routeKey), and
+    // Z sits naturally next
+    // to the QWERTY row
+    // housing the other
+    // toggle keys. This
+    // is the 13th entry in
+    // the round-131 data-
+    // driven `PANEL_TOGGLE_BINDINGS`
+    // table — adding it
+    // required exactly 1
+    // row here + 1 entry in
+    // the `routeKey` switch
+    // + 1 entry in the
+    // `KeyboardAction` union
+    // (TypeScript unions
+    // can't be generated
+    // from runtime data).
+    // Everything else
+    // (wrapper method body
+    // + bind() entry +
+    // BINDING_DESCRIPTIONS
+    // row + help-overlay
+    // 13th row + mount point
+    // + button) follows
+    // automatically.
+    { key: 'Z', kind: 'toggle-event-log',        panelId: 'event-log-root',     label: '事件日志',         action: '事件日志面板 (50 条最近事件)', methodName: 'toggleEventLog',         buttonId: 'btn-event-log' },
 ];
 
 /**
@@ -819,6 +915,29 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'd':
         case 'D':
             return { kind: 'toggle-debug-overlay' };
+        // Round 132 — Z key toggles
+        // the EventLog panel
+        // (`#event-log-root`). The
+        // panel is the keyboard
+        // counterpart to the
+        // round-132
+        // `btn-event-log` mouse
+        // button. Both routes (Z
+        // keyboard + btn-event-log
+        // mouse) call
+        // `app.toggleEventLog()`
+        // which uses the
+        // round-117 `togglePanel`
+        // helper. The case-
+        // insensitive mirror
+        // matches the round-85
+        // R / round-91 ` /
+        // round-112 P /
+        // round-128 D
+        // conventions.
+        case 'z':
+        case 'Z':
+            return { kind: 'toggle-event-log' };
         default:
             return null;
     }

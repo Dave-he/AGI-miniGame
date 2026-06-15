@@ -89,6 +89,19 @@ import { renderBiomeLibraryPanel, BiomeLibraryPanelHandle } from './ui/BiomeLibr
 // ms since last stamp / currently
 // debouncing?). Developer + QA tool.
 import { renderDebugOverlay, DebugOverlayHandle, type DebugOverlayDebouncerInfo } from './ui/DebugOverlay';
+// Round 132 — the Z-key EventLog
+// panel showing the 50-event
+// ring buffer from
+// `Analytics.recent` (the
+// chronological log of "what
+// just happened in this
+// session": dimension enter
+// / complete, tutorial step,
+// item use, save, DM
+// commands, WASM latency
+// events, etc). 13th panel-
+// toggle.
+import { renderEventLogPanel, EventLogPanelHandle } from './ui/EventLogPanel';
 // Round 48 — `themeToScene` itself is no longer called from main.ts;
 // the WASM bridge below wraps it. The `ThemeInput` type alias is
 // still needed to type the input to the bridge.
@@ -154,6 +167,16 @@ interface AppRefs {
      * panel.
      */
     debugOverlayRoot?: HTMLElement;
+    /**
+     * Round 132 — optional root
+     * for the EventLog panel
+     * (the 50-event ring buffer
+     * from `Analytics.recent`).
+     * The Z key shortcut is the
+     * primary way to open the
+     * panel.
+     */
+    eventLogRoot?: HTMLElement;
     /**
      * Round 111 — optional root for the
      * SettingsPanel (audio / difficulty /
@@ -343,6 +366,24 @@ class App {
      */
     private debugOverlayHandle: DebugOverlayHandle | null = null;
     private debugOverlayTimer: ReturnType<typeof setInterval> | null = null;
+    /**
+     * Round 132 — handle for the
+     * 13th panel-toggle Z
+     * shortcut's content. The
+     * panel renders the 50-event
+     * ring buffer from
+     * `Analytics.recent` (the
+     * chronological log of "what
+     * just happened in this
+     * session"). Refreshed every
+     * second via `eventLogTimer`
+     * so the "ago" labels
+     * update over time. Null
+     * when the mount point is
+     * not provided.
+     */
+    private eventLogHandle: EventLogPanelHandle | null = null;
+    private eventLogTimer: ReturnType<typeof setInterval> | null = null;
     /**
      * Round 130 — `Date.now()` snapshot taken
      * at App construction. Surfaced to the
@@ -986,6 +1027,46 @@ class App {
             this.debugOverlayTimer = setInterval(() => {
                 this.debugOverlayHandle?.refresh();
             }, 200);
+        }
+        // Round 132 — wire the
+        // EventLog panel. The
+        // panel renders the
+        // 50-event ring buffer
+        // from `Analytics.recent`
+        // (the chronological
+        // log of "what just
+        // happened in this
+        // session": dimension
+        // enter / complete,
+        // tutorial step, item
+        // use, save, DM commands,
+        // WASM latency events,
+        // etc). The 13th panel-
+        // toggle (Z key +
+        // btn-event-log mouse
+        // button) opens this
+        // panel via the
+        // round-117 `togglePanel`
+        // helper, and the panel
+        // itself is built at
+        // runtime by
+        // `renderEventLogPanel`.
+        if (refs.eventLogRoot) {
+            this.eventLogHandle = renderEventLogPanel(
+                refs.eventLogRoot,
+                this.analytics,
+                this.i18n,
+            );
+            // Refresh every 1s so
+            // the "ago" labels
+            // update over time
+            // (the bucketings are
+            // Ns / Nm / Nh / Nd +
+            // 刚刚 for the first
+            // 2 seconds).
+            this.eventLogTimer = setInterval(() => {
+                this.eventLogHandle?.refresh();
+            }, 1000);
         }
         this.economy = new EconomyPanel(refs.economyRoot, this.worldState);
         this.epochPanel = new EpochPanel(refs.epochRoot, this.epoch, () => this.triggerCollapse(), this.i18n);
@@ -1876,6 +1957,41 @@ class App {
      * counterpart).
      */
     toggleDebugOverlay(): void { this.toggleByMethod('toggleDebugOverlay'); }
+
+    /**
+     * Round 132 — Z key
+     * counterpart. Toggles
+     * the `#event-log-root`
+     * panel (the round-132
+     * `renderEventLogPanel`
+     * showing the 50-event
+     * ring buffer from
+     * `Analytics.recent` —
+     * the chronological
+     * log of "what just
+     * happened in this
+     * session": dimension
+     * enter / complete,
+     * tutorial step, item
+     * use, save, DM
+     * commands, WASM
+     * latency events, etc)
+     * via the round-117
+     * `togglePanel` helper.
+     * The 13th panel in the
+     * round-131 data-driven
+     * `PANEL_TOGGLE_BINDINGS`
+     * table. Z is mnemonic-
+     * friendly (was free in
+     * the panel-toggle group,
+     * no pre-existing Z
+     * mapping in routeKey)
+     * and sits naturally next
+     * to the QWERTY row
+     * housing the other
+     * toggle keys.
+     */
+    toggleEventLog(): void { this.toggleByMethod('toggleEventLog'); }
 
     /**
      * Round 117 — shared panel-toggle
@@ -2964,6 +3080,7 @@ async function bootstrap(): Promise<void> {
     const achievementsRoot = document.getElementById('achievements-root') as HTMLElement | null;
     const biomeLibraryRoot = document.getElementById('biome-library-root') as HTMLElement | null;
     const debugOverlayRoot = document.getElementById('debug-overlay-root') as HTMLElement | null;
+    const eventLogRoot = document.getElementById('event-log-root') as HTMLElement | null;
     if (!canvas || !hudRoot || !progRoot || !econRoot || !epochRoot) {
         console.error('Missing required DOM roots');
         return;
@@ -2983,6 +3100,7 @@ async function bootstrap(): Promise<void> {
         achievementsRoot: achievementsRoot ?? undefined,
         biomeLibraryRoot: biomeLibraryRoot ?? undefined,
         debugOverlayRoot: debugOverlayRoot ?? undefined,
+        eventLogRoot: eventLogRoot ?? undefined,
     });
     (window as any).__AGI__ = app;
     await app.start();
@@ -3113,7 +3231,7 @@ async function bootstrap(): Promise<void> {
             // border.
             const toggleHeader = document.createElement('div');
             toggleHeader.className = 'kb-help-section kb-help-section-toggle';
-            toggleHeader.textContent = '面板开关 (12 键)';
+            toggleHeader.textContent = '面板开关 (13 键)';
             body.appendChild(toggleHeader);
             for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
                 const keyEl = document.createElement('div');

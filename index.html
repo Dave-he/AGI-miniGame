@@ -107,6 +107,12 @@
          Mirror of the round-121
          god/economy/epoch pattern. */
       #debug-overlay-root[hidden] { display: none; }
+      /* Round 132 — event-log-root:
+         defensive [hidden] override for
+         the 13th panel-toggle key (Z).
+         Mirror of the round-121 +
+         round-128 pattern. */
+      #event-log-root[hidden] { display: none; }
       /* Round 128 — DebugOverlay panel
          styles. Compact 6-column grid
          (label / action / round / window
@@ -733,6 +739,21 @@
          overwrites the innerHTML with a `.settings-panel`
          block containing the section labels + rows). -->
     <div class="panel" id="settings-root" hidden></div>
+    <!-- Round 132 — event-log-root: home for the
+         round-132 `renderEventLogPanel` panel
+         showing the 50-event ring buffer from
+         `Analytics.recent` (the chronological
+         log of "what just happened in this
+         session": dimension enter / complete,
+         tutorial step, item use, save, DM
+         commands, WASM latency events, etc).
+         Hidden by default; the Z key + the
+         `btn-event-log` mouse button toggle
+         the `hidden` attribute via
+         App.toggleEventLog(). The 13th panel
+         in the round-131 data-driven
+         `PANEL_TOGGLE_BINDINGS` table. -->
+    <div class="panel" id="event-log-root" hidden></div>
 
     <!-- Round 57 — keyboard help overlay. Hidden by default;
          toggle with the ? key. The body is populated at runtime
@@ -809,6 +830,22 @@
       <button class="ctl toggle-btn" id="btn-god-panel" data-key="G">⚡ God (G)</button>
       <button class="ctl toggle-btn" id="btn-economy" data-key="N">💰 经济 (N)</button>
       <button class="ctl toggle-btn" id="btn-epoch" data-key="O">🕰 纪元 (O)</button>
+      <!-- Round 132 — 13th panel-toggle
+           mouse button. Z key counterpart
+           for the round-132 EventLog
+           panel (`#event-log-root`,
+           showing the 50-event ring
+           buffer from `Analytics.recent`).
+           Z is mnemonic-friendly (was
+           free in the panel-toggle group,
+           no pre-existing Z mapping in
+           routeKey) and sits naturally
+           next to the QWERTY row housing
+           the other toggle keys. Mouse-
+           only players learn the Z
+           shortcut from the `(Z)` label
+           inside the button. -->
+      <button class="ctl toggle-btn" id="btn-event-log" data-key="Z">📋 事件 (Z)</button>
       <button class="ctl" id="btn-complete">完成试炼</button>
       <button class="ctl" id="btn-save">存档</button>
       <button class="ctl" id="btn-load">读档</button>
