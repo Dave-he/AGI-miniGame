@@ -6248,3 +6248,141 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
     });
 });
 
+describe('App — round 122: settings-panel CSS responsive layout for narrow screens (操控性好 mobile/portrait)', () => {
+    // -----------------------------------------------------------------
+    // The round-111 SettingsPanel
+    // has a 260px min-width that
+    // overflows narrow viewports
+    // (mobile portrait /
+    // portrait iframe). Round
+    // 122 drops the min-width,
+    // adds a max-width clamp,
+    // adds `box-sizing:
+    // border-box`, and adds a
+    // 600px-breakpoint @media
+    // rule that flips `.set-row`
+    // to flex-direction: column
+    // + stretches buttons to
+    // 100% width + hides the
+    // `.set-title` heading.
+    // (round 122)
+    // -----------------------------------------------------------------
+
+    test('index_html_settings_panel_drops_min_width_260px (round 122)', () => {
+        // Defense: a regression
+        // that re-introduces
+        // the 260px min-width
+        // would silently
+        // overflow narrow
+        // viewports again.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // The .settings-panel
+        // rule no longer has
+        // `min-width: 260px`.
+        // We assert by checking
+        // the absence of the
+        // old value next to the
+        // `.settings-panel`
+        // selector.
+        const settingsPanelBlock = html.match(/\.settings-panel\s*\{[^}]*\}/);
+        expect(settingsPanelBlock).not.toBeNull();
+        expect(settingsPanelBlock![0]).not.toMatch(/min-width:\s*260px/);
+    });
+
+    test('index_html_settings_panel_has_max_width_clamp (round 122)', () => {
+        // The new max-width
+        // clamp keeps the
+        // panel from reaching
+        // the screen edge on
+        // narrow viewports (16px
+        // gutter on each side).
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        const settingsPanelBlock = html.match(/\.settings-panel\s*\{[^}]*\}/);
+        expect(settingsPanelBlock).not.toBeNull();
+        expect(settingsPanelBlock![0]).toMatch(/max-width:\s*calc\(100vw\s*-\s*32px\)/);
+    });
+
+    test('index_html_settings_panel_has_box_sizing_border_box (round 122)', () => {
+        // Without box-sizing:
+        // border-box, the
+        // panel's 12px+14px
+        // padding would push
+        // its content past the
+        // max-width clamp on
+        // narrow screens.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        const settingsPanelBlock = html.match(/\.settings-panel\s*\{[^}]*\}/);
+        expect(settingsPanelBlock).not.toBeNull();
+        expect(settingsPanelBlock![0]).toMatch(/box-sizing:\s*border-box/);
+    });
+
+    test('index_html_has_600px_media_query_for_settings_panel (round 122)', () => {
+        // The new @media
+        // breakpoint flips
+        // `.set-row` from
+        // horizontal flex-wrap
+        // to vertical
+        // flex-direction: column.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/@media\s*\(max-width:\s*600px\)/);
+    });
+
+    test('index_html_media_query_stacks_set_row_vertically (round 122)', () => {
+        // On narrow screens the
+        // .set-row buttons stack
+        // vertically instead of
+        // wrapping horizontally.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // The @media block
+        // contains a
+        // `.set-row` rule with
+        // `flex-direction: column`.
+        // The patterns below
+        // match across nested
+        // braces (the @media
+        // block wraps multiple
+        // rules).
+        expect(html).toMatch(/@media\s*\(max-width:\s*600px\)\s*\{[\s\S]*?\.set-row\s*\{[\s\S]*?flex-direction:\s*column/);
+    });
+
+    test('index_html_media_query_stretches_buttons_to_100_percent (round 122)', () => {
+        // The buttons inside
+        // .set-row stretch to
+        // full width on narrow
+        // screens for an easier
+        // tap target.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/@media\s*\(max-width:\s*600px\)\s*\{[\s\S]*?\.set-row\s+button\s*\{[\s\S]*?width:\s*100%/);
+    });
+
+    test('index_html_media_query_hides_set_title_on_narrow (round 122)', () => {
+        // On narrow screens
+        // the .set-title
+        // uppercase heading
+        // is hidden so the
+        // section labels carry
+        // the context (the
+        // heading is decorative
+        // on mobile).
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/@media\s*\(max-width:\s*600px\)\s*\{[\s\S]*?\.set-title\s*\{[\s\S]*?display:\s*none/);
+    });
+
+    test('index_html_desktop_set_row_still_uses_flex_wrap (round 122)', () => {
+        // Defense: a regression
+        // that removes the
+        // desktop
+        // `flex-wrap: wrap`
+        // (e.g. a refactor that
+        // moves the rule
+        // inside the @media
+        // block) would silently
+        // break the wide-screen
+        // layout.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        const setRowBlock = html.match(/\.set-row\s*\{\s*[^}]*\}/);
+        expect(setRowBlock).not.toBeNull();
+        expect(setRowBlock![0]).toMatch(/flex-wrap:\s*wrap/);
+    });
+});
+

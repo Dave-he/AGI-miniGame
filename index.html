@@ -110,7 +110,32 @@
         box-shadow: 0 0 24px rgba(78, 205, 196, 0.25);
         font-size: 12px;
         line-height: 1.6;
-        min-width: 260px;
+        /* Round 122 — drop the
+           260px min-width so the
+           panel can shrink on
+           narrow viewports
+           (mobile / portrait
+           iframe). The clamp
+           keeps the panel from
+           reaching the screen
+           edge (16px gutter on
+           each side) while
+           letting it shrink
+           below 260px when the
+           viewport is too
+           narrow to host the
+           4-button row at full
+           width. The
+           `box-sizing:
+           border-box` rule
+           further down ensures
+           the padding doesn't
+           push the panel past
+           its declared max
+           width. */
+        min-width: 0;
+        max-width: calc(100vw - 32px);
+        box-sizing: border-box;
       }
       .set-title { font-size: 12px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; text-align: center; }
       .set-section-label { font-size: 10px; color: var(--text-1); margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 1px; }
@@ -132,6 +157,73 @@
         color: white;
         border-color: var(--neon-pink);
         box-shadow: 0 0 8px rgba(255, 102, 204, 0.5);
+      }
+      /* Round 122 — responsive
+         layout for the
+         `.settings-panel` on
+         narrow viewports
+         (mobile portrait /
+         portrait iframe). The
+         4-button debounce row
+         (round-111 Off / 500ms
+         / 1000ms / 2000ms) +
+         the 3 audio locale
+         rows would overflow a
+         320px viewport at the
+         desktop layout. The
+         breakpoint at 600px
+         flips `.set-row` from
+         horizontal `flex-wrap`
+         to vertical
+         `flex-direction: column`
+         + stretches the
+         buttons to full
+         width (`width: 100%`)
+         so the player can
+         still read + tap each
+         button comfortably.
+         The `box-sizing:
+         border-box` ensures
+         the 100% width
+         doesn't overflow the
+         panel's padding. */
+      @media (max-width: 600px) {
+        .settings-panel {
+          /* On narrow screens
+             span most of the
+             viewport width
+             (with a 16px gutter
+             on each side) so
+             the panel is
+             readable. */
+          max-width: calc(100vw - 32px);
+        }
+        .set-row {
+          /* Drop the horizontal
+             wrap; stack each
+             button vertically
+             so the row doesn't
+             overflow the
+             panel. */
+          flex-direction: column;
+        }
+        .set-row button {
+          /* Full-width buttons
+             on narrow screens
+             for an easier tap
+             target. */
+          width: 100%;
+          text-align: left;
+          padding: 8px 12px;
+        }
+        .set-title {
+          /* Hide the uppercase
+             title on narrow
+             screens — the
+             section labels
+             carry the context. */
+          display: none;
+        }
       }
 
       #progression-root {
