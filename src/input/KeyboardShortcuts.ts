@@ -89,7 +89,18 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // share the same physical key — `ev.key` is `` ` ``
     // unshifted and `~` shifted, but both are routed
     // to the same action.
-    { key: '`',    action: '切换 DM God 控制台' },
+    //
+    // Round 95 — the `key` field is `'`/~'` (slash-
+    // separated) rather than just `'`` so the help
+    // overlay visibly documents both shift-states.
+    // Pre-round-95 the rendered text was just `'``,
+    // and a player reading the help overlay would
+    // not know that `~` is also accepted. The
+    // round-91 alias relationship is now visible at
+    // the contract level — the `routeKey` switch
+    // still handles `'`` and `~` independently, and
+    // the BINDING_DESCRIPTIONS entry documents both.
+    { key: '`/~',  action: '切换 DM God 控制台' },
 ];
 
 /**

@@ -125,7 +125,7 @@ describe('KeyboardShortcuts', () => {
     describe('BINDING_DESCRIPTIONS', () => {
         it('covers every key the router knows about', () => {
             const described = new Set(BINDING_DESCRIPTIONS.map(d => d.key));
-            // 1..8, Esc, Space, ?, S, L, E, R, `
+            // 1..8, Esc, Space, ?, S, L, E, R, `/~
             for (let i = 1; i <= 8; i++) expect(described.has(String(i))).toBe(true);
             expect(described.has('Esc')).toBe(true);
             expect(described.has('Space')).toBe(true);
@@ -135,8 +135,14 @@ describe('KeyboardShortcuts', () => {
             expect(described.has('E')).toBe(true);
             // Round 85 — the R key for rollback.
             expect(described.has('R')).toBe(true);
-            // Round 91 — the backtick for the DM console.
-            expect(described.has('`')).toBe(true);
+            // Round 95 — the backtick/tilde alias is now
+            // rendered as `'`/~'` in the help overlay (a
+            // single BINDING_DESCRIPTIONS row that
+            // documents both shift-states), not just
+            // `'``. A regression that drops the `~` from
+            // the key field would make the alias
+            // relationship invisible to the player.
+            expect(described.has('`/~')).toBe(true);
         });
 
         it('has a non-empty Chinese description for every binding', () => {
@@ -146,6 +152,68 @@ describe('KeyboardShortcuts', () => {
                 // CJK check — every action contains at least one CJK char
                 expect(/[㐀-鿿]/.test(d.action)).toBe(true);
             }
+        });
+
+        it('reverse-covers every BINDING_DESCRIPTIONS row in routeKey (round 95)', () => {
+            // The companion test to "covers every key the
+            // router knows about" (which is one-way:
+            // routes → descriptions). A zombie description
+            // (a BINDING_DESCRIPTIONS row whose key
+            // doesn't route anywhere) would silently be
+            // rendered in the help overlay and confuse
+            // the player. This test pins the reverse
+            // direction: for every description, routeKey
+            // must return a non-null action.
+            //
+            // **Documentation convention**: BINDING_DESCRIPTIONS
+            // uses human-readable names for some keys
+            // ('Space' for the spacebar, even though
+            // KeyboardEvent.key produces a literal ' '
+            // character). routeKey accepts ' ' and
+            // 'Spacebar' but not 'Space' (the human-
+            // readable form is not a real ev.key). We
+            // skip 'Space' here with a comment, plus
+            // the backtick/tilde compound key (round
+            // 95) which the alias test below pins
+            // explicitly.
+            for (const d of BINDING_DESCRIPTIONS) {
+                // Skip the round-95 backtick/tilde
+                // compound (the alias test below pins
+                // both ` and ~ routing).
+                if (d.key === '`/~') continue;
+                // Skip 'Space' — the help overlay
+                // displays the human-readable name
+                // 'Space' but routeKey handles the
+                // literal space character ' ' and
+                // 'Spacebar' (the legacy alias).
+                // 'Space' is a documentation label, not
+                // an ev.key.
+                if (d.key === 'Space') continue;
+                const action = routeKey(d.key);
+                expect(action).not.toBeNull();
+            }
+        });
+
+        it('documents the backtick/tilde alias relationship in the key field (round 95)', () => {
+            // Round 95 — the backtick/tilde BINDING_DESCRIPTIONS
+            // entry's `key` field is `'`/~'` (slash-separated)
+            // so the help overlay visibly documents BOTH
+            // shift-states (backtick unshifted, tilde
+            // shifted). The `routeKey` switch still handles
+            // `'`` and `~` independently (line 158-159 of
+            // KeyboardShortcuts.ts), so both physical
+            // key outputs are accepted. This test pins
+            // the documentation contract: the player
+            // looking at the help overlay sees the `~`
+            // alias, not just the backtick.
+            const aliasRow = BINDING_DESCRIPTIONS.find((d) => d.key === '`/~');
+            expect(aliasRow).toBeDefined();
+            expect(aliasRow!.action).toBe('切换 DM God 控制台');
+            // And the routeKey switch still routes both
+            // forms (defense against a refactor that
+            // drops one case but keeps the other).
+            expect(routeKey('`')).toEqual({ kind: 'toggle-dm-console' });
+            expect(routeKey('~')).toEqual({ kind: 'toggle-dm-console' });
         });
     });
 
