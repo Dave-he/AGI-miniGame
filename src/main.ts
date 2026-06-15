@@ -48,7 +48,7 @@ import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
 import { TutorialOverlay } from './ui/TutorialOverlay';
 import { renderStatsPanel, StatsPanelHandle } from './ui/StatsPanel';
 import { GodConsole } from './ui/GodConsole';
-import { SettingsPanel, type DebounceWindow } from './ui/SettingsPanel';
+import { SettingsPanel, type DebounceWindow, type Difficulty } from './ui/SettingsPanel';
 import { PlayerHealth } from './player/PlayerHealth';
 import { DmMode } from './dm/DmMode';
 import { SessionReplay } from './analytics/SessionReplay';
@@ -242,6 +242,24 @@ class App {
      * for the SettingsPanel's getter.
      */
     private currentDebounceWindowMs: 0 | 500 | 1000 | 2000 = 500;
+    /**
+     * Round 126 — current difficulty tier
+     * surfaced via `getCurrentDifficulty()`
+     * for the SettingsPanel's getter. The
+     * UI was already in place since round
+     * 111 (`settings.diff.{easy,normal,hard}`
+     * buttons); the App just wasn't wiring
+     * the hooks so the row was hidden.
+     * Round 126 wires the 2 hooks
+     * (`onDifficultyChange` +
+     * `getCurrentDifficulty`) + adds the
+     * App state + `applyDifficultySettings`
+     * method + new
+     * `BalanceTuner.setTargetWinRate` setter
+     * so the picked difficulty actually
+     * changes the AI's tuning bias.
+     */
+    private currentDifficulty: Difficulty = 'normal';
     private replay: SessionReplay;
     private narration: NarrationEngine;
     private vault: DimensionVault;
@@ -688,27 +706,23 @@ class App {
         }
         // Round 111 — SettingsPanel construction.
         // Created only if the host page provides a
-        // `settings-root` DOM node. The 2 hooks
-        // (onDebounceChange, getCurrentDebounce)
+        // `settings-root` DOM node. The 4 hooks
+        // (onDebounceChange + getCurrentDebounce
+        // + onDifficultyChange + getCurrentDifficulty)
         // are wired so the panel can both
-        // read the App's current debounce
-        // state (for the `is-active`
-        // highlight) and push changes back
-        // into the App. The
-        // `getCurrentDebounce` returns the
-        // live `currentDebounceWindowMs`
-        // field; `onDebounceChange` calls
-        // `applyDebounceSettings(ms)` which
-        // fans out to all 4 debouncers.
-        // Difficulty hooks are omitted (the
-        // App has no global difficulty
-        // concept — each dimension rolls
-        // its own) so the difficulty row
-        // is hidden in the panel.
+        // read the App's current state (for
+        // the `is-active` highlight) and
+        // push changes back into the App.
+        // Round 126 added the 2 difficulty
+        // hooks (the row was hidden since
+        // round 111 because the App
+        // omitted these hooks).
         if (refs.settingsRoot) {
             this.settingsPanel = new SettingsPanel(refs.settingsRoot, this.i18n, this.audio, {
                 onDebounceChange: (ms) => this.applyDebounceSettings(ms),
                 getCurrentDebounce: () => this.currentDebounceWindowMs,
+                onDifficultyChange: (d) => this.applyDifficultySettings(d),
+                getCurrentDifficulty: () => this.currentDifficulty,
             });
         }
         if (refs.vaultRoot) {
@@ -1439,6 +1453,38 @@ class App {
         this.debouncerEnterAtom.setWindowMs(ms);
         const msLabel = ms === 0 ? '关闭' : `${ms}ms`;
         this.hud.log(`[settings] 防抖窗口已更新为 ${msLabel} (4 个动作同步)`);
+    }
+
+    /**
+     * Round 126 — apply a new difficulty tier
+     * to the `BalanceTuner`. Called by the
+     * SettingsPanel's `onDifficultyChange`
+     * hook. The 3 tiers map to:
+     *   easy   → 0.75 (forgiving — bias UP
+     *                    toward easier difficulty
+     *                    when player wins less
+     *                    than 65%)
+     *   normal → 0.60 (default — mirror of
+     *                    BalanceTuner constructor)
+     *   hard   → 0.40 (punishing — bias UP
+     *                    toward harder difficulty
+     *                    when player wins more
+     *                    than 50%)
+     * Logs a Chinese line so the player
+     * sees the change is live (the panel
+     * re-renders with the new `is-active`
+     * button highlighted, but the HUD
+     * confirms the AI bias change).
+     * Note: does NOT clear the BalanceTuner
+     * history — past gameplay results still
+     * inform the next difficulty roll.
+     */
+    applyDifficultySettings(d: Difficulty): void {
+        this.currentDifficulty = d;
+        const rate = d === 'easy' ? 0.75 : d === 'hard' ? 0.40 : 0.60;
+        this.ai.tuner.setTargetWinRate(rate);
+        const label = d === 'easy' ? '简单' : d === 'hard' ? '困难' : '普通';
+        this.hud.log(`[settings] 难度已切换为 ${label} (BalanceTuner 目标胜率 ${rate.toFixed(2)})`);
     }
 
     /**

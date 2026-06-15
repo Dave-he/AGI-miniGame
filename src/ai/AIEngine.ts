@@ -264,6 +264,30 @@ export class BalanceTuner {
     private targetWinRate: number = 0.6;
     private history: SessionResult[] = [];
 
+    /**
+     * Round 126 — runtime setter for the target
+     * win rate. Called by the App's
+     * `applyDifficultySettings` when the
+     * player picks a new difficulty in the
+     * SettingsPanel (the row was already
+     * present since round 111, just hidden
+     * because the App didn't provide the
+     * hooks). Higher target = easier
+     * (BalanceTuner biases UP toward the
+     * higher end of the difficulty band
+     * when win rate is too low). Maps:
+     *   easy   → 0.75 (forgiving)
+     *   normal → 0.60 (default)
+     *   hard   → 0.40 (punishing)
+     */
+    setTargetWinRate(rate: number): void {
+        // Clamp to (0, 1] — 0 would
+        // divide-by-zero in
+        // suggestDifficulty's adjustment
+        // math; 1.0 = always easy.
+        this.targetWinRate = Math.max(0.05, Math.min(1.0, rate));
+    }
+
     recordResult(result: SessionResult): void {
         this.history.push(result);
     }

@@ -79,6 +79,7 @@ interface AppRefsLike {
     epochRoot: HTMLElement;
     achievementsRoot?: HTMLElement;
     biomeLibraryRoot?: HTMLElement;
+    settingsRoot?: HTMLElement;
 }
 
 function makeRefs(): AppRefsLike {
@@ -125,6 +126,20 @@ function makeRefs(): AppRefsLike {
     const biomeLibraryRoot = document.createElement('div');
     biomeLibraryRoot.id = 'biome-library-root';
     document.body.appendChild(biomeLibraryRoot);
+    // Round 126 — add the
+    // settings-root so the
+    // round-126 App-level
+    // tests can exercise
+    // the SettingsPanel's
+    // difficulty row (the
+    // row was hidden since
+    // round 111 because the
+    // App didn't provide
+    // the 2 hooks; round
+    // 126 wires them).
+    const settingsRoot = document.createElement('div');
+    settingsRoot.id = 'settings-root';
+    document.body.appendChild(settingsRoot);
     return {
         canvas,
         hudRoot,
@@ -133,6 +148,7 @@ function makeRefs(): AppRefsLike {
         epochRoot,
         achievementsRoot,
         biomeLibraryRoot,
+        settingsRoot,
     };
 }
 
@@ -4457,6 +4473,196 @@ describe('App — round 111: applyDebounceSettings (SettingsPanel debounce windo
     });
 });
 
+// ---------------------------------------------------------------
+// Round 126 — `applyDifficultySettings(d)`
+// App-level test suite. The
+// SettingsPanel `onDifficultyChange`
+// hook forwards to this method; the
+// tests pin the contract that:
+//   - `currentDifficulty` field mirrors
+//     the new value
+//   - `BalanceTuner.targetWinRate`
+//     updates via `setTargetWinRate`
+//     to the tier-specific rate
+//     (easy=0.75, normal=0.60, hard=0.40)
+//   - The 3 Difficulty union values
+//     ('easy' | 'normal' | 'hard') all
+//     are accepted
+//   - The Chinese HUD log line confirms
+//     the change is live
+// ---------------------------------------------------------------
+
+describe('App — round 126: applyDifficultySettings (SettingsPanel 难度 tier 切换)', () => {
+    function cast<T>(v: unknown): T { return v as T; }
+
+    test('applyDifficultySettings_updates_currentDifficulty_field (round 126)', () => {
+        // The SettingsPanel's `getCurrentDifficulty`
+        // hook reads this field for the
+        // `is-active` highlight. A regression
+        // that forgets to update the field
+        // would make the panel show the wrong
+        // active button after a click.
+        const app = makeApp();
+        expect(cast<{ currentDifficulty: string }>(app).currentDifficulty).toBe('normal');
+        app.applyDifficultySettings('easy');
+        expect(cast<{ currentDifficulty: string }>(app).currentDifficulty).toBe('easy');
+        app.applyDifficultySettings('hard');
+        expect(cast<{ currentDifficulty: string }>(app).currentDifficulty).toBe('hard');
+        app.applyDifficultySettings('normal');
+        expect(cast<{ currentDifficulty: string }>(app).currentDifficulty).toBe('normal');
+    });
+
+    test('applyDifficultySettings_updates_BalanceTuner_targetWinRate (round 126)', () => {
+        // The 3 tiers map to specific
+        // targetWinRate values via
+        // `BalanceTuner.setTargetWinRate`.
+        // easy=0.75 (forgiving), normal=0.60
+        // (default), hard=0.40 (punishing).
+        // The AIEngine.tuner is `public` so
+        // we can read the targetWinRate
+        // directly via the
+        // private-field-cast pattern.
+        const app = makeApp();
+        const tuner = (app as unknown as {
+            ai: { tuner: { targetWinRate: number } };
+        }).ai.tuner;
+        // Initial state — `BalanceTuner`
+        // constructor sets targetWinRate=0.60
+        // (the "normal" default).
+        expect(tuner.targetWinRate).toBe(0.60);
+        app.applyDifficultySettings('easy');
+        expect(tuner.targetWinRate).toBeCloseTo(0.75);
+        app.applyDifficultySettings('hard');
+        expect(tuner.targetWinRate).toBeCloseTo(0.40);
+        app.applyDifficultySettings('normal');
+        expect(tuner.targetWinRate).toBeCloseTo(0.60);
+    });
+
+    test('applyDifficultySettings_logs_chinese_change_message (round 126)', () => {
+        // The SettingsPanel re-renders with
+        // the new `is-active` button, but
+        // the HUD confirms the AI bias
+        // change so the player can verify
+        // the tier switch took effect.
+        const app = makeApp();
+        const logSpy = jest
+            .spyOn((app as unknown as { hud: { log: (s: string) => void } }).hud, 'log')
+            .mockImplementation(() => undefined);
+        app.applyDifficultySettings('easy');
+        const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(lines).toMatch(/\[settings\] 难度已切换为 简单.*BalanceTuner 目标胜率 0\.75/);
+        app.applyDifficultySettings('hard');
+        const lines2 = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(lines2).toMatch(/\[settings\] 难度已切换为 困难.*BalanceTuner 目标胜率 0\.40/);
+        app.applyDifficultySettings('normal');
+        const lines3 = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(lines3).toMatch(/\[settings\] 难度已切换为 普通.*BalanceTuner 目标胜率 0\.60/);
+    });
+
+    test('applyDifficultySettings_clamps_invalid_targetWinRate (round 126 defensive)', () => {
+        // Defense: a regression that
+        // removes the `.setTargetWinRate`
+        // clamping (or changes the tier
+        // mapping to an out-of-range
+        // value like 1.5 or -0.5) would
+        // silently break
+        // `suggestDifficulty`. Pin the
+        // 3-tier mapping at runtime.
+        const app = makeApp();
+        const tuner = (app as unknown as {
+            ai: { tuner: { targetWinRate: number } };
+        }).ai.tuner;
+        for (const d of ['easy', 'normal', 'hard'] as const) {
+            app.applyDifficultySettings(d);
+            // All 3 mapped values must be
+            // in (0, 1] — never 0 (would
+            // divide-by-zero in
+            // suggestDifficulty) and
+            // never > 1 (mathematically
+            // invalid as a rate).
+            expect(tuner.targetWinRate).toBeGreaterThan(0);
+            expect(tuner.targetWinRate).toBeLessThanOrEqual(1);
+        }
+    });
+
+    test('App_wires_difficulty_hooks_to_SettingsPanel_construction (round 126)', () => {
+        // The SettingsPanel renders the
+        // difficulty row ONLY when the
+        // App provides BOTH hooks
+        // (`onDifficultyChange` +
+        // `getCurrentDifficulty`). A
+        // regression that drops either
+        // hook (e.g. moving the panel
+        // construction to a different
+        // site and forgetting the
+        // `onDifficultyChange` arg)
+        // would silently hide the row.
+        // We verify by constructing the
+        // App + checking the panel's
+        // HTML contains 3 `.set-diff`
+        // buttons.
+        const app = makeApp();
+        const settingsRoot = (app as unknown as {
+            settingsPanel: { root: HTMLElement };
+        }).settingsPanel.root;
+        const diffBtns = settingsRoot.querySelectorAll<HTMLButtonElement>('.set-diff');
+        // 3 difficulty buttons (easy / normal / hard) — the row was
+        // hidden before round 126 because the App didn't provide
+        // the 2 hooks; round 126 wires them so the row appears.
+        expect(diffBtns.length).toBe(3);
+        // Verify the 3 data-diff values
+        // match the Difficulty union
+        // ('easy' | 'normal' | 'hard').
+        const diffs = Array.from(diffBtns).map(b => b.getAttribute('data-diff'));
+        expect(diffs).toEqual(['easy', 'normal', 'hard']);
+    });
+
+    test('App_applyDifficultySettings_round_trip_via_settings_panel (round 126 e2e)', () => {
+        // E2E: click the "hard" button in
+        // the SettingsPanel → the App's
+        // `currentDifficulty` field +
+        // `BalanceTuner.targetWinRate`
+        // both reflect the change. This
+        // exercises the full
+        // panel → hook → App pipeline.
+        const app = makeApp();
+        const settingsPanel = (app as unknown as {
+            settingsPanel: { root: HTMLElement };
+        }).settingsPanel;
+        const hardBtn = settingsPanel.root.querySelector<HTMLButtonElement>('[data-diff="hard"]')!;
+        hardBtn.click();
+        // App's currentDifficulty is
+        // 'hard'.
+        const appCast = app as unknown as {
+            currentDifficulty: string;
+            ai: { tuner: { targetWinRate: number } };
+        };
+        expect(appCast.currentDifficulty).toBe('hard');
+        expect(appCast.ai.tuner.targetWinRate).toBeCloseTo(0.40);
+        // The panel re-rendered — the
+        // 'hard' button now has the
+        // `is-active` class.
+        const activeDiffs = settingsPanel.root.querySelectorAll<HTMLButtonElement>('.set-diff.is-active');
+        expect(activeDiffs.length).toBe(1);
+        expect(activeDiffs[0].getAttribute('data-diff')).toBe('hard');
+    });
+
+    test('main_ts_passes_difficulty_hooks_in_SettingsPanel_construction (round 126 file-content)', () => {
+        // File-content regression: a refactor
+        // that reorders or renames the
+        // SettingsPanel construction args
+        // would silently drop the 2
+        // difficulty hooks. Pin the
+        // exact text in main.ts.
+        const src = require('fs').readFileSync(
+            require('path').resolve(__dirname, 'main.ts'),
+            'utf8',
+        );
+        expect(src).toMatch(/onDifficultyChange:\s*\(d\)\s*=>\s*this\.applyDifficultySettings\(d\)/);
+        expect(src).toMatch(/getCurrentDifficulty:\s*\(\)\s*=>\s*this\.currentDifficulty/);
+    });
+});
+
 // ---------------------------------------------------------------------------
 // Round 112 — P key shortcut to toggle the
 // round-111 SettingsPanel overlay (操控性好).
@@ -4578,6 +4784,17 @@ describe('App — round 112: P key + button toggle for round-111 SettingsPanel (
         // Calling again should re-add
         // it (close the panel). The
         // toggle is idempotent.
+        // Round 126 — `makeApp()` now
+        // also appends a `settings-root`
+        // (so the SettingsPanel is wired
+        // with the difficulty hooks).
+        // Remove any pre-existing
+        // settings-root from the body
+        // before appending our own
+        // (otherwise `getElementById`
+        // returns the first one, which
+        // doesn't have `hidden`).
+        document.querySelectorAll('#settings-root').forEach(el => el.remove());
         document.body.innerHTML += '<div id="settings-root" hidden></div>';
         const root = document.getElementById('settings-root')!;
         expect(root.hasAttribute('hidden')).toBe(true);
