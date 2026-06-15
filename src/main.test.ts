@@ -3592,6 +3592,120 @@ describe('App — round 104: loadGame time-based debounce', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Round 106 — `saveGame` time-based debounce (操控性好 UX
+// improvement, follow-up to round-104 loadGame debounce).
+//
+// The round-104 `lastLoadAt` pattern was applied to
+// `saveGame` (line 1283) for symmetry. A rapid double-tap
+// on `#btn-save` (line 2030) or the S keyboard shortcut
+// (line 2087) would otherwise double-call:
+//   1. `analytics.track('save.persisted', { ok })` —
+//      corrupting the round-50 telemetry gate's per-
+//      dimension save count (one extra `save.persisted`
+//      event per accidental double-click).
+//   2. `tutorial?.notify('save-persisted')` — showing
+//      the "已保存" tutorial notification twice in a
+//      row, a visible "the save fired twice" UX hiccup.
+// The 500ms window is identical to the round-104
+// `LOAD_DEBOUNCE_MS` (same human-double-click +
+// round-50 telemetry tuning). A future round-107+ could
+// consolidate both constants into a single
+// `ActionDebouncer` helper if more debounced actions
+// are added.
+//
+// The three contracts pinned here are:
+//   1. Two rapid `saveGame` calls within 500ms → the
+//      second short-circuits BEFORE `save.persist` is
+//      called (call count === 1).
+//   2. Two `saveGame` calls with `Date.now()` advanced
+//      past 500ms between them → BOTH reach `save.persist`
+//      (call count === 2). The debounce is time-based,
+//      not a one-shot latch.
+//   3. The short-circuited second call emits a Chinese-
+//      localized log line `[orchestrator] 距上次 saveGame
+//      仅 Xms < 500ms 窗口，跳过本次调用 (round 106 防御)`
+//      so the player can see WHY their second S-tap was
+//      ignored (vs. the keyboard breaking).
+// ---------------------------------------------------------------------------
+
+describe('App — round 106: saveGame time-based debounce', () => {
+    test('saveGame_called_twice_within_500ms_short_circuits_second', () => {
+        // The headline contract: the second call
+        // within the debounce window short-
+        // circuits BEFORE `save.persist` is
+        // reached. A regression that drops the
+        // debounce check (or moves it after
+        // `save.persist`) would silently re-
+        // introduce the double-analytics-tracking
+        // and double-tutorial-notify concerns.
+        const app = makeApp();
+        const persistSpy = jest
+            .spyOn((app as unknown as { save: { persist: () => boolean } }).save, 'persist')
+            .mockImplementation(() => true);
+        (app as unknown as { saveGame: () => void }).saveGame();
+        (app as unknown as { saveGame: () => void }).saveGame();
+        // First call runs the body (persist
+        // called once). Second call short-
+        // circuits (persist NOT called again).
+        expect(persistSpy.mock.calls.length).toBe(1);
+    });
+
+    test('saveGame_called_twice_after_500ms_runs_both (debounce is time-based, not one-shot)', () => {
+        // The debounce is time-based, not a
+        // one-shot latch. Once the window
+        // passes, the user can save again. A
+        // regression that turned the debounce
+        // into a permanent "already saved" flag
+        // would silently break legitimate
+        // save-after-save workflows.
+        const app = makeApp();
+        const persistSpy = jest
+            .spyOn((app as unknown as { save: { persist: () => boolean } }).save, 'persist')
+            .mockImplementation(() => true);
+        (app as unknown as { saveGame: () => void }).saveGame();
+        // Advance `Date.now()` past the 500ms
+        // debounce window so the second call
+        // runs.
+        const future = Date.now() + (app as unknown as { SAVE_DEBOUNCE_MS: number }).SAVE_DEBOUNCE_MS + 100;
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(future);
+        (app as unknown as { saveGame: () => void }).saveGame();
+        nowSpy.mockRestore();
+        // Both calls reached persist.
+        expect(persistSpy.mock.calls.length).toBe(2);
+    });
+
+    test('saveGame_within_500ms_logs_chinese_skip_message (round 106)', () => {
+        // The short-circuited second call emits
+        // a Chinese-localized log line so the
+        // player can see WHY their second S-tap
+        // was ignored. The `[orchestrator]`
+        // prefix disambiguates from other
+        // saveGame log lines (e.g. `[存档]` for
+        // the actual persist outcome).
+        const app = makeApp();
+        const logSpy = jest
+            .spyOn((app as unknown as { hud: { log: (s: string) => void } }).hud, 'log')
+            .mockImplementation(() => undefined);
+        jest.spyOn((app as unknown as { save: { persist: () => boolean } }).save, 'persist').mockImplementation(() => true);
+        (app as unknown as { saveGame: () => void }).saveGame();
+        (app as unknown as { saveGame: () => void }).saveGame();
+        const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        // The log line uses the
+        // `[orchestrator]` prefix and includes
+        // both the elapsed-ms number AND the
+        // 500ms window threshold so the player
+        // sees the concrete reason (not just a
+        // "skipped" flag).
+        expect(lines).toMatch(
+            new RegExp(
+                `\\[orchestrator\\] 距上次 saveGame 仅 \\d+ms`
+                + ` < ${500}ms 窗口.*round 106 防御`,
+            ),
+        );
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Round 100 — `enterNewDimension` WASM-success path positive
 // assertion (auto-generated logic).
 //
