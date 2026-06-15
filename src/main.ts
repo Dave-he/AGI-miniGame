@@ -75,6 +75,14 @@ import { renderNpcMindPanel, NpcMindPanelHandle } from './ui/NpcMindPanel';
 // and wires it into the App
 // constructor.
 import { renderAchievementsPanel, AchievementsPanelHandle } from './ui/AchievementsPanel';
+// Round 119 — BiomeLibraryPanel
+// module. The mount point +
+// B key + App.toggleBiomeLibrary
+// are added in round-119. The
+// panel shows the 6 biomes from
+// `WfcBiomes.BIOMES` with the
+// current biome highlighted.
+import { renderBiomeLibraryPanel, BiomeLibraryPanelHandle } from './ui/BiomeLibraryPanel';
 // Round 48 — `themeToScene` itself is no longer called from main.ts;
 // the WASM bridge below wraps it. The `ThemeInput` type alias is
 // still needed to type the input to the bridge.
@@ -116,6 +124,20 @@ interface AppRefs {
      * toggle group entry only).
      */
     achievementsRoot?: HTMLElement;
+    /**
+     * Round 119 — optional root
+     * for the biome library
+     * panel (6 biomes from
+     * `WfcBiomes.BIOMES`). The
+     * panel is constructed only
+     * if the host page provides
+     * a DOM node with
+     * `id="biome-library-root"`.
+     * The B key shortcut is the
+     * primary way to open the
+     * panel.
+     */
+    biomeLibraryRoot?: HTMLElement;
     /**
      * Round 111 — optional root for the
      * SettingsPanel (audio / difficulty /
@@ -252,6 +274,25 @@ class App {
      * the snapshot).
      */
     private achievementsHandle: AchievementsPanelHandle | null = null;
+    /**
+     * Round 119 — biome
+     * library panel handle.
+     * The handle's
+     * `refresh()` re-renders
+     * the
+     * `<div id="biome-library-root">`
+     * from the current
+     * `worldState.lastBiome`.
+     * Wired in the constructor
+     * (after the B key toggle /
+     * mount point are added in
+     * round-119) so the panel
+     * shows the current biome
+     * badge whenever the
+     * player enters a new
+     * dimension.
+     */
+    private biomeLibraryHandle: BiomeLibraryPanelHandle | null = null;
     /** Monotonic turn counter for NpcMemoryEntry.turn. */
     private npcTurn = 0;
     /**
@@ -703,6 +744,34 @@ class App {
             this.achievementsHandle = renderAchievementsPanel(
                 refs.achievementsRoot,
                 this.worldState.player,
+                this.i18n,
+            );
+        }
+        // Round 119 — wire the
+        // BiomeLibraryPanel. The
+        // mount point + B key +
+        // App.toggleBiomeLibrary
+        // are added in round-119;
+        // round-119 also ships the
+        // `renderBiomeLibraryPanel`
+        // function (sourcing
+        // from
+        // `WfcBiomes.BIOMES` +
+        // `worldState.lastBiome`)
+        // and wires it into the
+        // App constructor. No
+        // `setInterval` refresh
+        // — the `lastBiome`
+        // only changes on
+        // `enterNewDimension`
+        // calls, so the host can
+        // call
+        // `this.biomeLibraryHandle?.refresh()`
+        // explicitly when needed.
+        if (refs.biomeLibraryRoot) {
+            this.biomeLibraryHandle = renderBiomeLibraryPanel(
+                refs.biomeLibraryRoot,
+                this.worldState.lastBiome,
                 this.i18n,
             );
         }
@@ -1501,6 +1570,32 @@ class App {
      * Round 117 — body folded into `togglePanel` helper.
      */
     toggleAchievements(): void { this.togglePanel('achievements-root', '成就面板', 'V'); }
+
+    /**
+     * Round 119 — toggle the
+     * biome library panel.
+     * The biome library panel
+     * is the round-23
+     * per-biome gallery
+     * (`<div id="biome-library-root">`)
+     * showing the 6 biomes
+     * from `WfcBiomes.BIOMES`
+     * (cyberpunk / forest /
+     * desert / ice / space /
+     * dungeon) with the
+     * current biome
+     * (`worldState.lastBiome`)
+     * highlighted. The B key
+     * shortcut is the primary
+     * way to open the panel.
+     *
+     * Round 119 — body folded
+     * into `togglePanel` helper
+     * (the round-117 refactor
+     * makes the 8th toggle
+     * method a 1-line change).
+     */
+    toggleBiomeLibrary(): void { this.togglePanel('biome-library-root', '生物群系图鉴', 'B'); }
 
     /**
      * Round 117 — shared panel-toggle
@@ -2559,6 +2654,7 @@ async function bootstrap(): Promise<void> {
     const vaultRoot = document.getElementById('vault-root') as HTMLElement | null;
     const npcMindRoot = document.getElementById('npc-mind-root') as HTMLElement | null;
     const achievementsRoot = document.getElementById('achievements-root') as HTMLElement | null;
+    const biomeLibraryRoot = document.getElementById('biome-library-root') as HTMLElement | null;
     if (!canvas || !hudRoot || !progRoot || !econRoot || !epochRoot) {
         console.error('Missing required DOM roots');
         return;
@@ -2576,6 +2672,7 @@ async function bootstrap(): Promise<void> {
         vaultRoot: vaultRoot ?? undefined,
         npcMindRoot: npcMindRoot ?? undefined,
         achievementsRoot: achievementsRoot ?? undefined,
+        biomeLibraryRoot: biomeLibraryRoot ?? undefined,
     });
     (window as any).__AGI__ = app;
     await app.start();
@@ -2632,6 +2729,11 @@ async function bootstrap(): Promise<void> {
     bind('btn-vault',         () => app.toggleVault());
     bind('btn-npc-mind',      () => app.toggleNpcMind());
     bind('btn-achievements',  () => app.toggleAchievements());
+    // Round 119 — B key mouse
+    // counterpart. Opens /
+    // closes the
+    // `BiomeLibraryPanel`.
+    bind('btn-biome-library', () => app.toggleBiomeLibrary());
     bind('btn-complete',  () => app.completeRun(2500, [
         { itemId: 'gold', quantity: 100 },
         { itemId: 'gem',  quantity: 5 },
@@ -2810,6 +2912,26 @@ async function bootstrap(): Promise<void> {
             // attribute, so the toggle
             // is idempotent.
             case 'toggle-achievements': app.toggleAchievements(); break;
+            // Round 119 — B key for
+            // the biome library
+            // panel. The panel
+            // content is rendered
+            // into
+            // `<div id="biome-library-root">`
+            // during construction.
+            // The shortcut calls
+            // the same
+            // `toggleBiomeLibrary()`
+            // method that the
+            // round-119 mouse entry
+            // point
+            // (`btn-biome-library`)
+            // dispatches; the
+            // method flips the
+            // `hidden` attribute,
+            // so the toggle is
+            // idempotent.
+            case 'toggle-biome-library': app.toggleBiomeLibrary(); break;
         }
         // Only swallow the event when we actually handled it so
         // tab navigation, Esc-into-fullscreen-exit etc. still

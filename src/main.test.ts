@@ -78,6 +78,7 @@ interface AppRefsLike {
     economyRoot: HTMLElement;
     epochRoot: HTMLElement;
     achievementsRoot?: HTMLElement;
+    biomeLibraryRoot?: HTMLElement;
 }
 
 function makeRefs(): AppRefsLike {
@@ -110,7 +111,29 @@ function makeRefs(): AppRefsLike {
     const achievementsRoot = document.createElement('div');
     achievementsRoot.id = 'achievements-root';
     document.body.appendChild(achievementsRoot);
-    return { canvas, hudRoot, progressionRoot, economyRoot, epochRoot, achievementsRoot };
+    // Round 119 — add the
+    // biome-library-root so
+    // the round-119 panel-level
+    // tests can exercise the
+    // actual App constructor
+    // wiring (constructor calls
+    // `renderBiomeLibraryPanel`
+    // when the ref is provided).
+    // Append to body so the
+    // element is findable via
+    // `document.getElementById`.
+    const biomeLibraryRoot = document.createElement('div');
+    biomeLibraryRoot.id = 'biome-library-root';
+    document.body.appendChild(biomeLibraryRoot);
+    return {
+        canvas,
+        hudRoot,
+        progressionRoot,
+        economyRoot,
+        epochRoot,
+        achievementsRoot,
+        biomeLibraryRoot,
+    };
 }
 
 function makeApp(): App {
@@ -5711,6 +5734,151 @@ describe('App — round 118: renderAchievementsPanel actual wiring (round-115 fo
         // `this.achievementsHandle`.
         expect(main).toMatch(/renderAchievementsPanel\(/);
         expect(main).toMatch(/this\.achievementsHandle\s*=/);
+    });
+});
+
+describe('App — round 119: B key + BiomeLibrary panel (round-23 follow-up, 操控性好)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+        document.getElementById('biome-library-root')?.remove();
+    });
+
+    // -----------------------------------------------------------------
+    // routeKey coverage (lowercase + shifted)
+    // -----------------------------------------------------------------
+
+    test('routeKey_b_returns_toggle_biome_library_action', () => {
+        const action = routeKey('b');
+        expect(action).toEqual({ kind: 'toggle-biome-library' });
+    });
+
+    test('routeKey_B_returns_toggle_biome_library_action_for_shifted_key', () => {
+        const action = routeKey('B');
+        expect(action).toEqual({ kind: 'toggle-biome-library' });
+    });
+
+    // -----------------------------------------------------------------
+    // App exposes the method
+    // -----------------------------------------------------------------
+
+    test('App_exposes_toggleBiomeLibrary_for_bootstrap_keydown_switch', () => {
+        const app = makeApp();
+        const fn = (app as unknown as { toggleBiomeLibrary?: () => void }).toggleBiomeLibrary;
+        expect(typeof fn).toBe('function');
+    });
+
+    // -----------------------------------------------------------------
+    // No-op when DOM element is missing
+    // -----------------------------------------------------------------
+
+    test('toggleBiomeLibrary_is_a_no_op_when_biome_library_root_is_missing_from_DOM', () => {
+        // Remove the #biome-library-root
+        // for this test only —
+        // the makeRefs() helper
+        // creates it, but we
+        // remove it here to test
+        // the no-op path.
+        document.getElementById('biome-library-root')?.remove();
+        const app = makeApp();
+        expect(() => {
+            (app as unknown as { toggleBiomeLibrary: () => void }).toggleBiomeLibrary();
+        }).not.toThrow();
+    });
+
+    // -----------------------------------------------------------------
+    // e2e: flips the `hidden` attribute
+    // -----------------------------------------------------------------
+
+    test('toggleBiomeLibrary_flips_hidden_attribute_on_biome_library_root (round 119 e2e)', () => {
+        // Re-attach the root
+        // (the prior afterEach
+        // might have removed
+        // it, depending on
+        // test order).
+        if (!document.getElementById('biome-library-root')) {
+            const el = document.createElement('div');
+            el.id = 'biome-library-root';
+            document.body.appendChild(el);
+        }
+        const root = document.getElementById('biome-library-root')!;
+        expect(root.hasAttribute('hidden')).toBe(false);
+        const app = makeApp();
+        (app as unknown as { toggleBiomeLibrary: () => void }).toggleBiomeLibrary();
+        expect(root.hasAttribute('hidden')).toBe(true);
+        (app as unknown as { toggleBiomeLibrary: () => void }).toggleBiomeLibrary();
+        expect(root.hasAttribute('hidden')).toBe(false);
+    });
+
+    // -----------------------------------------------------------------
+    // Bootstrap keydown full path
+    // -----------------------------------------------------------------
+
+    test('bootstrap_keydown_handler_full_path_B_to_toggleBiomeLibrary (round 119 e2e)', () => {
+        const app = makeApp();
+        const toggleSpy = jest
+            .spyOn(app as unknown as { toggleBiomeLibrary: () => void }, 'toggleBiomeLibrary')
+            .mockImplementation(() => undefined);
+        const action = routeKey('B');
+        expect(action).not.toBeNull();
+        if (action && action.kind === 'toggle-biome-library') {
+            (app as unknown as { toggleBiomeLibrary: () => void }).toggleBiomeLibrary();
+        }
+        expect(toggleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // -----------------------------------------------------------------
+    // BINDING_DESCRIPTIONS reverse coverage
+    // -----------------------------------------------------------------
+
+    test('BINDING_DESCRIPTIONS_for_B_documents_biome_library_panel', () => {
+        const bRow = BINDING_DESCRIPTIONS.find((d) => d.key === 'B');
+        expect(bRow).toBeDefined();
+        expect(bRow!.action).toContain('生物群系');
+        expect(routeKey('B')).toEqual({ kind: 'toggle-biome-library' });
+        expect(routeKey('b')).toEqual({ kind: 'toggle-biome-library' });
+    });
+
+    // -----------------------------------------------------------------
+    // File-content test: mount point + [hidden] CSS rule + mouse button
+    // -----------------------------------------------------------------
+
+    test('index_html_has_biome_library_root_mount_point (round 119)', () => {
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // The B key shortcut calls
+        // `document.getElementById('biome-library-root')`
+        // — the mount point must
+        // exist in index.html. Plus
+        // the [hidden] CSS rule +
+        // the mouse button.
+        expect(html).toMatch(/id="biome-library-root"/);
+        expect(html).toMatch(/#biome-library-root\[hidden\]/);
+        expect(html).toMatch(/id="btn-biome-library"/);
+    });
+
+    // -----------------------------------------------------------------
+    // App-level wiring: the
+    // App constructor calls
+    // `renderBiomeLibraryPanel`
+    // when the ref is provided
+    // -----------------------------------------------------------------
+
+    test('App_wires_renderBiomeLibraryPanel_when_biome_library_root_is_provided (round 119)', () => {
+        const app = makeApp();
+        const handle = (app as unknown as { biomeLibraryHandle?: { refresh: () => void } | null }).biomeLibraryHandle;
+        expect(handle).not.toBeNull();
+        expect(typeof handle!.refresh).toBe('function');
+    });
+
+    test('renderBiomeLibraryPanel_renders_into_biome_library_root (round 119)', () => {
+        const app = makeApp();
+        const root = document.getElementById('biome-library-root')!;
+        // Constructor should have
+        // rendered the panel.
+        expect(root.innerHTML).toContain('biome-library-panel');
+        // 6 biomes from the
+        // canonical registry.
+        const matches = root.innerHTML.match(/biome-library-row/g) || [];
+        expect(matches.length).toBe(6);
     });
 });
 

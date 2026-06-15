@@ -70,6 +70,14 @@
          hides the panel for
          screenshot / focus mode. */
       #achievements-root[hidden] { display: none; }
+      /* Round 119 — biome library
+         root: same pattern as the
+         round-112/113/114/115
+         [hidden] rules above. B
+         shortcut hides the panel
+         for screenshot / focus
+         mode. */
+      #biome-library-root[hidden] { display: none; }
       .settings-panel {
         background: rgba(11, 11, 34, 0.92);
         border: 1px solid var(--neon-cyan, #4ecdc4);
@@ -447,6 +455,19 @@
          wiring into the App constructor is
          part of the round-22 follow-up). -->
     <div class="panel" id="achievements-root"></div>
+    <!-- Round 119 — biome-library-root:
+         home for the round-23 biome
+         gallery (6 biomes from
+         `WfcBiomes.BIOMES`). The B key
+         toggles the `hidden` attribute
+         via App.toggleBiomeLibrary(). The
+         panel content is rendered by
+         `renderBiomeLibraryPanel` (round
+         119 ships the actual wiring into
+         the App constructor + the
+         keyboard shortcut + the mouse
+         button). -->
+    <div class="panel" id="biome-library-root"></div>
     <!-- Round 112 — settings-root: home for the
          round-111 SettingsPanel (audio mute, locale,
          debounce-window knob). Hidden by default; the
@@ -497,6 +518,12 @@
       <button class="ctl toggle-btn" id="btn-vault" data-key="F">📚 档案库 (F)</button>
       <button class="ctl toggle-btn" id="btn-npc-mind" data-key="M">🧠 NPC 心智 (M)</button>
       <button class="ctl toggle-btn" id="btn-achievements" data-key="V">🏅 成就 (V)</button>
+      <!-- Round 119 — biome library
+           mouse button. Mirror of the
+           B key shortcut. Opens the
+           round-23 BiomeLibraryPanel
+           showing the 6 biomes. -->
+      <button class="ctl toggle-btn" id="btn-biome-library" data-key="B">🌍 生物群系 (B)</button>
       <button class="ctl" id="btn-complete">完成试炼</button>
       <button class="ctl" id="btn-save">存档</button>
       <button class="ctl" id="btn-load">读档</button>

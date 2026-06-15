@@ -35,6 +35,7 @@
  *   F       — toggle vault panel (round 114)
  *   M       — toggle NPC mind panel (round 114)
  *   V       — toggle achievements panel (round 115)
+ *   B       — toggle biome library panel (round 119)
  *
  * Anything else is ignored (returns `null`). The mapping is locked
  * by the index.html help overlay and the 8-portal palette in
@@ -57,7 +58,8 @@ export type KeyboardAction =
     | { kind: 'toggle-vault' }
     | { kind: 'toggle-npc-mind' }
     | { kind: 'toggle-tutorial' }
-    | { kind: 'toggle-achievements' };
+    | { kind: 'toggle-achievements' }
+    | { kind: 'toggle-biome-library' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -206,6 +208,20 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // (lowercase + shifted both
     // route to the same action).
     { key: 'V',    action: '切换成就面板' },
+    // Round 119 — the B key toggles
+    // the biome library panel
+    // (`#biome-library-root`).
+    // The panel shows the 6
+    // biomes (cyberpunk / forest
+    // / desert / ice / space /
+    // dungeon) from
+    // `WfcBiomes.BIOMES` with
+    // the current biome
+    // highlighted. The B key
+    // extends the 7-key
+    // round-112-115 panel-
+    // toggle group to 8 keys.
+    { key: 'B',    action: '切换生物群系图鉴' },
 ];
 
 /**
@@ -338,6 +354,14 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'v':
         case 'V':
             return { kind: 'toggle-achievements' };
+        // Round 119 — B key toggles
+        // the biome library panel.
+        // Same case-insensitive
+        // mirror convention as
+        // V above.
+        case 'b':
+        case 'B':
+            return { kind: 'toggle-biome-library' };
         default:
             return null;
     }
