@@ -3706,6 +3706,131 @@ describe('App — round 106: saveGame time-based debounce', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Round 107 — `rollWorldEvent` time-based debounce (操控性好 UX
+// improvement, follow-up to round-104 loadGame + round-106
+// saveGame debounces).
+//
+// The round-104 + round-106 `lastXAt` patterns were applied
+// to `rollWorldEvent` (line 1204) for symmetry. A rapid
+// double-tap on `#btn-event` (line 2082) or the E keyboard
+// shortcut (line 2155) would otherwise double-call:
+//   1. `setTimeout(clearNpcDialogue, 4000)` at line 1213 —
+//      the second clearNpcDialogue would clear a DIFFERENT
+//      NPC's line that the first roll hadn't yet cleared,
+//      a visible "two NPCs talking at once" UX bug. The
+//      4000ms dialogue timer is LONGER than the 500ms
+//      debounce window, so the second call's setTimeout
+//      would fire mid-first-dialogue.
+//   2. `setNpcDialogue(idx, evt.npcLine)` — the second
+//      dialogue would overwrite the first, but the first's
+//      clear timer is still pending. When the first's
+//      clear fires, it would clear the second NPC's line
+//      (a different idx).
+// The 500ms window is identical to the round-104 +
+// round-106 windows (same human-double-click tuning).
+// 3 debounced actions now share the same 500ms window —
+// a future round-108+ could consolidate into a single
+// `ActionDebouncer` helper.
+//
+// The three contracts pinned here are:
+//   1. Two rapid `rollWorldEvent` calls within 500ms → the
+//      second short-circuits BEFORE `ai.worldAI.rollEvent`
+//      is called (call count === 1).
+//   2. Two `rollWorldEvent` calls with `Date.now()` advanced
+//      past 500ms between them → BOTH reach
+//      `ai.worldAI.rollEvent` (call count === 2). The
+//      debounce is time-based, not a one-shot latch.
+//   3. The short-circuited second call emits a Chinese-
+//      localized log line `[orchestrator] 距上次
+//      rollWorldEvent 仅 Xms < 500ms 窗口，跳过本次调用
+//      (round 107 防御)` so the player can see WHY their
+//      second E-tap was ignored (vs. the keyboard breaking).
+// ---------------------------------------------------------------------------
+
+describe('App — round 107: rollWorldEvent time-based debounce', () => {
+    test('rollWorldEvent_called_twice_within_500ms_short_circuits_second', () => {
+        // The headline contract: the second call
+        // within the debounce window short-
+        // circuits BEFORE `ai.worldAI.rollEvent`
+        // is reached. A regression that drops
+        // the debounce check (or moves it after
+        // the rollEvent call) would silently re-
+        // introduce the double-setTimeout and
+        // two-NPCs-talking-at-once UX bug.
+        const app = makeApp();
+        // `worldAI` is a public property on
+        // AIEngine (not a getter), so we stub
+        // `rollEvent` directly with jest.spyOn.
+        const rollSpy = jest
+            .spyOn(
+                (app as unknown as { ai: { worldAI: { rollEvent: (lvl: number, seed: number) => unknown } } }).ai.worldAI,
+                'rollEvent',
+            )
+            .mockReturnValue(null);
+        (app as unknown as { rollWorldEvent: () => void }).rollWorldEvent();
+        (app as unknown as { rollWorldEvent: () => void }).rollWorldEvent();
+        // First call reaches rollEvent (returns
+        // null, so no setTimeout is scheduled
+        // — but the call count is what we're
+        // asserting on). Second call short-
+        // circuits (rollEvent NOT called again).
+        expect(rollSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('rollWorldEvent_called_twice_after_500ms_runs_both (debounce is time-based, not one-shot)', () => {
+        // The debounce is time-based, not a
+        // one-shot latch. Once the window
+        // passes, the user can roll again.
+        const app = makeApp();
+        const rollSpy = jest
+            .spyOn(
+                (app as unknown as { ai: { worldAI: { rollEvent: (lvl: number, seed: number) => unknown } } }).ai.worldAI,
+                'rollEvent',
+            )
+            .mockReturnValue(null);
+        (app as unknown as { rollWorldEvent: () => void }).rollWorldEvent();
+        // Advance `Date.now()` past the 500ms
+        // debounce window so the second call
+        // runs.
+        const future = Date.now() + (app as unknown as { EVENT_DEBOUNCE_MS: number }).EVENT_DEBOUNCE_MS + 100;
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(future);
+        (app as unknown as { rollWorldEvent: () => void }).rollWorldEvent();
+        nowSpy.mockRestore();
+        // Both calls reached rollEvent.
+        expect(rollSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('rollWorldEvent_within_500ms_logs_chinese_skip_message (round 107)', () => {
+        // The short-circuited second call emits
+        // a Chinese-localized log line so the
+        // player can see WHY their second E-tap
+        // was ignored. The `[orchestrator]`
+        // prefix disambiguates from other
+        // rollWorldEvent log lines (e.g.
+        // `[世界]` for the event name).
+        const app = makeApp();
+        const logSpy = jest
+            .spyOn((app as unknown as { hud: { log: (s: string) => void } }).hud, 'log')
+            .mockImplementation(() => undefined);
+        jest
+            .spyOn(
+                (app as unknown as { ai: { worldAI: { rollEvent: (lvl: number, seed: number) => unknown } } }).ai.worldAI,
+                'rollEvent',
+            )
+            .mockReturnValue(null);
+        (app as unknown as { rollWorldEvent: () => void }).rollWorldEvent();
+        (app as unknown as { rollWorldEvent: () => void }).rollWorldEvent();
+        const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(lines).toMatch(
+            new RegExp(
+                `\\[orchestrator\\] 距上次 rollWorldEvent 仅 \\d+ms`
+                + ` < ${500}ms 窗口.*round 107 防御`,
+            ),
+        );
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Round 100 — `enterNewDimension` WASM-success path positive
 // assertion (auto-generated logic).
 //
