@@ -984,23 +984,32 @@ describe('HUD — round 87 setLastBiomeAccent & dim-panel left-border', () => {
     test('dim_panel_renders_with_left_border_when_accent_set', () => {
         // The forest biome uses #88ccff as its
         // particleColor; the dim panel's inline
-        // `style` attribute must carry the matching
-        // `border-left: 4px solid #88ccff` rule.
+        // `style` attribute must set the
+        // `--biome-accent` CSS custom property to
+        // that value. The `border-left` rule itself
+        // lives in the stylesheet (round 88), not
+        // in the inline style.
         const { hud, root } = mountHud();
         hud.setLastBiomeAccent('#88ccff');
         const dimPanel = root.querySelector('.hud-panel.hud-dim')!;
         expect(dimPanel).not.toBeNull();
         const style = dimPanel.getAttribute('style') ?? '';
-        expect(style).toContain('border-left');
-        expect(style).toContain('4px');
-        expect(style).toContain('solid');
+        expect(style).toContain('--biome-accent');
         expect(style).toContain('#88ccff');
+        // Round 88: the inline style no longer
+        // carries the `border-left` rule — that's
+        // moved to the stylesheet. Verify the
+        // round-87 inline pattern is gone so we
+        // don't accidentally regress back to it.
+        expect(style).not.toContain('border-left');
     });
 
     test('dim_panel_renders_without_border_style_when_accent_null', () => {
         // A null accent is the "no biome memory yet"
-        // state. The dim panel must not carry a
-        // `border-left` rule — the panel stays flat.
+        // state. The dim panel must not set the
+        // `--biome-accent` custom property — the
+        // stylesheet rule's `transparent` fallback
+        // keeps the panel flat.
         const { hud, root } = mountHud();
         // Explicitly null: even after a non-null
         // round-trip, nulling it out must clear the
@@ -1009,23 +1018,27 @@ describe('HUD — round 87 setLastBiomeAccent & dim-panel left-border', () => {
         hud.setLastBiomeAccent(null);
         const dimPanel = root.querySelector('.hud-panel.hud-dim')!;
         const style = dimPanel.getAttribute('style') ?? '';
+        expect(style).not.toContain('--biome-accent');
+        // And the round-87 inline `border-left`
+        // pattern is still absent.
         expect(style).not.toContain('border-left');
     });
 
     test('dim_panel_escapes_accent_value_to_prevent_attribute_injection', () => {
-        // The accent goes into an HTML attribute via a
-        // template-literal interpolation. A malicious
-        // value like `" onmouseover="alert(1)` could
-        // break out of the `style` attr if we didn't
-        // escape quotes. The HTML `style` attribute is
-        // CDATA-like (entities are kept literal in real
-        // browsers per HTML §13.1.2.5), so escapeHtml
-        // converts the embedded `"` to `&quot;` and the
-        // browser keeps the entire payload inside the
-        // single `style="..."` attribute. We assert the
-        // security property directly: only the `style`
-        // attribute exists, with no `onmouseover`
-        // attribute bleeding through.
+        // The accent goes into an HTML attribute via
+        // a template-literal interpolation. A
+        // malicious value like `" onmouseover="alert(1)`
+        // could break out of the `style` attr if we
+        // didn't escape quotes. The HTML `style`
+        // attribute is CDATA-like (entities are kept
+        // literal in real browsers per HTML
+        // §13.1.2.5), so escapeHtml converts the
+        // embedded `"` to `&quot;` and the browser
+        // keeps the entire payload inside the single
+        // `style="..."` attribute. We assert the
+        // security property directly: only the
+        // `style` attribute exists, with no
+        // `onmouseover` attribute bleeding through.
         const { hud, root } = mountHud();
         hud.setLastBiomeAccent('" onmouseover="alert(1)');
         const dimPanel = root.querySelector('.hud-panel.hud-dim')!;
@@ -1035,10 +1048,29 @@ describe('HUD — round 87 setLastBiomeAccent & dim-panel left-border', () => {
         expect(dimPanel.hasAttribute('onmouseover')).toBe(false);
         const style = dimPanel.getAttribute('style') ?? '';
         // The value starts with the legitimate
-        // `border-left: 4px solid` prefix; the
-        // malicious payload sits inside the value,
-        // not as a sibling attribute.
-        expect(style.startsWith('border-left: 4px solid')).toBe(true);
+        // `--biome-accent:` prefix; the malicious
+        // payload sits inside the value, not as a
+        // sibling attribute.
+        expect(style.startsWith('--biome-accent:')).toBe(true);
+    });
+
+    test('stylesheet_hud_dim_rule_reads_biome_accent_custom_property', () => {
+        // Round 88 moved the `border-left` rule to a
+        // stylesheet class. We read the file directly
+        // (a small file-content test) to confirm the
+        // rule still wires `--biome-accent` to the
+        // border, so a future edit doesn't silently
+        // break the round-87 visual cue.
+        const fs = require('fs') as typeof import('fs');
+        const path = require('path') as typeof import('path');
+        const cssPath = path.resolve(
+            __dirname, '../../frontend/src/style.css',
+        );
+        const css = fs.readFileSync(cssPath, 'utf8');
+        // The .hud-panel.hud-dim selector must read
+        // the --biome-accent custom property with a
+        // transparent fallback.
+        expect(css).toMatch(/\.hud-panel\.hud-dim\s*\{[^}]*border-left:\s*4px solid var\(--biome-accent,\s*transparent\)/);
     });
 });
 

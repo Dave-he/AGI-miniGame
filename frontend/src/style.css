@@ -325,3 +325,33 @@ textarea:focus {
 .hud-memories-row-detail {
   font-size: 0.85em;
 }
+
+/* ---------------------------------------------------------------------------
+ * Round 88 — `.hud-panel.hud-dim` left border via CSS custom property.
+ *
+ * Round 87 wired the dim panel's left border to each biome's
+ * `particleColor` (cyberpunk #ff66cc, forest #88ccff, …). It
+ * did so by inlining `style="border-left: 4px solid #88ccff;"`
+ * on the panel — which mirrors the round-69 / round-73
+ * anti-pattern that round 74 explicitly cleaned up. This rule
+ * finishes the round-87 feature by moving the border to a
+ * stylesheet rule and exposing the color as a CSS custom
+ * property (`--biome-accent`) that the App sets inline:
+ *
+ *   <div class="hud-panel hud-dim" style="--biome-accent: #88ccff;">…
+ *
+ * The fallback `transparent` keeps the panel flat when no
+ * accent is set (a round-1 save with no biome memory).
+ *
+ * Naming: `.hud-dim` is the dim panel's existing class (added
+ * in round 5+ and reused by rounds 19/41/72/73 for the
+ * dimension-name headline and per-row labels). The
+ * `--biome-accent` variable is a per-element custom property,
+ * not a `:root` global, so it can vary between dim panels if
+ * the layout ever renders more than one (currently exactly
+ * one).
+ * ------------------------------------------------------------------------- */
+
+.hud-panel.hud-dim {
+  border-left: 4px solid var(--biome-accent, transparent);
+}

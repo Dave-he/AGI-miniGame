@@ -569,7 +569,7 @@ export class HUD {
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gem'))}</span><b>${s.gem}</b></div>
                 <div class="hud-row"><span>Score</span><b>${s.score}</b></div>
             </div>
-            <div class="hud-panel hud-dim" style="${s.lastBiomeAccent ? `border-left: 4px solid ${escapeHtml(s.lastBiomeAccent)};` : ''}">
+            <div class="hud-panel hud-dim" style="${s.lastBiomeAccent ? `--biome-accent: ${escapeHtml(s.lastBiomeAccent)};` : ''}">
                 <div class="hud-title">${escapeHtml(this.i18n.t('hud.dim'))}</div>
                 <div class="hud-dim-name">${escapeHtml(dimName)}</div>
                 <div class="hud-row"><span>玩法</span><b>${escapeHtml(dimAtoms)}</b></div>
