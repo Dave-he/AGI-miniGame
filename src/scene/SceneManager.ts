@@ -210,22 +210,26 @@ export class SceneManager {
     onDimensionEntered(blueprint: DimensionBlueprint): void {
         this.activeAtomId = blueprint.atomIds[0] || null;
         // Round 24 — apply the mood-tinted color palette to the
-        // 3D scene. The first entry of colorPalette is the
-        // background tint; the remaining entries are mixed into
+        // entity spawn pool. The remaining entries are mixed into
         // the entity spawn pool so freshly-spawned cubes pick up
         // the new theme. The mood signal is otherwise invisible to
         // players — this gives the reflexive loop a visible shape.
+        //
+        // Round 93 — REMOVED the `scene.background` + `fog.color`
+        // assignments that used to read `palette[0]`. Those
+        // concerns are now owned by `setBiomeAtmosphere` (the
+        // round-92 per-biome `fogColor` field), and pre-round-93
+        // the two writes collided: `enterNewDimension` calls
+        // `setBiomeAtmosphere` first (line 626 in main.ts) and
+        // then `onDimensionEntered` (line 704), so the random
+        // `palette[0]` overwrote the deterministic per-biome
+        // `fogColor` on every dimension enter. Removing the
+        // redundant writes here means the per-biome sky+haze
+        // always wins, and the entity palette is the only thing
+        // `onDimensionEntered` owns.
         if (blueprint.theme?.colorPalette && this.scene) {
-            const THREE = this.THREE;
-            if (THREE) {
-                const palette = blueprint.theme.colorPalette;
-                const bg = palette[0];
-                this.scene.background = new THREE.Color(bg);
-                if (this.scene.fog) {
-                    this.scene.fog.color = new THREE.Color(bg);
-                }
-                this.entityPalette = palette.map((c) => parseInt(c.replace('#', ''), 16));
-            }
+            const palette = blueprint.theme.colorPalette;
+            this.entityPalette = palette.map((c) => parseInt(c.replace('#', ''), 16));
         }
     }
 
