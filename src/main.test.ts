@@ -40,6 +40,8 @@
 
 import { App } from './main';
 import type { SceneBlueprintSnapshot } from './world/WorldState';
+import * as fs from 'fs';
+import * as path from 'path';
 import { makeWasmStub } from './test-utils/sceneGenWasmStub';
 import {
     enterDimensionWithStub,
@@ -2728,6 +2730,145 @@ describe('App — round 94: Esc/abandon end-to-end chain (操控性好)', () => 
         // (defense against a regression that removes the
         // case from the switch).
         expect(routeKey('Esc')).toEqual({ kind: 'abandon' });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 101 — file-content test pinning the
+// `abandonCurrentDimension` (-0.1) vs
+// `failCurrentDimension` (-0.4) broadcast-weight asymmetry
+// at the call site.
+//
+// **Why**: round 94 tested both flows end-to-end (the
+// e2e asserts on the broadcast weight via `jest.spyOn`).
+// But that test asserts on what the spy OBSERVES —
+// not on what the source SAYS. A refactor that unifies
+// the two methods (e.g. "let me just have
+// `markCurrentDimension(outcome)` and pass the weight
+// from the caller") would silently change the
+// magnitude ratio. The 4× asymmetry
+// (|-0.4| / |-0.1|) is the round-21 "witnessed_event"
+// convention: an `abandoned` dimension
+// barely dents the NPC collective disposition
+// (-0.1 trust), while a `failed` dimension is a
+// strong negative event (-0.0.4 trust, 4× worse).
+// A future "they're basically the same thing, let's
+// just use -0.1 for both" refactor would lose the
+// signal.
+//
+// **Why file-content (not behavioural)**: the methods
+// are 1-line wrappers around `recordDimensionOutcome`
+// (main.ts:791-792):
+//
+//   failCurrentDimension()    { this.recordDimensionOutcome('failed', -0.4); }
+//   abandonCurrentDimension() { this.recordDimensionOutcome('abandoned', -0.1); }
+//
+// The actual broadcast happens in
+// `recordDimensionOutcome` (line 1019-1024). The
+// file-content test reads main.ts and asserts:
+//   1. `failCurrentDimension` body contains `-0.4`
+//   2. `abandonCurrentDimension` body contains `-0.1`
+//   3. The 4× ratio is preserved (a future unification
+//      that changed BOTH to -0.1 or BOTH to -0.4
+//      would fail this test).
+//
+// This is the round-93 file-content regression test
+// pattern applied to the main.ts broadcast convention.
+// ---------------------------------------------------------------------------
+
+const MAIN_TS_PATH = path.resolve(__dirname, 'main.ts');
+const MAIN_TS_SOURCE = fs.readFileSync(MAIN_TS_PATH, 'utf-8');
+
+describe('App — round 101: file-content test pinning fail/abandon broadcast-weight asymmetry (auto-generated logic)', () => {
+    /**
+     * Naive body extractor for a `methodName(): ReturnType {` block.
+     * Mirrors the round-93 SceneManager extractor: slice from
+     * the opening `{` to the matching closing `}` (we assume
+     * the body is shallow — fail/abandon are 1-liners).
+     */
+    function extractOneLinerBody(methodName: string): string {
+        const startMatch = MAIN_TS_SOURCE.match(
+            new RegExp(`${methodName}\\(\\)(?::[^{]*)?\\{`),
+        );
+        if (!startMatch) {
+            throw new Error(`Could not find ${methodName} in main.ts`);
+        }
+        const openBraceIdx = startMatch.index! + startMatch[0].length - 1;
+        // Find the closing `}` after the opening one. The
+        // body is a single statement (a method call), so the
+        // matching `}` is the next `}` after the call's
+        // semicolon.
+        const after = MAIN_TS_SOURCE.slice(openBraceIdx + 1);
+        const closeIdx = after.indexOf('}');
+        if (closeIdx === -1) {
+            throw new Error(`Could not find closing brace for ${methodName}`);
+        }
+        return MAIN_TS_SOURCE.slice(openBraceIdx + 1, openBraceIdx + 1 + closeIdx);
+    }
+
+    test('failCurrentDimension_body_contains_weight_minus_0_4', () => {
+        // The fail path is the heavier negative event.
+        // A regression that drops the magnitude to -0.1
+        // (or -0.2) would silently change the AGI's
+        // trust / fear dynamics for failed dimensions
+        // and erode the round-21 "witnessed_event"
+        // convention. Pin the literal value at the
+        // call site.
+        const body = extractOneLinerBody('failCurrentDimension');
+        expect(body).toMatch(/-0\.4/);
+    });
+
+    test('abandonCurrentDimension_body_contains_weight_minus_0_1', () => {
+        // The abandon path is the lighter negative
+        // event. A regression that bumps the
+        // magnitude to -0.4 would conflate abandon
+        // with fail and inflate the AI's
+        // difficulty-recovery loop (it would
+        // "see" more failures than actually
+        // happened, since the player just walked
+        // away). Pin the literal value at the
+        // call site.
+        const body = extractOneLinerBody('abandonCurrentDimension');
+        expect(body).toMatch(/-0\.1/);
+    });
+
+    test('fail_weight_is_4x_abandon_weight_round_21_witnessed_event_convention', () => {
+        // The 4× ratio is the round-21 design
+        // choice: fail is a "strong negative
+        // event" (the player tried and lost);
+        // abandon is a "soft negative event"
+        // (the player walked away). A refactor
+        // that changes one without the other
+        // would lose the ratio and silently
+        // rebalance the AGI's mood-trust model.
+        // This test pins the ratio as a numeric
+        // property at the source.
+        const failBody = extractOneLinerBody('failCurrentDimension');
+        const abandonBody = extractOneLinerBody('abandonCurrentDimension');
+        const failMatch = failBody.match(/-0\.(\d+)/);
+        const abandonMatch = abandonBody.match(/-0\.(\d+)/);
+        expect(failMatch).not.toBeNull();
+        expect(abandonMatch).not.toBeNull();
+        const failMagnitude = parseInt(failMatch![1], 10);
+        const abandonMagnitude = parseInt(abandonMatch![1], 10);
+        // The fail:abandon ratio is exactly 4:1.
+        // Allow no deviation — a future "let's
+        // use 3x or 5x" refactor would change
+        // the AGI's balance and the round-21
+        // evidence would no longer reproduce.
+        expect(failMagnitude / abandonMagnitude).toBe(4);
+    });
+
+    test('both_methods_call_recordDimensionOutcome_with_thier_outcome_string (round 94 contract)', () => {
+        // Defense: a refactor that changed the
+        // outcome string (e.g. 'failed' → 'fail')
+        // would silently break the round-94
+        // vault.record spy assertions. Pin the
+        // outcome strings at the call site too.
+        const failBody = extractOneLinerBody('failCurrentDimension');
+        const abandonBody = extractOneLinerBody('abandonCurrentDimension');
+        expect(failBody).toMatch(/'failed'/);
+        expect(abandonBody).toMatch(/'abandoned'/);
     });
 });
 
