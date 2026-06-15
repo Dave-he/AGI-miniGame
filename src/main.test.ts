@@ -3082,30 +3082,45 @@ describe('App — round 97: sceneGenWasm=null TS-mirror fallback path (auto-gene
 
 // ---------------------------------------------------------------------------
 // Round 99 — `enterNewDimension` dual-call race e2e.
+// Round 102 — flipped contract: in-flight guard added.
 //
 // The Space key (round-57 + round-96 alias) and the
 // "next-dim" button (HTML) both fire `enterNewDimension`
-// without an in-flight guard (main.ts:1967:
-// `case 'reroll': void app.enterNewDimension();`).
-// A rapid double-tap on Space, or two rapid clicks on
-// the next-dim button, would invoke the orchestrator
-// twice in parallel — both `await`ing
+// (main.ts:1967: `case 'reroll': void app.enterNewDimension();`).
+// Pre-round-102, the orchestrator had NO in-flight
+// guard — a rapid double-tap on Space, or two rapid
+// clicks on the next-dim button, would invoke the
+// orchestrator twice in parallel, both `await`ing
 // `bridge.planAndLoad` and writing the same WorldState
 // fields, with the second call's writes silently
-// overwriting the first.
+// overwriting the first (visible "scene tiles flicker
+// between two dimensions for one frame").
+//
+// Round 102 adds the in-flight guard: a private
+// `isEntering` flag is set to `true` at the start of
+// `enterNewDimension`, the body runs in a try/finally,
+// and the flag is reset in `finally`. The second
+// parallel call short-circuits to a no-op with a
+// Chinese-localized HUD log line. The first call's
+// writes win, and the player sees a stable scene.
 //
 // This is auto-generated logic territory: a regression
-// that adds a new worldState write but places it AFTER
-// the bridge.planAndLoad resolve (i.e. a normal-looking
-// refactor) would not break the single-call path, but
-// would race with the parallel call. The contract we
+// that drops the in-flight guard (or moves the early-
+// return AFTER the body starts executing) would
+// silently regress the dual-call UX back to the
+// pre-round-102 flickering state. The contract we
 // pin here is:
 //   1. No throw escapes either call (both resolve).
-//   2. The bridge is called exactly twice (one per
-//      parallel invocation — no dedup, no client-side
-//      guard).
-//   3. The vault records both visits (the AGI's memory
-//      must reflect what the user actually saw, not the
+//   2. The bridge is called exactly ONCE (only the
+//      first parallel invocation passes the guard —
+//      the second short-circuits before bridge.planAndLoad).
+//   3. The vault records exactly ONE visit (the
+//      first call's only — the guard short-circuits
+//      the second before it can persist anything).
+//   4. The scene's renderWfcDungeon is called exactly
+//      once (the first call's tiles are the visible
+//      state — no flicker, no "second render overwrites
+//      the first" race).
 //      "last writer wins" dim).
 //   4. The scene's renderWfcDungeon + setBiomeAtmosphere
 //      are called for both calls (so the player doesn't
@@ -3184,15 +3199,15 @@ describe('App — round 99: enterNewDimension dual-call race e2e (auto-generated
     });
 
     test('two_parallel_enterNewDimension_calls_each_invoke_bridge_planAndLoad', async () => {
-        // The bridge is the upstream boundary. Each
-        // call must hit it — that's the round-23/24/48
-        // architecture (bridge owns the plan; the
-        // orchestrator consumes the blueprint). A
-        // regression that adds a "second call is a
-        // no-op" early-return would silently drop
-        // visits to the AI planner and the AGI would
-        // see fewer dimensions than the player
-        // actually saw.
+        // The bridge is the upstream boundary. The
+        // round-102 in-flight guard short-circuits
+        // the second parallel call BEFORE it can
+        // hit `bridge.planAndLoad`. The first call
+        // runs to completion and hits the bridge
+        // exactly once. A regression that removes
+        // the guard (or moves the early-return
+        // after `bridge.planAndLoad`) would
+        // silently re-introduce the round-99 race.
         const app = makeApp();
         const bridgeSpy = jest
             .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
@@ -3223,52 +3238,70 @@ describe('App — round 99: enterNewDimension dual-call race e2e (auto-generated
         bridgeSpy.mockRestore();
         await fireTwoParallelEnters(app, 100, 200);
         const bridge = (app as unknown as { bridge: { planAndLoad: jest.SpyInstance } }).bridge;
-        // Both calls must have hit the bridge. We
-        // don't pin a strict equality (2) because
-        // Promise.all scheduling can occasionally
-        // produce a 3rd call if the orchestrator
-        // re-fetches — but at minimum both parallel
-        // invocations must have hit it. >= 2 is the
-        // safe contract.
-        expect(bridge.planAndLoad.mock.calls.length).toBeGreaterThanOrEqual(2);
+        // Round 102 — only the first call passes
+        // the in-flight guard. The second short-
+        // circuits before reaching the bridge. We
+        // pin `=== 1` to lock the guard at the
+        // source; a "let me drop the guard" refactor
+        // would re-introduce the `>= 2` round-99
+        // contract.
+        expect(bridge.planAndLoad.mock.calls.length).toBe(1);
     });
 
-    test('two_parallel_enterNewDimension_calls_both_record_vault_completed', async () => {
-        // The vault is the AGI's long-term memory. If
-        // a parallel race caused one call to skip
-        // `vault.record` (e.g. a guard that returned
-        // early for the second call), the AGI would
-        // see "1 visit" instead of "2 visits" for
-        // what the user actually experienced. This
-        // is the round-50 telemetry gate's parallel-
-        // call contract.
+    test('two_parallel_enterNewDimension_calls_first_call_records_vault_completed', async () => {
+        // Round 102 — the vault records EXACTLY
+        // ONE visit (the first call's). The
+        // second parallel call short-circuits
+        // before reaching `vault.record`. A
+        // regression that drops the guard would
+        // silently record TWO visits for the
+        // user's one visible action.
         const app = makeApp();
         const vaultRecord = jest
             .spyOn((app as unknown as { vault: { record: (b: unknown, o: string, t: number) => void } }).vault, 'record')
             .mockImplementation(() => undefined);
         await fireTwoParallelEnters(app, 100, 200);
-        expect(vaultRecord.mock.calls.length).toBeGreaterThanOrEqual(2);
-        // Both visits must be 'completed' (not
-        // 'failed' or 'abandoned') — the parallel
-        // race is not a failure.
-        for (const [, outcome] of vaultRecord.mock.calls) {
-            expect(outcome).toBe('completed');
-        }
+        expect(vaultRecord.mock.calls.length).toBe(1);
+        // The single visit must be 'completed'
+        // (not 'failed' or 'abandoned') — the
+        // first call's outcome reflects the
+        // user's intended action.
+        const [, outcome] = vaultRecord.mock.calls[0];
+        expect(outcome).toBe('completed');
     });
 
-    test('two_parallel_enterNewDimension_calls_both_render_wfc_dungeon', async () => {
-        // The scene must reflect the LAST successful
-        // render — the player shouldn't see a "stuck"
-        // dungeon from a half-completed first call
-        // after the second call finishes. Pin that
-        // renderWfcDungeon is called for both (the
-        // LAST call's tiles are the visible state).
+    test('two_parallel_enterNewDimension_calls_first_call_renders_wfc_dungeon', async () => {
+        // Round 102 — the scene's renderWfcDungeon
+        // is called exactly ONCE. The second parallel
+        // call short-circuits before reaching the
+        // scene. The player sees a stable first-call
+        // render with no flicker.
         const app = makeApp();
         const renderSpy = jest
             .spyOn((app as unknown as { scene: { renderWfcDungeon: (t: unknown[], s: number, b: unknown) => void } }).scene, 'renderWfcDungeon')
             .mockImplementation(() => undefined);
         await fireTwoParallelEnters(app, 100, 200);
-        expect(renderSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(renderSpy.mock.calls.length).toBe(1);
+    });
+
+    test('two_parallel_enterNewDimension_calls_second_call_logs_chinese_skip_message (round 102)', async () => {
+        // Round 102 — the in-flight guard surfaces
+        // a Chinese-localized log line so the
+        // player can see WHY their second Space-
+        // tap was ignored. Without the log, the
+        // user might think the keyboard broke.
+        const app = makeApp();
+        const logSpy = jest
+            .spyOn((app as unknown as { hud: { log: (s: string) => void } }).hud, 'log')
+            .mockImplementation(() => undefined);
+        await fireTwoParallelEnters(app, 100, 200);
+        const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        // The guard's log line uses the
+        // `[orchestrator]` prefix to disambiguate
+        // from other dimension-enter log lines
+        // (e.g. `[scene]` for round-48, `[gen]`
+        // for round-23).
+        expect(lines).toMatch(/\[orchestrator\] 已有 enterNewDimension 进行中.*round 102 防御/);
     });
 });
 
