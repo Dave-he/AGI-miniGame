@@ -3130,3 +3130,152 @@ describe('App — round 99: enterNewDimension dual-call race e2e (auto-generated
         expect(renderSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 100 — `enterNewDimension` WASM-success path positive
+// assertion (auto-generated logic).
+//
+// Round 97 pinned the TS-mirror *fallback* branch:
+//   1) `enterNewDimension_with_null_wasm_does_not_throw`
+//   2) `enterNewDimension_with_null_wasm_logs_TS_fallback_branch`
+//      — asserted that `[scene] WASM 兜底` IS in the log
+//        and `[scene] WASM 真出` is NOT.
+//   3) `enterNewDimension_with_null_wasm_still_calls_side_effect_spy_chain`
+//
+// Round 100 closes the round-48 source-of-truth loop in BOTH
+// directions. The inverse contract is just as load-bearing:
+// a regression that hard-codes the fallback log (e.g.
+// always says `[scene] WASM 兜底` regardless of the
+// `outcome.source`) would silently misreport the
+// round-68 in-browser latency analytics AND the round-50
+// telemetry gate. A regression that drops the `outcome.source`
+// check entirely would also fail the round-100 positive
+// assertion (the log would silently degrade to nothing).
+//
+// The three contracts pinned here are:
+//   1. `[scene] WASM 真出 (round 48)` IS emitted when
+//      `sceneGenWasm` returns a real blueprint (the
+//      stub-loaded success path).
+//   2. `[scene] WASM 兜底` is NOT emitted on the success
+//      path (defense against the round-97 regression
+//      bleeding into the success branch).
+//   3. `vault.record` IS called with outcome='completed'
+//      (the round-50 telemetry gate is symmetric to
+//      round-97's spy chain — both paths must persist).
+//
+// Uses the round-98 public install helpers (the
+// round-97 helper's inline ~50 lines are now collapsed
+// to 2 calls). Mirrors round-97's test structure so the
+// pair reads as a two-sided contract.
+// ---------------------------------------------------------------------------
+
+describe('App — round 100: sceneGenWasm=stub WASM-success path positive assertion (auto-generated logic)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    /**
+     * Drive a full `enterNewDimension` with
+     * `sceneGenWasm=makeWasmStub()` (WASM-success path).
+     * The bridge returns a valid blueprint; the WASM
+     * stub's `theme_to_scene_json` returns a real
+     * blueprint, so the round-48 success branch fires.
+     */
+    async function enterNewDimensionWithStubWasm(app: App): Promise<void> {
+        jest
+            .spyOn((app as unknown as { bridge: { planAndLoad: (cfg: unknown) => Promise<unknown> } }).bridge, 'planAndLoad')
+            .mockImplementation(async () => ({
+                suggestion: { stage: 'mid', primary: ['tower_defense'], secondary: [], excluded: [], rationale: 'r100 stub wasm' },
+                atomIds: ['tower_defense'],
+                blueprint: {
+                    id: 'dim_r100_stub_wasm',
+                    name: 'r100 stub wasm fixture',
+                    description: 'r100 stub wasm',
+                    atomIds: ['tower_defense'],
+                    atomWeights: { tower_defense: 1 },
+                    difficulty: 0.5,
+                    rules: [],
+                    rewards: [],
+                    theme: { name: 'r100_stub_wasm_theme', visualStyle: 'fantasy', musicMood: 'cheerful', colorPalette: ['#fff'] },
+                    timeLimitSecs: 60,
+                    objectives: [],
+                },
+                modules: [],
+                seed: 1,
+                configSource: 'wasm',
+            }));
+        // Round 100 hot path: a NON-null WASM stub.
+        // This is the inverse of round-97's null-WASM
+        // setup — the round-48 source-of-truth branches
+        // on `outcome.source === 'wasm'`, so we need
+        // a real (stub-shaped) module here.
+        (app as unknown as { sceneGenWasm: unknown }).sceneGenWasm = makeWasmStub();
+        installSideEffectStubs(app);
+        installHudSetterStubs(app);
+        await (app as unknown as { enterNewDimension: () => Promise<void> }).enterNewDimension();
+    }
+
+    test('enterNewDimension_with_stub_wasm_logs_WASM_真出_positive_assertion', async () => {
+        // The round-100 positive assertion: the success
+        // branch's log marker MUST appear on the
+        // round-48 source-of-truth line. A regression
+        // that hard-codes the fallback log (e.g. a
+        // "let me just always say 兜底 to be safe"
+        // refactor) would silently misreport the
+        // round-48 source-of-truth in production and
+        // make the round-68 in-browser latency analytics
+        // collect garbage data — the very symptom
+        // round-97's negative assertion was designed
+        // to catch on the OTHER branch.
+        //
+        // The [scene] prefix disambiguates from the
+        // round-51 [gen-config] / [palette] / [4th]
+        // success logs (different WASM calls).
+        const app = makeApp();
+        const logSpy = jest
+            .spyOn((app as unknown as { hud: { log: (s: string) => void } }).hud, 'log')
+            .mockImplementation(() => undefined);
+        await enterNewDimensionWithStubWasm(app);
+        const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(lines).toMatch(/\[scene\] WASM 真出.*round 48/);
+    });
+
+    test('enterNewDimension_with_stub_wasm_does_NOT_log_兜底_inverse_assertion', async () => {
+        // The inverse of round-97's positive assertion:
+        // the fallback log must NOT leak into the
+        // success branch. The two contracts are
+        // independent — a regression that prints BOTH
+        // ("just to be safe") would fail this test
+        // (defense against a verbose-log refactor that
+        // breaks the round-48 source-of-truth).
+        const app = makeApp();
+        const logSpy = jest
+            .spyOn((app as unknown as { hud: { log: (s: string) => void } }).hud, 'log')
+            .mockImplementation(() => undefined);
+        await enterNewDimensionWithStubWasm(app);
+        const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(lines).not.toMatch(/\[scene\] WASM 兜底/);
+    });
+
+    test('enterNewDimension_with_stub_wasm_records_vault_completed', async () => {
+        // The round-50 telemetry gate is symmetric to
+        // round-97's side-effect spy chain: the
+        // success path must also persist the visit.
+        // A regression that puts `vault.record` behind
+        // `if (outcome.source === 'ts-fallback')`
+        // would silently drop WASM-success visits
+        // from the AGI's memory.
+        const app = makeApp();
+        const vaultRecord = jest
+            .spyOn((app as unknown as { vault: { record: (b: unknown, o: string, t: number) => void } }).vault, 'record')
+            .mockImplementation(() => undefined);
+        await enterNewDimensionWithStubWasm(app);
+        expect(vaultRecord.mock.calls.length).toBeGreaterThanOrEqual(1);
+        const [, outcome] = vaultRecord.mock.calls[0];
+        // Same outcome string as round-97's test 3
+        // — the symmetric "completed" persistence
+        // contract.
+        expect(outcome).toBe('completed');
+    });
+});
+
