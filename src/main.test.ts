@@ -4757,10 +4757,16 @@ describe('App — round 127: localStorage persistence (操控性好 UX)', () => 
         try { localStorage.removeItem('agi_locale'); } catch { /* noop */ }
     });
 
-    test('applyDebounceSettings_writes_agi_debounce_ms_to_localStorage (round 127)', () => {
+    test('applyDebounceSettings_writes_agi_debounce_ms_to_localStorage (round 127+129)', () => {
+        // Round 127: original 4 values (0/500/1000/2000).
+        // Round 129: added 100/250ms power-user presets.
         const app = makeApp();
         app.applyDebounceSettings(0);
         expect(localStorage.getItem('agi_debounce_ms')).toBe('0');
+        app.applyDebounceSettings(100);
+        expect(localStorage.getItem('agi_debounce_ms')).toBe('100');
+        app.applyDebounceSettings(250);
+        expect(localStorage.getItem('agi_debounce_ms')).toBe('250');
         app.applyDebounceSettings(500);
         expect(localStorage.getItem('agi_debounce_ms')).toBe('500');
         app.applyDebounceSettings(1000);
@@ -4880,6 +4886,99 @@ describe('App — round 127: localStorage persistence (操控性好 UX)', () => 
         const app2 = makeApp();
         const i18n2 = cast<{ i18n: { getLocale: () => string } }>(app2).i18n;
         expect(i18n2.getLocale()).toBe('zh-CN');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 129 — SettingsPanel debounce knob 100ms / 250ms
+// power-user presets. Extends the round-127
+// localStorage persistence pattern + the
+// round-111 applyDebounceSettings(App-level
+// test to cover the new field-type union.
+// ---------------------------------------------------------------------------
+
+describe('App — round 129: debounce 100ms/250ms presets (操控性好 UX)', () => {
+    function cast<T>(v: unknown): T { return v as T; }
+
+    beforeEach(() => {
+        try { localStorage.removeItem('agi_debounce_ms'); } catch { /* noop */ }
+    });
+
+    test('applyDebounceSettings_accepts_100_and_pushes_to_all_4_debouncers (round 129)', () => {
+        // The 100ms "snappy" preset must
+        // round-trip through the
+        // applyDebounceSettings method
+        // (a regression that forgot to
+        // widen the param type to include
+        // 100 would fail this with a
+        // compile-time TS error or a
+        // runtime guard that silently
+        // clamps to 500).
+        const app = makeApp();
+        app.applyDebounceSettings(100);
+        const debouncers = cast<{
+            currentDebounceWindowMs: number;
+            debouncerLoadGame: { windowSizeMs: number };
+            debouncerSaveGame: { windowSizeMs: number };
+            debouncerRollWorldEvent: { windowSizeMs: number };
+            debouncerEnterAtom: { windowSizeMs: number };
+        }>(app);
+        expect(debouncers.currentDebounceWindowMs).toBe(100);
+        expect(debouncers.debouncerLoadGame.windowSizeMs).toBe(100);
+        expect(debouncers.debouncerSaveGame.windowSizeMs).toBe(100);
+        expect(debouncers.debouncerRollWorldEvent.windowSizeMs).toBe(100);
+        expect(debouncers.debouncerEnterAtom.windowSizeMs).toBe(100);
+    });
+
+    test('applyDebounceSettings_accepts_250_and_pushes_to_all_4_debouncers (round 129)', () => {
+        // The 250ms "fast" preset.
+        const app = makeApp();
+        app.applyDebounceSettings(250);
+        const debouncers = cast<{
+            currentDebounceWindowMs: number;
+            debouncerLoadGame: { windowSizeMs: number };
+            debouncerSaveGame: { windowSizeMs: number };
+            debouncerRollWorldEvent: { windowSizeMs: number };
+            debouncerEnterAtom: { windowSizeMs: number };
+        }>(app);
+        expect(debouncers.currentDebounceWindowMs).toBe(250);
+        expect(debouncers.debouncerLoadGame.windowSizeMs).toBe(250);
+        expect(debouncers.debouncerSaveGame.windowSizeMs).toBe(250);
+        expect(debouncers.debouncerRollWorldEvent.windowSizeMs).toBe(250);
+        expect(debouncers.debouncerEnterAtom.windowSizeMs).toBe(250);
+    });
+
+    test('App_constructor_restores_100ms_from_localStorage (round 129 reload)', () => {
+        // Simulate a previous session
+        // where the player picked the
+        // 100ms "snappy" preset.
+        localStorage.setItem('agi_debounce_ms', '100');
+        const app = makeApp();
+        const appCast = cast<{ currentDebounceWindowMs: number }>(app);
+        expect(appCast.currentDebounceWindowMs).toBe(100);
+    });
+
+    test('App_constructor_restores_250ms_from_localStorage (round 129 reload)', () => {
+        // Simulate a previous session
+        // where the player picked the
+        // 250ms "fast" preset.
+        localStorage.setItem('agi_debounce_ms', '250');
+        const app = makeApp();
+        const appCast = cast<{ currentDebounceWindowMs: number }>(app);
+        expect(appCast.currentDebounceWindowMs).toBe(250);
+    });
+
+    test('App_constructor_rejects_unknown_debounce_value_from_localStorage (round 129 defense)', () => {
+        // A future round that adds a
+        // 75ms preset would write '75' to
+        // localStorage. The current
+        // loader should reject it (75 is
+        // not in the union) and fall back
+        // to the 500ms default.
+        localStorage.setItem('agi_debounce_ms', '75');
+        const app = makeApp();
+        const appCast = cast<{ currentDebounceWindowMs: number }>(app);
+        expect(appCast.currentDebounceWindowMs).toBe(500);
     });
 });
 // ---------------------------------------------------------------------------

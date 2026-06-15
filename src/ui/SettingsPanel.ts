@@ -5,9 +5,12 @@
  *   - difficulty selector (easy / normal / hard) — adjusts the
  *     AIEngine's BalanceTuner target win rate
  *   - language switcher (zh-CN / en-US) — wraps the I18n singleton
- *   - action debounce window (0 / 500 / 1000 / 2000 ms) —
+ *   - action debounce window (0 / 100 / 250 / 500 / 1000 / 2000 ms) —
  *     round 111: applies to all 4 ActionDebouncer instances
- *     on the App via the `onDebounceChange` callback
+ *     on the App via the `onDebounceChange` callback.
+ *     Round 129 adds the 100 / 250 presets for power users who
+ *     want finer-grained responsiveness between the default
+ *     500ms and the 0ms "I really want to spam-tap" extreme.
  *
  * The panel is fully self-contained: pass in the I18n, GameAudio,
  * and a difficulty setter callback.
@@ -26,8 +29,25 @@ export type Difficulty = 'easy' | 'normal' | 'hard';
  * value (0ms) disables debouncing entirely (the "I really
  * want to save twice" workflow mentioned in the
  * round-108 JSDoc).
+ *
+ * Round 129 — adds the 100ms + 250ms presets for power
+ * users. 100ms is a "snappy but still safe" choice (close
+ * to the human double-tap floor of ~80-120ms); 250ms is
+ * a "fast but not snappy" choice that keeps accidental
+ * scroll-wheel spam from firing world-event rolls while
+ * letting intentional bursts through quickly.
  */
-export type DebounceWindow = 0 | 500 | 1000 | 2000;
+export type DebounceWindow = 0 | 100 | 250 | 500 | 1000 | 2000;
+
+/**
+ * Round 129 — canonical ordering of the debounce presets
+ * rendered in the SettingsPanel's debounce row. Kept as a
+ * separate const so the click-handler guard and the render
+ * pass share the same source of truth (avoids drift if
+ * the type grows again).
+ */
+export const DEBOUNCE_PRESETS: readonly DebounceWindow[] =
+    [0, 100, 250, 500, 1000, 2000];
 
 export interface SettingsPanelHooks {
     /**
@@ -108,8 +128,7 @@ export class SettingsPanel {
         const debounceSection = this.hooks.onDebounceChange && this.hooks.getCurrentDebounce
             ? (() => {
                 const curDebounce: DebounceWindow = this.hooks.getCurrentDebounce!();
-                const debounceOptions: DebounceWindow[] = [0, 500, 1000, 2000];
-                const debounceRow = debounceOptions.map(ms => {
+                const debounceRow = DEBOUNCE_PRESETS.map(ms => {
                     const cur = curDebounce === ms;
                     return `<button class="set-debounce ${cur ? 'is-active' : ''}" data-debounce="${ms}">${escapeHtml(this.t(`settings.debounce.${ms}`))}</button>`;
                 }).join('');
@@ -161,15 +180,20 @@ export class SettingsPanel {
         });
         // Round 111 — debounce window click handler.
         // Reads the `data-debounce` attribute (set to
-        // 0/500/1000/2000 as a string), parses to
+        // 0/100/250/500/1000/2000 as a string), parses to
         // number, narrows to `DebounceWindow`, and
         // calls the App's `onDebounceChange` callback
         // (which forwards to `applyDebounceSettings`).
+        // Round 129 — extended the guard to include the
+        // new 100/250 power-user presets.
         this.root.querySelectorAll<HTMLButtonElement>('.set-debounce').forEach(btn => {
             btn.addEventListener('click', () => {
                 const raw = btn.getAttribute('data-debounce');
                 const ms = raw == null ? NaN : Number(raw);
-                if ((ms === 0 || ms === 500 || ms === 1000 || ms === 2000) && this.hooks.onDebounceChange) {
+                const isValidDebounceWindow =
+                    ms === 0 || ms === 100 || ms === 250 ||
+                    ms === 500 || ms === 1000 || ms === 2000;
+                if (isValidDebounceWindow && this.hooks.onDebounceChange) {
                     this.hooks.onDebounceChange(ms);
                     this.render();
                 }

@@ -257,7 +257,7 @@ class App {
      * Surfaced via `getCurrentDebounceWindow()`
      * for the SettingsPanel's getter.
      */
-    private currentDebounceWindowMs: 0 | 500 | 1000 | 2000 =
+    private currentDebounceWindowMs: 0 | 100 | 250 | 500 | 1000 | 2000 =
         loadDebounceMsFromStorage() ?? 500;
     /**
      * Round 126 — current difficulty tier
@@ -3312,11 +3312,13 @@ if (typeof window !== 'undefined') {
 const DEBOUNCE_STORAGE_KEY = 'agi_debounce_ms';
 const DIFFICULTY_STORAGE_KEY = 'agi_difficulty';
 
-function loadDebounceMsFromStorage(): 0 | 500 | 1000 | 2000 | null {
+function loadDebounceMsFromStorage(): 0 | 100 | 250 | 500 | 1000 | 2000 | null {
     if (typeof localStorage === 'undefined') return null;
     try {
         const raw = localStorage.getItem(DEBOUNCE_STORAGE_KEY);
         if (raw === '0') return 0;
+        if (raw === '100') return 100;
+        if (raw === '250') return 250;
         if (raw === '500') return 500;
         if (raw === '1000') return 1000;
         if (raw === '2000') return 2000;
@@ -3326,7 +3328,7 @@ function loadDebounceMsFromStorage(): 0 | 500 | 1000 | 2000 | null {
     }
 }
 
-function writeDebounceMsToStorage(ms: 0 | 500 | 1000 | 2000): void {
+function writeDebounceMsToStorage(ms: 0 | 100 | 250 | 500 | 1000 | 2000): void {
     if (typeof localStorage === 'undefined') return;
     try {
         localStorage.setItem(DEBOUNCE_STORAGE_KEY, String(ms));
