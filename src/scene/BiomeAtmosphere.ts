@@ -33,6 +33,20 @@ export interface BiomeAtmosphere {
     fogNear: number;
     /** Fog far distance in world units. */
     fogFar: number;
+    /**
+     * Round 92 — hex colour for the fog AND the scene background
+     * (the "sky"). The two are coupled on purpose: a fog tint that
+     * doesn't match the sky colour produces a hard line at the fog
+     * far distance where the colour shifts abruptly. Setting both
+     * from the same value keeps the horizon seamless.
+     *
+     * Pre-round-92 the fog + background were driven by
+     * `blueprint.theme.colorPalette[0]` (the first colour in the
+     * WASM-generated palette), which was random per dimension. The
+     * per-biome `fogColor` makes the sky+haze deterministic and
+     * signature to each biome.
+     */
+    fogColor: string;
     /** Optional hex tint for the directional light; falls back to white. */
     lightTint: string;
     /**
@@ -73,6 +87,12 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         particleDrift: { x: 0.2, y: 0.6, z: 0.0 },
         fogNear: 22,
         fogFar: 95,
+        // Round 92 — deep blue-purple (neon city night sky).
+        // Distinct from the bright neon `particleColor`/`lightTint`
+        // so the city reads as a dark room with neon accents, not
+        // a uniformly bright room. Skews blue (not red) so it
+        // doesn't collide with dungeon's torch-tinted brown.
+        fogColor: '#0a0a2a',
         lightTint: '#ff66cc',
         // Cyberpunk: high key from the right (neon signs), low fill
         // from behind-left (street reflection).
@@ -92,6 +112,10 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         particleDrift: { x: 0.0, y: 0.4, z: 0.0 },
         fogNear: 18,
         fogFar: 80,
+        // Round 92 — misty sage (humid forest air). Distinct
+        // from the green `particleColor` so the canopy doesn't
+        // blend into the sky.
+        fogColor: '#c8d8c0',
         lightTint: '#a8d8a8',
         // Forest: low sunbeams slicing through canopy, high fill.
         dirLightPos:   { x:  10, y: 12, z:   6 },
@@ -109,6 +133,10 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         particleDrift: { x: 0.7, y: 0.1, z: 0.0 },
         fogNear: 35,
         fogFar: 140,
+        // Round 92 — sandy haze (sun-bleached horizon). Warmer
+        // than the particleColor so the sky reads "midday haze"
+        // not "saturated yellow".
+        fogColor: '#e8c890',
         lightTint: '#ffc870',
         // Desert: very low side sun (long shadows), low opposite
         // fill so dunes don't go pitch black on one side.
@@ -128,6 +156,10 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         particleDrift: { x: 0.05, y: -0.9, z: 0.0 },
         fogNear: 14,
         fogFar: 65,
+        // Round 92 — pale blue (overcast arctic sky). A near-
+        // white blue so the snow + sky almost merge, with the
+        // point light's blue cast doing the colour work.
+        fogColor: '#d8e8f0',
         lightTint: '#b0e0ff',
         // Ice: high noon (overhead) so the surface is evenly lit,
         // high opposite fill (sky reflection off snow).
@@ -147,6 +179,10 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         particleDrift: { x: 0.0, y: 0.0, z: 0.0 },
         fogNear: 60,
         fogFar: 200,
+        // Round 92 — deep space (near-black with a hint of
+        // purple). The "sky" of space is genuinely dark; the
+        // particle field handles the "stars" feel separately.
+        fogColor: '#050514',
         lightTint: '#cce0ff',
         // Space: distant "star" key (far + high), opposite fill
         // simulating reflection off a planet / ship.
@@ -166,6 +202,13 @@ const ATOMS: Record<BiomeId, BiomeAtmosphere> = {
         particleDrift: { x: 0.0, y: 0.15, z: 0.0 },
         fogNear: 12,
         fogFar: 55,
+        // Round 92 — murky brown-purple (torch-shadow haze).
+        // Warmer than pure black so the dungeon reads as "dim
+        // room" not "void". The brown cast (red+blue, no green)
+        // simulates a torch-lit stone corridor. Skews red
+        // (not blue) so it doesn't collide with cyberpunk's
+        // blue night-sky.
+        fogColor: '#2a1a0a',
         lightTint: '#a8a0c8',
         // Dungeon: vertical "shaft of light from above" key, low
         // fill from behind (torch glow feel).

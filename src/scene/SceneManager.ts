@@ -251,11 +251,27 @@ export class SceneManager {
         if (!this.scene || !this.THREE) return;
         const THREE = this.THREE;
         this.clearAmbientParticles();
-        // Fog tuning
+        // Round 92 — set fog colour + scene background from the
+        // per-biome `atm.fogColor`. The two are coupled on purpose:
+        // a fog tint that doesn't match the sky produces a hard
+        // line at the fog far distance where the colour shifts
+        // abruptly. Pre-round-92 both were driven by
+        // `blueprint.theme.colorPalette[0]` (the first WASM-
+        // generated colour), which was random per dimension. The
+        // per-biome `fogColor` makes the sky+haze deterministic
+        // and signature to each biome.
+        const fogColorInt = parseInt(atm.fogColor.replace('#', ''), 16);
         if (this.scene.fog) {
             this.scene.fog.near = atm.fogNear;
             this.scene.fog.far = atm.fogFar;
+            this.scene.fog.color = new THREE.Color(fogColorInt);
         }
+        // Round 92 — also set the scene background so the sky
+        // matches the fog. Without this, the fog tints the
+        // distance while the "sky" beyond shows the bridge
+        // blueprint's random first colour — a visible mismatch
+        // at the fog far distance.
+        this.scene.background = new THREE.Color(fogColorInt);
         // Round 58 — retint the directional light to the biome's
         // signature `lightTint`. The ambient light stays constant
         // (it's the studio fill, not the mood cue). The point

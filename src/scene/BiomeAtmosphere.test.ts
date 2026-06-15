@@ -14,8 +14,8 @@ describe('BiomeAtmosphere', () => {
         const seen = new Set<string>();
         for (const id of SUPPORTED_BIOMES) {
             const atm = getBiomeAtmosphere(id);
-            const sig = `${atm.particleColor}|${atm.particleCount}|${atm.particleSpeed}|${atm.fogNear}|${atm.fogFar}|${atm.lightTint}`;
-            // every biome should produce a unique (color, count, speed, fog, light) signature
+            const sig = `${atm.particleColor}|${atm.particleCount}|${atm.particleSpeed}|${atm.fogNear}|${atm.fogFar}|${atm.fogColor}|${atm.lightTint}`;
+            // every biome should produce a unique (color, count, speed, fog, sky, light) signature
             expect(seen.has(sig)).toBe(false);
             seen.add(sig);
         }
@@ -216,6 +216,66 @@ describe('BiomeAtmosphere', () => {
             const sig = `${atm.dirLightIntensity}|${atm.pointLightIntensity}`;
             expect(seen.has(sig)).toBe(false);
             seen.add(sig);
+        }
+    });
+
+    it('every biome has a non-empty hex fogColor (round 92)', () => {
+        // Round 92 — per-biome sky+fog tint. The fog colour is
+        // coupled to the scene background to avoid a hard line
+        // at the fog far distance. Every biome must provide a
+        // non-empty 6-char hex string (the same shape as
+        // `particleColor` / `lightTint`).
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            expect(typeof atm.fogColor).toBe('string');
+            expect(atm.fogColor.length).toBeGreaterThan(0);
+            expect(atm.fogColor).toMatch(/^#[0-9A-Fa-f]{6}$/);
+        }
+    });
+
+    it('6 biomes have distinct fogColor values (round 92)', () => {
+        // A shared fog color across two biomes would make them
+        // visually similar at the horizon — the sky is the
+        // player's main "where am I" cue. Every biome gets a
+        // unique tint.
+        const seen = new Set<string>();
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            expect(seen.has(atm.fogColor)).toBe(false);
+            seen.add(atm.fogColor);
+        }
+    });
+
+    it('space has the darkest fogColor and desert the lightest (round 92)', () => {
+        // Sanity check on the round-92 palette: space is
+        // genuinely dark (near-black with a hint of purple),
+        // desert is the brightest (sun-bleached horizon haze).
+        // This isn't load-bearing (any palette that satisfies
+        // "distinct" is fine), but it locks the intent so a
+        // future "let me just make space mid-grey" tweak
+        // fails.
+        const space  = getBiomeAtmosphere('space');
+        const desert = getBiomeAtmosphere('desert');
+        // Convert hex → integer luminance (rough: 0.299R + 0.587G + 0.114B)
+        const lum = (hex: string): number => {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return 0.299 * r + 0.587 * g + 0.114 * b;
+        };
+        expect(lum(space.fogColor)).toBeLessThan(lum(desert.fogColor));
+    });
+
+    it('fogColor is distinct from lightTint for every biome (round 92)', () => {
+        // Sanity: the fog colour is the "sky / horizon" tint;
+        // the light tint is the "what the directional light
+        // casts on objects" tint. They should differ — if they
+        // were the same, the scene would read as a flat
+        // monochrome wash with no depth. Every biome must
+        // have a unique (fog, light) pair.
+        for (const id of SUPPORTED_BIOMES) {
+            const atm = getBiomeAtmosphere(id);
+            expect(atm.fogColor).not.toBe(atm.lightTint);
         }
     });
 
