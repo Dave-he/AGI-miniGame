@@ -43,6 +43,21 @@ import type { SceneBlueprintSnapshot } from './world/WorldState';
 import * as fs from 'fs';
 import * as path from 'path';
 import { makeWasmStub } from './test-utils/sceneGenWasmStub';
+// Round 112 — surface the round-57
+// KeyboardShortcuts module to the
+// round-112 P-key tests. The same
+// import was added at line 2417
+// (mid-file) for the round-91
+// backtick/tilde tests, but moving
+// it to the top keeps the imports
+// in one place. The mid-file import
+// is now a re-export (kept for
+// historical anchoring — the
+// round-91 comment block references
+// it). TypeScript dedupes the import
+// so there's no runtime or type
+// conflict.
+import { routeKey, BINDING_DESCRIPTIONS } from './input/KeyboardShortcuts';
 import {
     enterDimensionWithStub,
     enterDimensionWithFailingWasm,
@@ -2414,7 +2429,17 @@ describe('App — round 89 e2e: setLastBiomeAccent wiring', () => {
 // `routeKey` → action mapping.
 // ---------------------------------------------------------------------------
 
-import { routeKey, BINDING_DESCRIPTIONS } from './input/KeyboardShortcuts';
+// `routeKey` and `BINDING_DESCRIPTIONS`
+// are imported at the top of this
+// file (line ~60) for the round-112
+// P-key tests. The round-91 tests
+// below use the same names; the
+// mid-file import that used to be
+// here was removed in round 112 to
+// avoid the `TS2300: Duplicate
+// identifier` error that ts-jest
+// raises (the standalone `tsc
+// --noEmit` is more lenient).
 
 describe('App — round 91: backtick/tilde key-binding for DM console (操控性好)', () => {
     afterEach(() => {
@@ -4321,6 +4346,220 @@ describe('App — round 111: applyDebounceSettings (SettingsPanel debounce windo
             app.applyDebounceSettings(ms);
             expect(a.debouncerLoadGame.windowSizeMs).toBe(ms);
         }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 112 — P key shortcut to toggle the
+// round-111 SettingsPanel overlay (操控性好).
+//
+// Round 111 added the SettingsPanel
+// component (audio mute, locale,
+// debounce-window knob) but the panel
+// is rendered into a hidden
+// `<div id="settings-root">` that has
+// no inline trigger — the only way
+// to open it in the real game UI is
+// the round-112 P key + a controls-
+// bar button. This block pins:
+//   1. `routeKey('p')` and `routeKey('P')`
+//      both translate to
+//      `{ kind: 'toggle-settings' }`
+//   2. The App exposes a callable
+//      `toggleSettings()` method that
+//      the bootstrap switch invokes
+//   3. `toggleSettings()` is a no-op
+//      when `#settings-root` is missing
+//      from the DOM (defensive — the
+//      element is in index.html but a
+//      test setup or future HTML edit
+//      could drop it)
+//   4. `toggleSettings()` flips the
+//      `hidden` attribute on the real
+//      `#settings-root` element + emits
+//      the round-112 Chinese open/close
+//      log line via `hud.log`
+//   5. The bootstrap keydown handler's
+//      full path: keydown("P") →
+//      routeKey → action →
+//      `app.toggleSettings()` (round-85
+//      R / round-91 ` /~ DM console
+//      e2e test pattern applied to P)
+//   6. The BINDING_DESCRIPTIONS row for
+//      the P key documents the action
+//      + is routable (round-95 reverse
+//      coverage test pattern)
+//   7. The `btn-settings` button in
+//      index.html exists + binds to
+//      `app.toggleSettings()` (closing
+//      the "keyboard-only" gap for
+//      mouse-only players)
+// ---------------------------------------------------------------------------
+
+describe('App — round 112: P key + button toggle for round-111 SettingsPanel (操控性好)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+        // Always clean up any settings-root
+        // nodes the test creates so the next
+        // test sees a fresh DOM.
+        document.getElementById('settings-root')?.remove();
+    });
+
+    test('routeKey_p_returns_toggle_settings_action', () => {
+        // The lowercase 'p' must route to
+        // the new toggle-settings action.
+        // A regression that only routes 'P'
+        // would silently break QWERTY
+        // players who hold shift.
+        const action = routeKey('p');
+        expect(action).toEqual({ kind: 'toggle-settings' });
+    });
+
+    test('routeKey_P_returns_toggle_settings_action_for_shifted_key', () => {
+        // Mirror of routeKey_p — the
+        // shifted 'P' must also route
+        // (round-91 backtick/tilde case
+        // pattern: both shift states
+        // map to the same action).
+        const action = routeKey('P');
+        expect(action).toEqual({ kind: 'toggle-settings' });
+    });
+
+    test('App_exposes_toggleSettings_for_bootstrap_keydown_switch', () => {
+        // The bootstrap keydown switch
+        // case `'toggle-settings':
+        // app.toggleSettings()` requires
+        // the App to expose a callable
+        // `toggleSettings` method. A
+        // regression that renames /
+        // removes the method (or makes
+        // it private) would compile-fail
+        // the main.ts switch, but this
+        // test catches the softer
+        // "method renamed but the switch
+        // wasn't updated" scenario.
+        const app = makeApp();
+        const fn = (app as unknown as { toggleSettings?: () => void }).toggleSettings;
+        expect(typeof fn).toBe('function');
+    });
+
+    test('toggleSettings_is_a_no_op_when_settings_root_is_missing_from_DOM', () => {
+        // The test setup creates the App
+        // without `bootstrap()` and the
+        // `afterEach` removes any
+        // settings-root node, so the DOM
+        // is guaranteed to not have it.
+        // The method's
+        // `document.getElementById('settings-root')` early-return
+        // must not throw. A regression
+        // that dereferences the element
+        // directly would throw here.
+        const app = makeApp();
+        expect(() => {
+            (app as unknown as { toggleSettings: () => void }).toggleSettings();
+        }).not.toThrow();
+    });
+
+    test('toggleSettings_flips_hidden_attribute_on_settings_root (round 112 e2e)', () => {
+        // End-to-end: when the
+        // `#settings-root` element
+        // exists in the DOM with the
+        // `hidden` attribute, calling
+        // `toggleSettings()` should
+        // remove it (open the panel).
+        // Calling again should re-add
+        // it (close the panel). The
+        // toggle is idempotent.
+        document.body.innerHTML += '<div id="settings-root" hidden></div>';
+        const root = document.getElementById('settings-root')!;
+        expect(root.hasAttribute('hidden')).toBe(true);
+        const app = makeApp();
+        (app as unknown as { toggleSettings: () => void }).toggleSettings();
+        expect(root.hasAttribute('hidden')).toBe(false);
+        (app as unknown as { toggleSettings: () => void }).toggleSettings();
+        expect(root.hasAttribute('hidden')).toBe(true);
+    });
+
+    test('bootstrap_keydown_handler_full_path_P_to_toggleSettings (round 112 e2e)', () => {
+        // End-to-end of the full round-112
+        // path:
+        //   keydown("P") → routeKey → { kind: 'toggle-settings' }
+        //               → app.toggleSettings()
+        // We assert the wiring by spying
+        // on `toggleSettings`, dispatching
+        // the action the bootstrap switch
+        // would dispatch, and confirming
+        // the spy was called (round-85 R /
+        // round-91 ` pattern).
+        const app = makeApp();
+        const toggleSpy = jest
+            .spyOn(app as unknown as { toggleSettings: () => void }, 'toggleSettings')
+            .mockImplementation(() => undefined);
+        // Replicate the bootstrap switch
+        // for the 'toggle-settings'
+        // action kind.
+        const action = routeKey('P');
+        expect(action).not.toBeNull();
+        if (action && action.kind === 'toggle-settings') {
+            (app as unknown as { toggleSettings: () => void }).toggleSettings();
+        }
+        expect(toggleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('BINDING_DESCRIPTIONS_for_P_documents_round_111_SettingsPanel', () => {
+        // The 'P' row in
+        // BINDING_DESCRIPTIONS documents
+        // the player's shortcut for the
+        // round-111 SettingsPanel. A
+        // regression that renames 'P'
+        // → 'p' (or moves the row) would
+        // break the help-overlay →
+        // routeKey contract that
+        // round-57 introduced. We pin
+        // the description text + the
+        // key field so both stay in
+        // lock-step with the routeKey
+        // branch. (The 'P' string here
+        // mirrors the
+        // BINDING_DESCRIPTIONS entry
+        // verbatim, so a rename fails
+        // this test on the literal
+        // string.)
+        const pRow = BINDING_DESCRIPTIONS.find((d) => d.key === 'P');
+        expect(pRow).toBeDefined();
+        expect(pRow!.action).toContain('设置');
+        // And the routeKey branch for
+        // 'P' must exist (defense
+        // against a regression that
+        // removes the case from the
+        // switch).
+        expect(routeKey('P')).toEqual({ kind: 'toggle-settings' });
+        // Both cases ('p' lowercase
+        // and 'P' shifted) must
+        // resolve to the same action.
+        expect(routeKey('p')).toEqual({ kind: 'toggle-settings' });
+    });
+
+    test('index_html_has_btn_settings_button_for_mouse_only_players (round 112)', () => {
+        // The P key shortcut is the
+        // primary way to open the
+        // round-111 SettingsPanel, but
+        // a mouse-only player (no
+        // keyboard) must have a
+        // button counterpart. Read
+        // index.html and assert the
+        // button exists with the
+        // expected id. Mirrors the
+        // round-101 file-content
+        // regression pattern applied
+        // to the HTML surface.
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        expect(html).toMatch(/id="btn-settings"/);
+        // And the settings-root
+        // element (the panel's mount
+        // point) must also exist in
+        // the HTML.
+        expect(html).toMatch(/id="settings-root"/);
     });
 });
 

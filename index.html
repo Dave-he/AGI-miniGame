@@ -33,6 +33,49 @@
       #hud-root .hud-stats { top: 0; left: auto; right: 0; }
       #hud-root .hud-dim { top: auto; right: 0; left: auto; bottom: auto; }
 
+      /* Round 112 — settings-root: bottom-right corner
+         so it sits under the HUD. Hidden by default;
+         App.toggleSettings() flips the `hidden` attribute.
+         The panel content (`.settings-panel`) is built
+         at runtime by SettingsPanel. */
+      #settings-root {
+        top: auto; right: 0; bottom: 0; left: auto;
+        z-index: 20;
+      }
+      #settings-root[hidden] { display: none; }
+      .settings-panel {
+        background: rgba(11, 11, 34, 0.92);
+        border: 1px solid var(--neon-cyan, #4ecdc4);
+        border-radius: 10px;
+        padding: 12px 14px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 0 24px rgba(78, 205, 196, 0.25);
+        font-size: 12px;
+        line-height: 1.6;
+        min-width: 260px;
+      }
+      .set-title { font-size: 12px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; text-align: center; }
+      .set-section-label { font-size: 10px; color: var(--text-1); margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 1px; }
+      .set-row { display: flex; flex-wrap: wrap; gap: 4px; }
+      .set-row button {
+        background: rgba(255,255,255,0.05);
+        color: var(--text-0);
+        border: 1px solid rgba(160, 108, 213, 0.4);
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 11px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: all 120ms;
+      }
+      .set-row button:hover { filter: brightness(1.3); }
+      .set-row button.is-active {
+        background: linear-gradient(135deg, var(--neon-violet), var(--neon-pink));
+        color: white;
+        border-color: var(--neon-pink);
+        box-shadow: 0 0 8px rgba(255, 102, 204, 0.5);
+      }
+
       #progression-root {
         left: 0; bottom: 0; width: 380px; max-height: 38vh; overflow: auto;
         background: rgba(11, 11, 34, 0.78); border-right: 1px solid rgba(160, 108, 213, 0.45);
@@ -354,6 +397,16 @@
     <div class="panel" id="god-root"></div>
     <div class="panel" id="vault-root"></div>
     <div class="panel" id="npc-mind-root"></div>
+    <!-- Round 112 — settings-root: home for the
+         round-111 SettingsPanel (audio mute, locale,
+         debounce-window knob). Hidden by default; the
+         P key + the round-112 `btn-settings` button
+         toggle the `hidden` attribute via
+         App.toggleSettings(). The panel itself is
+         built at runtime by SettingsPanel (it
+         overwrites the innerHTML with a `.settings-panel`
+         block containing the section labels + rows). -->
+    <div class="panel" id="settings-root" hidden></div>
 
     <!-- Round 57 — keyboard help overlay. Hidden by default;
          toggle with the ? key. The body is populated at runtime
@@ -372,6 +425,10 @@
       <button class="ctl" id="btn-dsl">模因→DSL</button>
       <button class="ctl" id="btn-collapse">大坍缩</button>
       <button class="ctl" id="btn-god">DM Console</button>
+      <!-- Round 112 — settings button. Mirror of
+           the P key shortcut. Opens the
+           round-111 SettingsPanel. -->
+      <button class="ctl" id="btn-settings">⚙ 设置</button>
       <button class="ctl" id="btn-complete">完成试炼</button>
       <button class="ctl" id="btn-save">存档</button>
       <button class="ctl" id="btn-load">读档</button>

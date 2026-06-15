@@ -1318,6 +1318,28 @@ class App {
     }
 
     /**
+     * Round 112 — toggle the settings overlay. The settings
+     * overlay is a hidden-by-default `<div id="settings-root">`
+     * populated by the round-111 SettingsPanel (audio mute,
+     * locale, debounce-window knob). Mirrors `toggleHelp`'s
+     * pattern: just flip the `hidden` attribute, log a Chinese
+     * open/close line. The P key shortcut in the keydown
+     * handler routes through this method.
+     */
+    toggleSettings(): void {
+        const el = document.getElementById('settings-root');
+        if (!el) return;
+        const isHidden = el.hasAttribute('hidden');
+        if (isHidden) {
+            el.removeAttribute('hidden');
+            this.hud.log('[kb] 设置浮层已打开 (按 P 关闭)');
+        } else {
+            el.setAttribute('hidden', '');
+            this.hud.log('[kb] 设置浮层已关闭');
+        }
+    }
+
+    /**
      * Round 35 — keep `worldState.lastNpcDisposition` in sync with
      * the NpcRegistry's current average so a save → reload cycle
      * preserves the world's mood signal. Called from every site
@@ -2336,6 +2358,11 @@ async function bootstrap(): Promise<void> {
     bind('btn-gift-0',    () => app.giftNpc(0));
     bind('btn-attack-0',  () => app.attackNpc(0));
     bind('btn-god',       () => app.toggleGodConsole());
+    // Round 112 — button counterpart
+    // to the P key shortcut. Opens /
+    // closes the round-111
+    // SettingsPanel.
+    bind('btn-settings',  () => app.toggleSettings());
     bind('btn-complete',  () => app.completeRun(2500, [
         { itemId: 'gold', quantity: 100 },
         { itemId: 'gem',  quantity: 5 },
@@ -2420,6 +2447,23 @@ async function bootstrap(): Promise<void> {
             // GodConsole class itself manages open/close
             // state, so the toggle is idempotent.
             case 'toggle-dm-console': app.toggleGodConsole(); break;
+            // Round 112 — P key shortcut
+            // for the round-111
+            // SettingsPanel. The panel
+            // itself is rendered into
+            // `<div id="settings-root">`
+            // (see index.html + the
+            // AppRefs construction in
+            // main.ts). The shortcut
+            // calls the same
+            // `toggleSettings()` that
+            // the round-112 `btn-settings`
+            // button does; the App's
+            // `toggleSettings` flips
+            // the `hidden` attribute,
+            // so the toggle is
+            // idempotent.
+            case 'toggle-settings':  app.toggleSettings(); break;
         }
         // Only swallow the event when we actually handled it so
         // tab navigation, Esc-into-fullscreen-exit etc. still

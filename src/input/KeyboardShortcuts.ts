@@ -28,6 +28,7 @@
  *   E       — roll a world event
  *   R       — rollback to last good state (round 85)
  *   `/~     — toggle DM God console (round 91)
+ *   P       — toggle settings overlay (round 112)
  *
  * Anything else is ignored (returns `null`). The mapping is locked
  * by the index.html help overlay and the 8-portal palette in
@@ -43,7 +44,8 @@ export type KeyboardAction =
     | { kind: 'load' }
     | { kind: 'event' }
     | { kind: 'rollback' }
-    | { kind: 'toggle-dm-console' };
+    | { kind: 'toggle-dm-console' }
+    | { kind: 'toggle-settings' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -103,6 +105,21 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // still handles `'`` and `~` independently, and
     // the BINDING_DESCRIPTIONS entry documents both.
     { key: '`/~',  action: '切换 DM God 控制台' },
+    // Round 112 — the P key toggles the
+    // settings overlay. This is the
+    // keyboard counterpart to the
+    // round-111 SettingsPanel — a panel
+    // that lives in the DOM at
+    // `<div id="settings-root">` but is
+    // hidden by default (no inline
+    // button opens it). The P shortcut
+    // is the primary way to open it
+    // (the help overlay will be the
+    // secondary way once a "Settings"
+    // row is wired into the controls
+    // bar — round-112 also adds the
+    // button alongside the P key).
+    { key: 'P',    action: '打开设置 (声音 / 语言 / 防抖窗口)' },
 ];
 
 /**
@@ -181,6 +198,19 @@ export function routeKey(key: string): KeyboardAction | null {
         case '`':
         case '~':
             return { kind: 'toggle-dm-console' };
+        // Round 112 — the P key toggles
+        // the settings overlay. The
+        // shortcut is the primary way
+        // to open the round-111
+        // SettingsPanel since the panel
+        // has no inline button by
+        // default. Both 'p' and 'P' are
+        // routed (case-insensitive) to
+        // match the round-85 R / round-91
+        // ` convention.
+        case 'p':
+        case 'P':
+            return { kind: 'toggle-settings' };
         default:
             return null;
     }
