@@ -83,6 +83,22 @@ import { renderAchievementsPanel, AchievementsPanelHandle } from './ui/Achieveme
 // `WfcBiomes.BIOMES` with the
 // current biome highlighted.
 import { renderBiomeLibraryPanel, BiomeLibraryPanelHandle } from './ui/BiomeLibraryPanel';
+// Round 151 — extracted from the
+// previously inline `BIOME_HOTKEYS`
+// map (was at line ~310 of this
+// file, declared at module load).
+// Moving the map to its own module
+// makes the lookup contract
+// testable: `getBiomeHotkeyContext`
+// + `listMappedBiomeIds` are now
+// importable from biomeHotkeys.test.ts
+// without spinning up the App.
+// Round 151 also backfills the
+// `space` and `dungeon` biomes (the
+// BiomeLibraryPanel knows about all
+// 6; the round-150 inline map only
+// covered 4).
+import { getBiomeHotkeyContext } from './ui/biomeHotkeys';
 // Round 128 — the D-key DebugOverlay
 // panel showing the 4 ActionDebouncer
 // instances' runtime state (window /
@@ -284,73 +300,18 @@ function stableSeedFromSnapshot(snap: { wfcTileWeights: readonly number[]; npcCo
     return h;
 }
 
-/**
- * Round 150 — biome-
- * contextual hotkey
- * bindings. Each
- * biome id maps to
- * (label, bindings)
- * where the label is
- * the small `——
- * ${label} ——` header
- * shown above the
- * biome strip.
- *
- * Bindings use the
- * same shape as the
- * round-147 base
- * strip (`{ key,
- * action, group? }`).
- * Unknown biomes
- * (e.g. the welcome
- * hub) get `null`
- * so the biome
- * strip is hidden.
- */
-const BIOME_HOTKEYS: ReadonlyMap<string, {
-    label: string;
-    bindings: ReadonlyArray<{ key: string; action: string; group?: string }>;
-} | null> = new Map([
-    ['forest', {
-        label: '森林',
-        bindings: [
-            { key: '1', action: '伐木', group: '采集' },
-            { key: '2', action: '种树', group: '采集' },
-            { key: '3', action: '篝火', group: '生存' },
-        ],
-    }],
-    ['desert', {
-        label: '沙漠',
-        bindings: [
-            { key: '1', action: '挖井', group: '采集' },
-            { key: '2', action: '沙堡', group: '建造' },
-            { key: '3', action: '绿洲', group: '探索' },
-        ],
-    }],
-    ['cyberpunk', {
-        label: '赛博',
-        bindings: [
-            { key: '1', action: '黑客', group: '入侵' },
-            { key: '2', action: '机甲', group: '战斗' },
-            { key: '3', action: '芯片', group: '升级' },
-        ],
-    }],
-    ['ice', {
-        label: '冰原',
-        bindings: [
-            { key: '1', action: '凿冰', group: '采集' },
-            { key: '2', action: '雪橇', group: '移动' },
-            { key: '3', action: '火把', group: '生存' },
-        ],
-    }],
-    // Welcome hub and
-    // unknown biomes
-    // get null (the
-    // biome strip is
-    // hidden in the
-    // hub).
-    ['', null],
-]);
+// Round 151 — biome hotkey map
+// moved to ./ui/biomeHotkeys.ts.
+// The two consumers in this file
+// (the keyboard 1-8 jump path and
+// the DM-driven dimension path)
+// call `getBiomeHotkeyContext`
+// instead of reading the map
+// directly. Round 151 also
+// backfills the `space` and
+// `dungeon` biomes that were
+// known to BiomeLibraryPanel but
+// had no bindings here.
 
 class App {
     private scene: SceneManager;
@@ -849,7 +810,7 @@ class App {
                 // keyboard 1-8
                 // jump path).
                 {
-                    const ctx = BIOME_HOTKEYS.get(biome.id) ?? null;
+                    const ctx = getBiomeHotkeyContext(biome.id);
                     if (ctx === null) {
                         this.hud.setBiomeHotkeys(null, null);
                     } else {
@@ -2002,7 +1963,7 @@ class App {
             // biome strip is
             // hidden.
             {
-                const ctx = BIOME_HOTKEYS.get(biome.id) ?? null;
+                const ctx = getBiomeHotkeyContext(biome.id);
                 if (ctx === null) {
                     this.hud.setBiomeHotkeys(null, null);
                 } else {
