@@ -2,7 +2,7 @@
  * SettingsPanel tests.
  */
 
-import { SettingsPanel, SettingsPanelHooks, Difficulty, DebounceWindow, DEBOUNCE_PRESETS, VOLUME_PRESETS } from '../ui/SettingsPanel';
+import { SettingsPanel, SettingsPanelHooks, Difficulty, DebounceWindow, DEBOUNCE_PRESETS, VOLUME_PRESETS, SceneSpeedPreset, SCENE_SPEED_PRESETS } from '../ui/SettingsPanel';
 import { I18n } from '../i18n/I18n';
 import { GameAudio } from '../audio/GameAudio';
 import { NullAudioService } from '../audio/AudioService';
@@ -19,16 +19,25 @@ function make() {
     // getCurrentDebounce hooks.
     let currentDebounce: DebounceWindow = 500;
     const debounceChanges: DebounceWindow[] = [];
+    // Round 161 — track scene speed changes
+    // + current preset for the new
+    // onSceneSpeedChange /
+    // getCurrentSceneSpeed hooks.
+    let currentSceneSpeed: SceneSpeedPreset = 1;
+    const sceneSpeedChanges: SceneSpeedPreset[] = [];
     const hooks: SettingsPanelHooks = {
         onDifficultyChange: (d) => { diffs.push(d); current = d; },
         getCurrentDifficulty: () => current,
         onDebounceChange: (ms) => { debounceChanges.push(ms); currentDebounce = ms; },
         getCurrentDebounce: () => currentDebounce,
+        onSceneSpeedChange: (sp) => { sceneSpeedChanges.push(sp); currentSceneSpeed = sp; },
+        getCurrentSceneSpeed: () => currentSceneSpeed,
     };
     const p = new SettingsPanel(root, i18n, audio, hooks);
     return {
         root, i18n, audio, p, diffs, getCurrent: () => current,
         debounceChanges, getCurrentDebounce: () => currentDebounce,
+        sceneSpeedChanges, getCurrentSceneSpeed: () => currentSceneSpeed,
     };
 }
 
@@ -435,5 +444,178 @@ describe('SettingsPanel', () => {
         expect(audio.getVolume()).toBe(0.4);
         audio.setVolume(0.5);
         expect(audio.getVolume()).toBe(0.5);
+    });
+
+    // =========================================================
+    // Round 161 — scene speed
+    // cycle (N key + 4-button
+    // SettingsPanel row).
+    //
+    // The new row has 4
+    // buttons (0.5x / 1x /
+    // 2x / 4x) mirroring the
+    // N key cycle. The
+    // current preset gets
+    // the `is-active`
+    // class. Clicking fires
+    // `onSceneSpeedChange(sp)`.
+    // Mirrors the round-111
+    // debounce + round-157
+    // volume row pattern
+    // (1 row, 4 buttons,
+    // is-active highlight,
+    // onChange hook).
+    // =========================================================
+
+    test('initial_render_shows_4_scene_speed_buttons_round_161', () => {
+        // The new scene-speed
+        // row has 4 buttons
+        // (0.5x / 1x / 2x /
+        // 4x), mirroring the
+        // round-111 debounce
+        // row's is-active
+        // highlight pattern.
+        // The data-scene-speed
+        // attribute is set to
+        // the numeric value
+        // as a string ("0.5"
+        // / "1" / "2" / "4").
+        const { root } = make();
+        const btns = root.querySelectorAll<HTMLButtonElement>('.set-scene-speed');
+        expect(btns.length).toBe(4);
+        const labels = Array.from(btns).map(b => b.textContent);
+        // I18n default locale
+        // is en-US, so labels
+        // are 0.5x (slow) / 1x
+        // (normal) / 2x (fast)
+        // / 4x (turbo).
+        expect(labels[0]).toContain('0.5x');
+        expect(labels[1]).toContain('1x');
+        expect(labels[2]).toContain('2x');
+        expect(labels[3]).toContain('4x');
+    });
+
+    test('scene_speed_buttons_are_ordered_0.5_1_2_4_round_161', () => {
+        // The canonical ordering
+        // from SCENE_SPEED_PRESETS
+        // is monotonically
+        // increasing. A
+        // regression that
+        // shuffled the array
+        // would put "turbo"
+        // 4x before "slow"
+        // 0.5x and confuse the
+        // player.
+        const { root } = make();
+        const btns = root.querySelectorAll<HTMLButtonElement>('.set-scene-speed');
+        const dataAttrs = Array.from(btns).map(b => b.getAttribute('data-scene-speed'));
+        expect(dataAttrs).toEqual(['0.5', '1', '2', '4']);
+    });
+
+    test('SCENE_SPEED_PRESETS_is_exported_with_4_values_round_161', () => {
+        // Importing the
+        // constant directly
+        // from the
+        // SettingsPanel module
+        // lets external
+        // callers (e.g.
+        // App-level tests)
+        // avoid duplicating
+        // the canonical
+        // ordering. A
+        // regression that
+        // dropped the export
+        // would force the
+        // App's cycleSceneSpeed
+        // to redefine the
+        // cycle sequence.
+        expect(SCENE_SPEED_PRESETS).toEqual([0.5, 1, 2, 4]);
+    });
+
+    test('default_scene_speed_preset_highlights_1x_button_round_161', () => {
+        // Fresh SettingsPanel
+        // with the round-161
+        // getCurrentSceneSpeed
+        // hook returning 1
+        // (the round-1 default
+        // update rate). The
+        // 1x button gets the
+        // is-active class; the
+        // other 3 do not.
+        const { root } = make();
+        const active = root.querySelectorAll<HTMLButtonElement>('.set-scene-speed.is-active');
+        expect(active.length).toBe(1);
+        expect(active[0].getAttribute('data-scene-speed')).toBe('1');
+    });
+
+    test('clicking_0.5x_button_fires_onSceneSpeedChange_with_0.5_round_161', () => {
+        // Player wants slow
+        // mode (half speed)
+        // for atmospheric
+        // appreciation.
+        const { root, sceneSpeedChanges } = make();
+        const btn = root.querySelector<HTMLButtonElement>('[data-scene-speed="0.5"]')!;
+        btn.click();
+        expect(sceneSpeedChanges).toEqual([0.5]);
+    });
+
+    test('clicking_4x_button_fires_onSceneSpeedChange_with_4_round_161', () => {
+        // Player wants turbo
+        // mode (4x) to skip
+        // through scene
+        // generation.
+        const { root, sceneSpeedChanges } = make();
+        const btn = root.querySelector<HTMLButtonElement>('[data-scene-speed="4"]')!;
+        btn.click();
+        expect(sceneSpeedChanges).toEqual([4]);
+    });
+
+    test('clicking_2x_button_twice_fires_onSceneSpeedChange_twice_round_161', () => {
+        // Idempotency check:
+        // clicking the same
+        // button twice should
+        // fire the callback
+        // twice (the App
+        // decides whether to
+        // short-circuit, not
+        // the panel). A
+        // regression that
+        // deduped identical
+        // clicks would break
+        // the round-111
+        // debounce / round-157
+        // volume symmetry.
+        const { root, sceneSpeedChanges } = make();
+        const btn = root.querySelector<HTMLButtonElement>('[data-scene-speed="2"]')!;
+        btn.click();
+        btn.click();
+        expect(sceneSpeedChanges).toEqual([2, 2]);
+    });
+
+    test('scene_speed_row_hidden_when_hooks_omitted_round_161', () => {
+        // The scene-speed row
+        // must be hidden when
+        // the App omits the 2
+        // scene-speed hooks —
+        // mirrors the
+        // round-111
+        // debounce-row
+        // "hidden when hooks
+        // not provided"
+        // contract. A
+        // regression that
+        // always rendered the
+        // row would render
+        // dead buttons.
+        document.body.innerHTML = '<div id="set"></div>';
+        const root = document.getElementById('set')!;
+        const i18n = new I18n();
+        const audio = new GameAudio(new NullAudioService());
+        // NO onSceneSpeedChange /
+        // getCurrentSceneSpeed
+        // hooks provided.
+        new SettingsPanel(root, i18n, audio, {});
+        const btns = root.querySelectorAll<HTMLButtonElement>('.set-scene-speed');
+        expect(btns.length).toBe(0);
     });
 });

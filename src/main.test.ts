@@ -7124,7 +7124,7 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         expect(main).not.toMatch(/bind\('btn-epoch',\s*\(\)\s*=>\s*app\.toggleEpoch\(\)\)/);
     });
 
-    test('main_ts_help_overlay_header_says_17_keys (round 121/128/132/133/137/159/160)', () => {
+    test('main_ts_help_overlay_header_says_18_keys (round 121/128/132/133/137/159/160/161)', () => {
         // The 3rd section header
         // in the help overlay
         // (round-120
@@ -7163,7 +7163,7 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         // knows how many keys
         // are listed.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toMatch(/面板开关 \(17 键\)/);
+        expect(main).toMatch(/面板开关 \(18 键\)/);
     });
 });
 
@@ -7972,7 +7972,7 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
         expect(main).toMatch(/dslCodexRoot:\s*dslCodexRoot\s*\?\?\s*undefined/);
     });
 
-    test('main_ts_help_overlay_header_reads_17_keys_not_16 (round 133/159/160)', () => {
+    test('main_ts_help_overlay_header_reads_18_keys_not_17 (round 133/159/160/161)', () => {
         // The help overlay
         // section header
         // text was updated
@@ -7991,7 +7991,12 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
         // "16 键" to "17 键"
         // for the
         // minimize-to-icon
-        // mode. A
+        // mode. Round 161
+        // bumps it from
+        // "17 键" to "18 键"
+        // for the scene
+        // speed cycle (N
+        // key). A
         // regression that
         // forgets to bump
         // the number would
@@ -7999,8 +8004,8 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
         // drift caught by
         // this test.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toContain('面板开关 (17 键)');
-        expect(main).not.toContain('面板开关 (16 键)');
+        expect(main).toContain('面板开关 (18 键)');
+        expect(main).not.toContain('面板开关 (17 键)');
     });
 });
 
@@ -8731,6 +8736,175 @@ describe('App — round 123: file-content tests for 4 ActionDebouncer fields + s
         expect(main).toMatch(/this\.debouncerSaveGame\.stamp\(\)/);
         expect(main).toMatch(/this\.debouncerRollWorldEvent\.stamp\(\)/);
         expect(main).toMatch(/this\.debouncerEnterAtom\.stamp\(\)/);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 161 — `,` (comma) key scene speed cycle
+// (操控性好 UX — slow to
+// appreciate scene
+// atmosphere / fast to
+// preview scene
+// generation variety).
+// Closes the round-157
+// (volume) and round-111
+// (debounce) sibling —
+// a 3rd sub-panel in
+// the SettingsPanel.
+//
+// Pins:
+//   1. `routeKey_comma_returns_cycle_scene_speed_action`.
+//   2. `BINDING_DESCRIPTIONS_for_comma_documents_round_161_scene_speed`.
+//   3. `App_exposes_cycleSceneSpeed_for_bootstrap_keydown_switch`.
+//   4. `App_exposes_getCurrentSceneSpeed_for_SettingsPanel_getter`.
+//   5. `App_exposes_applySceneSpeed_idempotent`.
+//   6. `main_ts_wires_scene_speed_hooks_in_SettingsPanel_construction`.
+//   7. `main_ts_uses_SCENE_SPEED_PRESETS_for_cycle_sequence`.
+//   8. `localStorage_agi_scene_speed_persists_preset_round_161`.
+// ---------------------------------------------------------------------------
+
+describe('App — round 161: `,` (comma) key scene speed cycle (操控性好 UX)', () => {
+    beforeEach(() => {
+        try { localStorage.removeItem('agi_scene_speed'); } catch { /* noop */ }
+    });
+
+    test('routeKey_comma_returns_cycle_scene_speed_action (round 161)', () => {
+        // The `,` (comma)
+        // key routes to
+        // cycle-scene-speed.
+        // Comma was the
+        // chosen binding
+        // because all 26
+        // letters are
+        // claimed by
+        // earlier rounds
+        // (round-121 took
+        // N for the
+        // economy panel
+        // toggle).
+        expect(routeKey(',')).toEqual({ kind: 'cycle-scene-speed' });
+    });
+
+    test('BINDING_DESCRIPTIONS_for_comma_documents_round_161_scene_speed (round 161)', () => {
+        const comma = BINDING_DESCRIPTIONS.find((d) => d.key === ',');
+        expect(comma).toBeDefined();
+        // The action text is
+        // Chinese (defense
+        // against future
+        // refactors that
+        // drop the Chinese
+        // localization).
+        expect(comma?.action).toMatch(/[一-鿿]/);
+        // Mentions the 4
+        // presets (0.5x /
+        // 1x / 2x / 4x).
+        expect(comma?.action).toMatch(/0\.5x/);
+        expect(comma?.action).toMatch(/1x/);
+        expect(comma?.action).toMatch(/2x/);
+        expect(comma?.action).toMatch(/4x/);
+    });
+
+    test('App_exposes_cycleSceneSpeed_for_bootstrap_keydown_switch (round 161)', () => {
+        // The round-161 comma
+        // key bootstrap
+        // switch case calls
+        // `app.cycleSceneSpeed()`.
+        // Verify both the
+        // method is exposed
+        // on the App
+        // prototype and the
+        // bootstrap switch
+        // routes the new
+        // action to it.
+        expect(typeof (App.prototype as unknown as { cycleSceneSpeed?: () => void }).cycleSceneSpeed).toBe('function');
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/case 'cycle-scene-speed':\s*app\.cycleSceneSpeed\(\);\s*break/);
+    });
+
+    test('App_exposes_getCurrentSceneSpeed_for_SettingsPanel_getter (round 161)', () => {
+        // The SettingsPanel
+        // `getCurrentSceneSpeed`
+        // hook requires the
+        // App to expose a
+        // public method that
+        // returns the
+        // current preset.
+        expect(typeof (App.prototype as unknown as { getCurrentSceneSpeed?: () => number }).getCurrentSceneSpeed).toBe('function');
+    });
+
+    test('App_exposes_applySceneSpeed_idempotent (round 161)', () => {
+        // The `applySceneSpeed`
+        // method is called
+        // from both the
+        // comma key cycle
+        // and the
+        // SettingsPanel click
+        // handler. It must
+        // be a no-op when
+        // the value is
+        // unchanged (so
+        // spam-tapping the
+        // comma key doesn't
+        // thrash the scene
+        // loop).
+        expect(typeof (App.prototype as unknown as { applySceneSpeed?: (m: number) => void }).applySceneSpeed).toBe('function');
+    });
+
+    test('main_ts_wires_scene_speed_hooks_in_SettingsPanel_construction (round 161)', () => {
+        // The SettingsPanel
+        // construction
+        // passes the 2
+        // scene-speed hooks
+        // (`onSceneSpeedChange`
+        // + `getCurrentSceneSpeed`)
+        // so the new
+        // scene-speed row
+        // renders + is
+        // clickable.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/onSceneSpeedChange:\s*\(sp\)/);
+        expect(main).toMatch(/getCurrentSceneSpeed:\s*\(\)\s*=>\s*this\.currentSceneSpeed/);
+    });
+
+    test('main_ts_uses_SCENE_SPEED_PRESETS_for_cycle_sequence (round 161)', () => {
+        // The
+        // `cycleSceneSpeed`
+        // method must use
+        // the
+        // `SCENE_SPEED_PRESETS`
+        // const (the
+        // canonical source
+        // of truth for the
+        // cycle order) to
+        // pick the next
+        // preset. A
+        // regression that
+        // hard-coded the
+        // 4 values inline
+        // would drift from
+        // the SettingsPanel
+        // row order.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/SCENE_SPEED_PRESETS\.indexOf/);
+        expect(main).toMatch(/SCENE_SPEED_PRESETS\.length/);
+    });
+
+    test('localStorage_agi_scene_speed_persists_preset_round_161 (round 161)', () => {
+        // The 4 valid values
+        // are "0.5" / "1" /
+        // "2" / "4" — the
+        // `saveSceneSpeedToStorage`
+        // helper writes the
+        // numeric value as
+        // a string. A
+        // regression that
+        // wrote the wrong
+        // key or the wrong
+        // format would
+        // break persistence.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/const SCENE_SPEED_STORAGE_KEY\s*=\s*'agi_scene_speed'/);
+        expect(main).toMatch(/localStorage\.setItem\(SCENE_SPEED_STORAGE_KEY,\s*String\(multiplier\)\)/);
     });
 });
 

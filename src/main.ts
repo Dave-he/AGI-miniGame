@@ -48,7 +48,7 @@ import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
 import { TutorialOverlay } from './ui/TutorialOverlay';
 import { renderStatsPanel, StatsPanelHandle } from './ui/StatsPanel';
 import { GodConsole } from './ui/GodConsole';
-import { SettingsPanel, type DebounceWindow, type Difficulty } from './ui/SettingsPanel';
+import { SettingsPanel, type DebounceWindow, type Difficulty, type SceneSpeedPreset, SCENE_SPEED_PRESETS } from './ui/SettingsPanel';
 import { PlayerHealth } from './player/PlayerHealth';
 import { DmMode } from './dm/DmMode';
 import { SessionReplay } from './analytics/SessionReplay';
@@ -392,6 +392,66 @@ class App {
      */
     private currentDifficulty: Difficulty =
         loadDifficultyFromStorage() ?? 'normal';
+    /**
+     * Round 161 — current scene
+     * speed preset surfaced via
+     * `getCurrentSceneSpeed()`
+     * for the SettingsPanel's
+     * getter. The 4 presets are
+     * 0.5x / 1x / 2x / 4x. The
+     * default is 1x (matches
+     * the round-1 normal
+     * update rate). The N key
+     * cycles through the
+     * presets in
+     * `SCENE_SPEED_PRESETS`
+     * order (0.5 → 1 → 2 → 4
+     * → 0.5), and the
+     * SettingsPanel's
+     * scene-speed row has 4
+     * buttons in the same
+     * order. The value is
+     * persisted to
+     * localStorage
+     * (`agi_scene_speed`) so
+     * the choice survives a
+     * page reload.
+     */
+    private currentSceneSpeed: SceneSpeedPreset =
+        loadSceneSpeedFromStorage() ?? 1;
+    /**
+     * Round 161 — the
+     * scene-speed
+     * multiplier that
+     * downstream code
+     * (the Three.js
+     * render loop, the
+     * scene's particle
+     * systems, etc.)
+     * reads each frame
+     * to scale delta-
+     * time. Defaults
+     * to 1 (the round-1
+     * 1:1 update rate).
+     * The 4 valid values
+     * are 0.5 / 1 / 2 /
+     * 4. Stored
+     * separately from
+     * `currentSceneSpeed`
+     * so the
+     * `applySceneSpeed`
+     * method can detect
+     * "no-op" calls
+     * (the
+     * `cycleSceneSpeed`
+     * method calls it
+     * unconditionally,
+     * and the panel
+     * click handler
+     * calls it only on
+     * a real change).
+     */
+    private sceneSpeedMultiplier: SceneSpeedPreset = 1;
     private replay: SessionReplay;
     private narration: NarrationEngine;
     private vault: DimensionVault;
@@ -736,6 +796,23 @@ class App {
         // has to explicitly press
         // B to opt in.
         this.hud.setMinimized(loadHudMinimizedFromStorage());
+        // Round 161 — restore the
+        // scene speed preset
+        // alongside the HUD
+        // modes. The setter
+        // is idempotent: a fresh
+        // boot with no saved
+        // value defaults to 1x
+        // (the round-1 default
+        // rate) — the player has
+        // to explicitly press N
+        // (or click a button in
+        // the settings panel) to
+        // opt in to a different
+        // speed. The 4 presets
+        // are 0.5x / 1x / 2x / 4x.
+        this.currentSceneSpeed = loadSceneSpeedFromStorage();
+        this.applySceneSpeed(this.currentSceneSpeed);
         this.worldState = new WorldState('local-player', '次元旅者');
         this.progression = new Progression();
         this.epoch = new EpochSystem(Date.now());
@@ -1024,6 +1101,33 @@ class App {
                 getCurrentDebounce: () => this.currentDebounceWindowMs,
                 onDifficultyChange: (d) => this.applyDifficultySettings(d),
                 getCurrentDifficulty: () => this.currentDifficulty,
+                // Round 161 — wire the
+                // scene-speed row
+                // hooks. The
+                // `onSceneSpeedChange`
+                // callback updates
+                // the in-memory
+                // `currentSceneSpeed`
+                // field + persists to
+                // localStorage +
+                // applies the new
+                // multiplier to the
+                // scene's update
+                // loop. The
+                // `getCurrentSceneSpeed`
+                // getter is used by
+                // the SettingsPanel
+                // to highlight the
+                // active preset on
+                // render. Mirrors
+                // the round-111
+                // debounce wiring.
+                onSceneSpeedChange: (sp) => {
+                    this.currentSceneSpeed = sp;
+                    saveSceneSpeedToStorage(sp);
+                    this.applySceneSpeed(sp);
+                },
+                getCurrentSceneSpeed: () => this.currentSceneSpeed,
             });
         }
         if (refs.vaultRoot) {
@@ -2466,6 +2570,94 @@ class App {
     toggleHudMinimized(): void {
         const next = this.hud.toggleMinimized();
         saveHudMinimizedToStorage(next);
+    }
+
+    /**
+     * Round 161 — cycle the
+     * scene speed through
+     * the 4-preset sequence
+     * (0.5x → 1x → 2x → 4x →
+     * 0.5x). Slow speeds (0.5x)
+     * let the player
+     * appreciate the scene
+     * atmosphere (画面优美);
+     * fast speeds (2x / 4x)
+     * let the player skip
+     * through scene
+     * generation and see the
+     * variety quickly (场景
+     * 更优). The N key
+     * shortcut calls this
+     * via the round-161
+     * `cycle-scene-speed`
+     * KeyboardAction.
+     *
+     * Mirrors the round-154
+     * `cycleHudCorner`:
+     * one call + one
+     * localStorage write +
+     * one applySceneSpeed.
+     * The `applySceneSpeed`
+     * is a no-op when the
+     * value is unchanged
+     * (the player can spam
+     * the N key without
+     * thrashing the scene
+     * loop), so the
+     * settings panel +
+     * the keyboard
+     * shortcut stay in
+     * sync via the same
+     * hook.
+     */
+    cycleSceneSpeed(): void {
+        const cur = this.currentSceneSpeed;
+        const idx = SCENE_SPEED_PRESETS.indexOf(cur);
+        const next = SCENE_SPEED_PRESETS[(idx + 1) % SCENE_SPEED_PRESETS.length]!;
+        this.currentSceneSpeed = next;
+        saveSceneSpeedToStorage(next);
+        this.applySceneSpeed(next);
+    }
+
+    /**
+     * Round 161 — apply a
+     * scene speed
+     * multiplier to the
+     * scene's update
+     * loop. A no-op when
+     * the value is
+     * unchanged (so the
+     * `cycleSceneSpeed`
+     * method can call
+     * this unconditionally).
+     * The Chinese log line
+     * mirrors the
+     * round-154/156/160
+     * convention (one log
+     * per state change).
+     */
+    applySceneSpeed(multiplier: SceneSpeedPreset): void {
+        if (this.sceneSpeedMultiplier === multiplier) return;
+        this.sceneSpeedMultiplier = multiplier;
+        console.log(`[scene] 速度已更新为 ${multiplier}x (4 档循环: 0.5x / 1x / 2x / 4x)`);
+    }
+
+    /**
+     * Round 161 — getter
+     * for the SettingsPanel
+     * scene-speed row.
+     * Mirrors
+     * `getCurrentDebounceWindow`
+     * / `getCurrentDifficulty`:
+     * a public method that
+     * returns the current
+     * preset, so the
+     * SettingsPanel can
+     * highlight the active
+     * button on render.
+     */
+    getCurrentSceneSpeed(): SceneSpeedPreset {
+        return this.currentSceneSpeed;
     }
 
     /**
@@ -4089,7 +4281,7 @@ async function bootstrap(): Promise<void> {
             // HUD mode.
             const toggleHeader = document.createElement('div');
             toggleHeader.className = 'kb-help-section kb-help-section-toggle';
-            toggleHeader.textContent = '面板开关 (17 键)';
+            toggleHeader.textContent = '面板开关 (18 键)';
             body.appendChild(toggleHeader);
             for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
                 const keyEl = document.createElement('div');
@@ -4156,6 +4348,29 @@ async function bootstrap(): Promise<void> {
             // localStorage write
             // + re-render).
             case 'toggle-hud-minimized': app.toggleHudMinimized(); break;
+            // Round 161 — N
+            // key cycles
+            // the scene
+            // speed
+            // through the
+            // 4-preset
+            // sequence
+            // (0.5x → 1x
+            // → 2x → 4x
+            // → 0.5x).
+            // Same
+            // handler
+            // pattern as
+            // the other
+            // HUD
+            // toggles —
+            // one call +
+            // one
+            // localStorage
+            // write + one
+            // applyScene
+            // Speed.
+            case 'cycle-scene-speed': app.cycleSceneSpeed(); break;
             case 'enter-atom': void app.enterAtom(action.atomId); break;
             // Round 152 — H key toggles the HUD
             // compact mode (the round-51 memories
@@ -4518,6 +4733,45 @@ function saveHudMinimizedToStorage(enabled: boolean): void {
     if (typeof localStorage === 'undefined') return;
     try {
         localStorage.setItem(HUD_MINIMIZED_STORAGE_KEY, enabled ? '1' : '0');
+    } catch {
+        // localStorage can throw in
+        // private mode / quota errors.
+        // Swallow — the in-memory state
+        // is already updated.
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Round 161 — `agi_scene_speed` localStorage key for
+// the scene speed cycle. The 4 valid values are
+// "0.5" / "1" / "2" / "4"; any other string (or
+// missing key) returns the default 1 (the round-1
+// 1x update rate). The N key cycles through
+// `SCENE_SPEED_PRESETS` in order; the SettingsPanel
+// scene-speed row has 4 buttons in the same order;
+// both write to this key. The App reads it on
+// boot (via `loadSceneSpeedFromStorage`) to
+// restore the chosen preset.
+// ---------------------------------------------------------------------------
+
+const SCENE_SPEED_STORAGE_KEY = 'agi_scene_speed';
+
+function loadSceneSpeedFromStorage(): SceneSpeedPreset {
+    if (typeof localStorage === 'undefined') return 1;
+    try {
+        const raw = localStorage.getItem(SCENE_SPEED_STORAGE_KEY);
+        const sp = raw == null ? NaN : Number(raw);
+        if (sp === 0.5 || sp === 1 || sp === 2 || sp === 4) return sp;
+        return 1;
+    } catch {
+        return 1;
+    }
+}
+
+function saveSceneSpeedToStorage(multiplier: SceneSpeedPreset): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(SCENE_SPEED_STORAGE_KEY, String(multiplier));
     } catch {
         // localStorage can throw in
         // private mode / quota errors.

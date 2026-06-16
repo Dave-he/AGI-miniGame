@@ -87,6 +87,36 @@ export const CATALOG: Record<Locale, Record<string, string>> = {
         'settings.volume.0.25':  '低',
         'settings.volume.0.5':   '中',
         'settings.volume.1':     '高',
+        // Round 161 — scene
+        // speed presets. 4
+        // buttons (slow /
+        // normal / fast /
+        // turbo) in the
+        // SettingsPanel
+        // scene-speed row.
+        // The 4 values map to
+        // the cycle sequence
+        // 0.5x / 1x / 2x / 4x
+        // (also wired to the
+        // N key). Slow
+        // speeds (0.5x) let
+        // the player
+        // appreciate the
+        // scene atmosphere
+        // (画面优美);
+        // fast speeds (2x /
+        // 4x) let the
+        // player skip
+        // through scene
+        // generation and
+        // see the variety
+        // quickly (场景
+        // 更优).
+        'settings.sceneSpeed':   '场景速度',
+        'settings.sceneSpeed.0.5':'0.5x (慢)',
+        'settings.sceneSpeed.1': '1x (标准)',
+        'settings.sceneSpeed.2': '2x (快)',
+        'settings.sceneSpeed.4': '4x (极速)',
 
         'stats.title':           '统计',
         'stats.counters':        '计数器',
@@ -161,6 +191,20 @@ export const CATALOG: Record<Locale, Record<string, string>> = {
         'settings.volume.0.25':  'Low',
         'settings.volume.0.5':   'Med',
         'settings.volume.1':     'High',
+        // Round 161 — scene
+        // speed presets. 4
+        // buttons in the
+        // SettingsPanel
+        // scene-speed row,
+        // matching the N
+        // key cycle. Slow
+        // / normal / fast
+        // / turbo.
+        'settings.sceneSpeed':   'Scene speed',
+        'settings.sceneSpeed.0.5':'0.5x (slow)',
+        'settings.sceneSpeed.1': '1x (normal)',
+        'settings.sceneSpeed.2': '2x (fast)',
+        'settings.sceneSpeed.4': '4x (turbo)',
 
         'stats.title':           'Stats',
         'stats.counters':        'Counters',

@@ -262,7 +262,42 @@ export type KeyboardAction =
     // B reads as "Bar" — the
     // panel collapses to a
     // single icon bar.
-    | { kind: 'toggle-hud-minimized' };
+    | { kind: 'toggle-hud-minimized' }
+    // Round 161 — cycle
+    // through the 4 scene
+    // speed presets
+    // (0.5x → 1x → 2x → 4x →
+    // 0.5x). Slow speeds let
+    // the player appreciate
+    // the scene atmosphere
+    // (画面优美); fast
+    // speeds let the player
+    // skip through scene
+    // generation and see the
+    // variety quickly
+    // (场景更优). The
+    // `,` (comma) key is
+    // the chosen binding
+    // — all 26 letters
+    // are claimed by
+    // earlier rounds, and
+    // `,` is the first
+    // unclaimed non-
+    // modifier key in the
+    // printable range.
+    // The mnemonic is
+    // "comma = slow
+    // down" (like film-
+    // editing conventions
+    // — the more commas
+    // you stack, the
+    // slower the scene
+    // plays). Same
+    // pattern as
+    // `cycle-hud-corner` —
+    // one keystroke, no
+    // sub-menu.
+    | { kind: 'cycle-scene-speed' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -659,6 +694,42 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // (`agi_hud_minimized`) so
     // it survives page reloads.
     { key: 'B',    action: '切换 HUD 最小化 (折叠为 32×32 图标, 点图标还原)' },
+    // Round 161 — `,` (comma)
+    // key cycles the
+    // scene speed
+    // through the
+    // 4-preset sequence
+    // (0.5x → 1x → 2x →
+    // 4x → 0.5x). The
+    // preference
+    // persists in
+    // localStorage
+    // (`agi_scene_speed`)
+    // so it survives
+    // page reloads.
+    // Slow speeds (0.5x)
+    // let the player
+    // appreciate the
+    // scene atmosphere
+    // (画面优美);
+    // fast speeds (2x /
+    // 4x) let the
+    // player skip
+    // through scene
+    // generation and
+    // see the variety
+    // quickly (场景
+    // 更优). Comma is
+    // the chosen
+    // binding (all 26
+    // letters are
+    // claimed by
+    // earlier rounds)
+    // and reads as
+    // "slow down" in
+    // film-editing
+    // convention.
+    { key: ',',    action: '切换场景速度 (0.5x / 1x / 2x / 4x 循环, 慢速欣赏氛围 / 快速预览生成)' },
 ];
 
 /**
@@ -1433,6 +1504,38 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'b':
         case 'B':
             return { kind: 'toggle-hud-minimized' };
+        // Round 161 — `,` (comma)
+        // key cycles the
+        // scene speed
+        // through the
+        // 4-preset sequence
+        // (0.5x → 1x → 2x →
+        // 4x → 0.5x).
+        // Comma is the
+        // chosen binding
+        // because all 26
+        // letters are
+        // claimed by
+        // earlier rounds.
+        // Mnemonic: "comma
+        // = slow down"
+        // (film-editing
+        // convention —
+        // the more commas
+        // you stack, the
+        // slower the scene
+        // plays). Unlike
+        // the letter keys,
+        // comma has no
+        // case-insensitive
+        // mirror
+        // (shifted comma
+        // is `<`, which
+        // round-1 reserved
+        // for future
+        // use).
+        case ',':
+            return { kind: 'cycle-scene-speed' };
         default:
             return null;
     }

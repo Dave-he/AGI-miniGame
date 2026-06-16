@@ -15,6 +15,14 @@
  *     Round 129 adds the 100 / 250 presets for power users who
  *     want finer-grained responsiveness between the default
  *     500ms and the 0ms "I really want to spam-tap" extreme.
+ *   - scene speed preset (0.5x / 1x / 2x / 4x) — round 161:
+ *     cycles the scene's update rate. Slow speeds (0.5x)
+ *     let the player appreciate the scene atmosphere
+ *     (画面优美); fast speeds (2x / 4x) let the player skip
+ *     through scene generation and see the variety quickly
+ *     (场景更优). The N key cycles through the same 4
+ *     presets. Persisted to localStorage so the choice
+ *     survives a page reload.
  *
  * The panel is fully self-contained: pass in the I18n, GameAudio,
  * and a difficulty setter callback.
@@ -87,6 +95,76 @@ export const VOLUME_PRESETS: readonly VolumePreset[] =
 export const DEBOUNCE_PRESETS: readonly DebounceWindow[] =
     [0, 100, 250, 500, 1000, 2000];
 
+/**
+ * Round 161 — the 4 scene
+ * speed presets exposed
+ * in the SettingsPanel's
+ * scene-speed row. The
+ * presets are a scene-
+ * update multiplier
+ * applied to the
+ * Three.js render loop's
+ * delta-time:
+ *   - 0.5  = slow (half
+ *            speed —
+ *            atmospheric
+ *            appreciation)
+ *   - 1    = normal
+ *            (default —
+ *            matches the
+ *            round-1
+ *            1-frame-per-
+ *            tick rate)
+ *   - 2    = fast (2x —
+ *            quick scene
+ *            preview)
+ *   - 4    = turbo (4x —
+ *            skip through
+ *            long
+ *            transitions
+ *            fast)
+ *
+ * The 4 presets give
+ * meaningful coverage of
+ * the [0.25, 4] range
+ * without forcing the
+ * player to drag a slider.
+ * 0.5x is the floor
+ * (anything slower would
+ * feel broken); 4x is
+ * the ceiling (anything
+ * faster would skip
+ * animations).
+ *
+ * The API is open — the
+ * scene-speed multiplier
+ * could be any positive
+ * number — but the panel
+ * only exposes these 4
+ * presets for clean UI /
+ * clean tests.
+ */
+export type SceneSpeedPreset = 0.5 | 1 | 2 | 4;
+
+/**
+ * Round 161 — canonical
+ * ordering of the scene
+ * speed presets rendered
+ * in the SettingsPanel's
+ * scene-speed row. The
+ * 4-element const is the
+ * source of truth for the
+ * click-handler guard +
+ * the render pass +
+ * the `cycleSceneSpeed`
+ * App method (which uses
+ * the same sequence to
+ * pick the next preset on
+ * N key press).
+ */
+export const SCENE_SPEED_PRESETS: readonly SceneSpeedPreset[] =
+    [0.5, 1, 2, 4];
+
 export interface SettingsPanelHooks {
     /**
      * Optional — the App doesn't have a
@@ -107,6 +185,18 @@ export interface SettingsPanelHooks {
      */
     onDebounceChange?: (ms: DebounceWindow) => void;
     getCurrentDebounce?: () => DebounceWindow;
+    /**
+     * Round 161 — called when the player picks a new
+     * scene speed preset (via the 4-button row in the
+     * settings panel). The App applies the new
+     * multiplier to the scene's update loop and
+     * persists it to localStorage
+     * (`agi_scene_speed`). The same callback is fired
+     * by the N key cycle, so the panel + the keyboard
+     * shortcut stay in sync via the same hook.
+     */
+    onSceneSpeedChange?: (multiplier: SceneSpeedPreset) => void;
+    getCurrentSceneSpeed?: () => SceneSpeedPreset;
 }
 
 export class SettingsPanel {
@@ -177,6 +267,34 @@ export class SettingsPanel {
             })()
             : '';
 
+        // Round 161 — optional
+        // scene-speed row,
+        // hidden when the App
+        // doesn't provide a
+        // scene-speed concept.
+        // The main.ts
+        // construction
+        // provides both hooks,
+        // so the row renders
+        // by default. The 4
+        // buttons mirror the
+        // N-key cycle
+        // sequence (0.5x → 1x
+        // → 2x → 4x).
+        const sceneSpeedSection = this.hooks.onSceneSpeedChange && this.hooks.getCurrentSceneSpeed
+            ? (() => {
+                const curSpeed: SceneSpeedPreset = this.hooks.getCurrentSceneSpeed!();
+                const sceneSpeedRow = SCENE_SPEED_PRESETS.map(sp => {
+                    const cur = curSpeed === sp;
+                    return `<button class="set-scene-speed ${cur ? 'is-active' : ''}" data-scene-speed="${sp}">${escapeHtml(this.t(`settings.sceneSpeed.${sp}`))}</button>`;
+                }).join('');
+                return `
+                    <div class="set-section-label">${escapeHtml(this.t('settings.sceneSpeed'))}</div>
+                    <div class="set-row">${sceneSpeedRow}</div>
+                `;
+            })()
+            : '';
+
         const muted = this.audio.isMuted();
         const muteLabel = muted ? this.t('audio.unmute') : this.t('audio.mute');
         // Round 157 — volume row.
@@ -213,6 +331,7 @@ export class SettingsPanel {
                 <div class="set-section-label">${escapeHtml(this.t('settings.language'))}</div>
                 <div class="set-row">${localeRow}</div>
                 ${debounceSection}
+                ${sceneSpeedSection}
             </div>
         `;
 
@@ -276,6 +395,39 @@ export class SettingsPanel {
                     ms === 500 || ms === 1000 || ms === 2000;
                 if (isValidDebounceWindow && this.hooks.onDebounceChange) {
                     this.hooks.onDebounceChange(ms);
+                    this.render();
+                }
+            });
+        });
+        // Round 161 — scene
+        // speed click
+        // handler. Reads the
+        // `data-scene-speed`
+        // attribute (set to
+        // "0.5" / "1" / "2" /
+        // "4" as a string),
+        // parses to number,
+        // narrows to
+        // `SceneSpeedPreset`,
+        // and calls the
+        // App's
+        // `onSceneSpeedChange`
+        // callback. The same
+        // callback is fired
+        // by the N key
+        // cycle, so the panel
+        // + the keyboard
+        // shortcut stay in
+        // sync via the same
+        // hook.
+        this.root.querySelectorAll<HTMLButtonElement>('.set-scene-speed').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const raw = btn.getAttribute('data-scene-speed');
+                const sp = raw == null ? NaN : Number(raw);
+                const isValidSceneSpeed =
+                    sp === 0.5 || sp === 1 || sp === 2 || sp === 4;
+                if (isValidSceneSpeed && this.hooks.onSceneSpeedChange) {
+                    this.hooks.onSceneSpeedChange(sp);
                     this.render();
                 }
             });
