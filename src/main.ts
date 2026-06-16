@@ -704,6 +704,7 @@ class App {
         // to compact OFF (false).
         this.hud.setCompact(loadHudCompactFromStorage());
         this.hud.setFadeEnabled(loadHudFadeFromStorage());
+        this.hud.setCorner(loadHudCornerFromStorage());
         this.worldState = new WorldState('local-player', '次元旅者');
         this.progression = new Progression();
         this.epoch = new EpochSystem(Date.now());
@@ -1266,6 +1267,21 @@ class App {
             // round-21 vault toggle, so J is
             // the next free letter after H.
             { key: 'J', action: '淡出',    group: '系统' },
+            // Round 154 — C key cycles the HUD
+            // through the 4-corner sequence
+            // (tl → tr → br → bl → tl).
+            // Lets right-handed / left-handed
+            // / one-handed-mobile players
+            // pick a corner that doesn't
+            // occlude their mouse or
+            // dominant-hand finger. The
+            // preference persists in
+            // localStorage (`agi_hud_corner`)
+            // so it survives page reloads.
+            // C reads as "Corner"; K is
+            // already taken by the
+            // round-130 DSL codex toggle.
+            { key: 'C', action: '角落',    group: '系统' },
         ]);
         // Round 150 — push an
         // initial biome
@@ -2247,6 +2263,30 @@ class App {
      */
     notifyHudInput(): void {
         this.hud.notifyInput();
+    }
+
+    /**
+     * Round 154 — cycle the HUD through the
+     * 4-corner sequence
+     * `tl → tr → br → bl → tl`. Lets right-
+     * handed / left-handed / one-handed-
+     * mobile players pick the corner that
+     * doesn't occlude their mouse or
+     * dominant-hand finger.
+     *
+     * One keystroke to pick a new corner — no
+     * sub-menu needed. Persists to localStorage
+     * so a player who picks `'bl'` on a visit
+     * doesn't have to re-pick on the next page
+     * load. Mirrors `toggleHudCompact` /
+     * `toggleHudFade`: one call + one
+     * localStorage write. The K key shortcut
+     * calls this via the round-154
+     * `cycle-hud-corner` KeyboardAction.
+     */
+    cycleHudCorner(): void {
+        const next = this.hud.cycleCorner();
+        saveHudCornerToStorage(next);
     }
 
     /**
@@ -3877,6 +3917,7 @@ async function bootstrap(): Promise<void> {
         const action = routeKey(ev.key);
         if (!action) return;
         switch (action.kind) {
+            case 'cycle-hud-corner': app.cycleHudCorner(); break;
             case 'enter-atom': void app.enterAtom(action.atomId); break;
             // Round 152 — H key toggles the HUD
             // compact mode (the round-51 memories
@@ -4069,6 +4110,47 @@ function saveHudCompactToStorage(compact: boolean): void {
         // private mode / quota errors.
         // Swallow — the in-memory state
         // is already updated.
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Round 154 — `agi_hud_corner` localStorage key for the
+// HUD 4-corner snap mode. Same
+// `loadXxxFromStorage` / `saveXxxToStorage`
+// shape as the round-152 compact / round-153
+// fade helpers, but stores a STRING ('tl' /
+// 'tr' / 'br' / 'bl') instead of a boolean.
+// On missing / malformed / unavailable
+// storage, the load returns 'tr' so the
+// in-memory state falls back to the round-1
+// default (top-right).
+// ---------------------------------------------------------------------------
+
+const HUD_CORNER_STORAGE_KEY = 'agi_hud_corner';
+type HudCorner = 'tl' | 'tr' | 'br' | 'bl';
+
+function loadHudCornerFromStorage(): HudCorner {
+    if (typeof localStorage === 'undefined') return 'tr';
+    try {
+        const raw = localStorage.getItem(HUD_CORNER_STORAGE_KEY);
+        if (raw === 'tl' || raw === 'tr' || raw === 'br' || raw === 'bl') {
+            return raw;
+        }
+        return 'tr';
+    } catch {
+        return 'tr';
+    }
+}
+
+function saveHudCornerToStorage(corner: HudCorner): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(HUD_CORNER_STORAGE_KEY, corner);
+    } catch {
+        // localStorage can throw in private
+        // mode / quota errors. Swallow —
+        // the in-memory state is already
+        // updated.
     }
 }
 

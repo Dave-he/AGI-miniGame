@@ -2092,4 +2092,135 @@ describe('HUD — round 152 compact mode', () => {
         );
         expect(fadeRows.length).toBeGreaterThanOrEqual(1);
     });
+
+    // Round 154 — HUD 4-corner snap tests.
+    //
+    // Round 154 adds an opt-in "corner"
+    // mode (K key + `agi_hud_corner`
+    // localStorage flag): the player cycles
+    // through 4 screen corners (`tl → tr →
+    // br → bl → tl`) so the stats panel can
+    // sit in the corner that doesn't
+    // occlude the mouse or dominant-hand
+    // finger. The CSS class on the root
+    // element is the only thing that changes
+    // (`.hud-corner-tl` / `-tr` / `-br` /
+    // `-bl` in `index.html`); the panel
+    // contents are unchanged.
+    //
+    // These tests pin the HUD-side state
+    // machine so a future refactor can't
+    // silently break the corner-snap
+    // contract.
+
+    test('default_state_is_top_right_corner_round_154', () => {
+        // Fresh HUD: corner is 'tr' by
+        // default (mirrors the round-1
+        // layout that placed the stats
+        // panel in the top-right corner
+        // of the viewport).
+        const { hud } = makeHud();
+        expect(hud.getCorner()).toBe('tr');
+    });
+
+    test('setCorner_flips_corner_value_round_154', () => {
+        // setCorner must update the
+        // corner state AND apply the
+        // CSS class to the root element
+        // so the panel snaps to the new
+        // position immediately.
+        const { hud, root } = makeHud();
+        hud.setCorner('tl');
+        expect(hud.getCorner()).toBe('tl');
+        expect(root.classList.contains('hud-corner-tl')).toBe(true);
+        expect(root.classList.contains('hud-corner-tr')).toBe(false);
+    });
+
+    test('cycleCorner_advances_through_4_corners_round_154', () => {
+        // The cycle order is `tl → tr → br → bl → tl`
+        // (clockwise from top-left).
+        // After 4 cycles we should be
+        // back to 'tr' (the round-1
+        // default).
+        const { hud } = makeHud();
+        expect(hud.getCorner()).toBe('tr');
+        const c1 = hud.cycleCorner();
+        expect(c1).toBe('br');
+        const c2 = hud.cycleCorner();
+        expect(c2).toBe('bl');
+        const c3 = hud.cycleCorner();
+        expect(c3).toBe('tl');
+        const c4 = hud.cycleCorner();
+        expect(c4).toBe('tr');
+        expect(hud.getCorner()).toBe('tr');
+    });
+
+    test('applyCornerClass_strips_prior_corner_classes_round_154', () => {
+        // applyCornerClass (called via
+        // setCorner) must STRIP prior
+        // `hud-corner-*` classes so the
+        // root doesn't accumulate stale
+        // variants on repeated toggles.
+        // Regression test: a future
+        // refactor that just appends
+        // would leave all 4 classes on
+        // the root simultaneously.
+        const { hud, root } = makeHud();
+        hud.setCorner('tl');
+        expect(root.classList.contains('hud-corner-tr')).toBe(false);
+        hud.setCorner('br');
+        expect(root.classList.contains('hud-corner-tl')).toBe(false);
+        expect(root.classList.contains('hud-corner-br')).toBe(true);
+    });
+
+    test('applyCornerClass_on_construction_round_154', () => {
+        // The constructor calls
+        // applyCornerClass so the root
+        // element carries the right
+        // `hud-corner-*` modifier from
+        // the start (matches the
+        // round-1 top-right default
+        // when no state has been
+        // pushed yet).
+        const { root } = makeHud();
+        expect(root.classList.contains('hud-corner-tr')).toBe(true);
+    });
+
+    test('state_round_trips_corner_through_getState_round_154', () => {
+        // getState() must surface the
+        // current `hudCorner` field
+        // so test-utils and the
+        // SettingsPanel (future) can
+        // read it.
+        const { hud } = makeHud();
+        hud.setCorner('bl');
+        expect(hud.getState().hudCorner).toBe('bl');
+    });
+
+    test('render_preserves_corner_class_round_154', () => {
+        // Render is destructive on the
+        // panel's innerHTML but the
+        // root's className must remain
+        // intact across renders — the
+        // corner class lives on the
+        // root, not on the inner panel.
+        const { hud, root } = makeHud();
+        hud.setCorner('br');
+        hud.setState({ score: 12345 });  // triggers re-render
+        expect(root.classList.contains('hud-corner-br')).toBe(true);
+    });
+
+    test('BINDING_DESCRIPTIONS_includes_hud_corner_hotkey_round_154', () => {
+        // The C key shortcut for the
+        // HUD 4-corner snap is
+        // mirrored in BINDING_DESCRIPTIONS
+        // so the help overlay
+        // auto-iterates it (same
+        // pattern as round-152's H
+        // key + round-153's J key).
+        const cornerRows = BINDING_DESCRIPTIONS.filter(
+            (d) => d.key === 'C' && d.action.includes('角落')
+        );
+        expect(cornerRows.length).toBeGreaterThanOrEqual(1);
+    });
 });

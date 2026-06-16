@@ -140,6 +140,18 @@ describe('KeyboardShortcuts', () => {
             expect(routeKey('j')).toEqual({ kind: 'toggle-hud-fade' });
         });
 
+        it('Round 154 — C key routes to cycle-hud-corner', () => {
+            // Round 154 added the C key for the HUD
+            // corner-snap cycling (next free letter
+            // after J — round 153 bound J to fade;
+            // K is taken by the round-130 DSL codex
+            // toggle). C reads as "Corner".
+            // Case-insensitive like the rest of the
+            // letter bindings.
+            expect(routeKey('C')).toEqual({ kind: 'cycle-hud-corner' });
+            expect(routeKey('c')).toEqual({ kind: 'cycle-hud-corner' });
+        });
+
         it.each(['0', '9', 'a', 'F1', 'Tab', 'Enter', 'ArrowUp'])(
             'returns null for unbound key "%s"',
             (key) => {
@@ -156,6 +168,14 @@ describe('KeyboardShortcuts', () => {
                 // Round 153 — j / J is now bound to
                 // toggle-hud-fade (round-153 HUD fade
                 // mode), so it's removed from the
+                // unbound set too. ('a' is still the
+                // generic unbound-letter test.)
+                //
+                // Round 154 — k / K is now bound to
+                // cycle-hud-corner (round-154 HUD
+                // 4-corner snap), so it's removed
+                // from the unbound set as well.
+                //
                 // unbound set too. ('a' is still the
                 // generic unbound-letter test.)
                 //

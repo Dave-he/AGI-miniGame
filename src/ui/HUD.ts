@@ -345,6 +345,22 @@ export interface HUDState {
      * back to the round-153 default of 3000.
      */
     hudFadeIdleMs?: number;
+    /**
+     * Round 154 — HUD corner-snap position. The
+     * stats panel sits in the top-right corner by
+     * default (round-1 layout), but right-handed
+     * players often prefer top-left and one-handed
+     * mobile players prefer bottom-right. The
+     * `K` key cycles through 4 corners
+     * (`tl → tr → br → bl → tl`) and the
+     * preference is persisted to localStorage key
+     * `agi_hud_corner`.
+     *
+     * Optional; when omitted, the render falls
+     * back to the round-1 default of `'tr'`
+     * (top-right).
+     */
+    hudCorner?: 'tl' | 'tr' | 'br' | 'bl';
 }
 
 export class HUD {
@@ -375,6 +391,14 @@ export class HUD {
             logLines: [],
         };
         this.i18n.onChange(() => this.render());
+        // Round 154 — apply the corner-snap
+        // class on construction so the root
+        // element carries the right
+        // `hud-corner-*` modifier from the
+        // start (matches the round-1
+        // top-right default when no state
+        // has been pushed yet).
+        this.applyCornerClass();
         this.render();
     }
 
@@ -884,6 +908,74 @@ export class HUD {
     isFading(): boolean {
         return this.state.hudFadeIdledAt !== null
             && this.state.hudFadeIdledAt !== undefined;
+    }
+
+    /**
+     * Round 154 — set the HUD corner-snap
+     * position. The stats panel CSS class
+     * `hud-corner-${corner}` is applied to the
+     * root element so the player can pin the
+     * panel to any of the 4 screen corners.
+     *
+     * Defaults to `'tr'` (top-right) when the
+     * state field is omitted — that matches the
+     * round-1 layout. Persisting the player's
+     * preference is the call-site's
+     * responsibility (mirrors the round-152
+     * `setCompact` pattern) so a non-browser
+     * test env can call `setCorner('tl')`
+     * without crashing on `typeof localStorage`.
+     */
+    setCorner(corner: 'tl' | 'tr' | 'br' | 'bl'): void {
+        this.state = { ...this.state, hudCorner: corner };
+        this.applyCornerClass();
+        this.render();
+    }
+
+    /**
+     * Read-only accessor mirroring the
+     * `isCompact()` / `isFadeEnabled()` pattern.
+     * Returns the current corner-snap value
+     * (default `'tr'` when never set).
+     */
+    getCorner(): 'tl' | 'tr' | 'br' | 'bl' {
+        return this.state.hudCorner ?? 'tr';
+    }
+
+    /**
+     * Round 154 — cycle the HUD corner through
+     * the 4-corner sequence `tl → tr → br → bl → tl`.
+     * Returns the new corner so the host can
+     * persist it. Designed to be wired directly
+     * to the `K` key shortcut — one keystroke
+     * to pick a new corner, no sub-menu needed.
+     */
+    cycleCorner(): 'tl' | 'tr' | 'br' | 'bl' {
+        const order: Array<'tl' | 'tr' | 'br' | 'bl'> = ['tl', 'tr', 'br', 'bl'];
+        const current = this.getCorner();
+        const idx = order.indexOf(current);
+        const next = order[(idx + 1) % order.length];
+        this.setCorner(next);
+        return next;
+    }
+
+    /**
+     * Round 154 — apply the
+     * `hud-corner-${corner}` CSS class to the
+     * root element. Internal helper for
+     * `setCorner` and the constructor. The
+     * 4 corner classes are defined in
+     * `index.html`'s `<style>` block (alongside
+     * the round-1 `#hud-root { top: 0; right: 0; ...}`
+     * rule that this method overrides).
+     */
+    private applyCornerClass(): void {
+        const corner = this.getCorner();
+        const baseClass = 'panel';
+        // Strip any prior corner class so we
+        // don't accumulate stale variants on
+        // repeated toggles.
+        this.root.className = `${baseClass} hud-corner-${corner}`;
     }
 
     /**

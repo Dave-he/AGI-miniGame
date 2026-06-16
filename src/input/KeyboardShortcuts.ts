@@ -196,7 +196,17 @@ export type KeyboardAction =
     // already taken by the round-21 vault
     // toggle, so we use `J` (the next free
     // letter after H).
-    | { kind: 'toggle-hud-fade' };
+    | { kind: 'toggle-hud-fade' }
+    // Round 154 — cycle the HUD corner
+    // through the 4-corner sequence
+    // `tl → tr → br → bl → tl`. C is the
+    // next free letter after J (which
+    // round 153 bound to fade); K is
+    // already taken by the round-130 DSL
+    // codex toggle. C reads as "Corner".
+    // One keystroke picks a new corner —
+    // no sub-menu needed.
+    | { kind: 'cycle-hud-corner' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -537,6 +547,20 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // flag persists in localStorage so it
     // survives page reloads.
     { key: 'J',    action: '切换 HUD 淡出模式 (空闲 3s 后隐藏)' },
+    // Round 154 — C key cycles the HUD
+    // through the 4-corner sequence
+    // (top-left → top-right → bottom-right
+    // → bottom-left → top-left). Lets
+    // right-handed / left-handed /
+    // one-handed-mobile players pick the
+    // corner that doesn't occlude their
+    // mouse or dominant-hand finger. The
+    // preference persists in localStorage
+    // (`agi_hud_corner`) so it survives
+    // page reloads. (K is taken by the
+    // round-130 DSL codex toggle; C reads
+    // as "Corner".)
+    { key: 'C',    action: '切换 HUD 角落 (左上 → 右上 → 右下 → 左下)' },
 ];
 
 /**
@@ -1242,6 +1266,19 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'j':
         case 'J':
             return { kind: 'toggle-hud-fade' };
+        // Round 154 — C key cycles the HUD
+        // corner through the 4-corner
+        // sequence `tl → tr → br → bl → tl`.
+        // C is the next free letter after J
+        // (which round 153 bound to fade);
+        // K is already taken by the
+        // round-130 DSL codex toggle. C
+        // reads as "Corner". Same pattern as
+        // `toggle-hud-fade` — one keystroke,
+        // no sub-menu.
+        case 'c':
+        case 'C':
+            return { kind: 'cycle-hud-corner' };
         default:
             return null;
     }
