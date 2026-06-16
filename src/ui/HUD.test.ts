@@ -1651,3 +1651,146 @@ describe('HUD — round 147 setHotkeys & hotkey hint strip', () => {
         expect(logPanel!.querySelector('.hud-hotkeys')).toBeNull();
     });
 });
+
+// ============================================================================
+// Round 150 — biome-contextual hotkey hint strip.
+// Extends the round-147 base strip with a SECOND strip below it, prefixed
+// with a `—— ${label} ——` biome header. The host pushes per-biome bindings
+// on dimension change (forest / desert / cyberpunk / ice).
+// ============================================================================
+
+test('round_150_omitted_biome_hotkeys (default layout)', () => {
+    // No `setBiomeHotkeys` call → biome strip is hidden
+    // (the round-147 layout is preserved).
+    const root = document.getElementById('hud')!;
+    const i18n = new I18n();
+    const hud = new HUD(root, i18n);
+    // No setBiomeHotkeys call.
+    const strip = root.querySelector('.hud-hotkeys-biome');
+    expect(strip).toBeNull();
+});
+
+test('round_150_setBiomeHotkeys_renders_biome_strip_below_base', () => {
+    // Push a biome context with 3 bindings → the biome
+    // strip appears BELOW the base strip (which is empty
+    // here — only the biome strip is shown).
+    const root = document.getElementById('hud')!;
+    const i18n = new I18n();
+    const hud = new HUD(root, i18n);
+    hud.setBiomeHotkeys('赛博', [
+        { key: '1', action: '黑客', group: '入侵' },
+        { key: '2', action: '机甲', group: '战斗' },
+        { key: '3', action: '芯片', group: '升级' },
+    ]);
+    const biomeStrip = root.querySelector('.hud-hotkeys-biome');
+    expect(biomeStrip).not.toBeNull();
+    // 3 binding spans + 2 separators.
+    const hotkeySpans = biomeStrip!.querySelectorAll('.hud-hotkey');
+    expect(hotkeySpans.length).toBe(3);
+    const seps = biomeStrip!.querySelectorAll('.hud-hotkey-sep');
+    expect(seps.length).toBe(2);
+});
+
+test('round_150_biome_strip_includes_label_header', () => {
+    // The biome label is rendered as `—— ${label} ——`
+    // in a `.hud-hotkey-biome-label` element.
+    const root = document.getElementById('hud')!;
+    const i18n = new I18n();
+    const hud = new HUD(root, i18n);
+    hud.setBiomeHotkeys('森林', [
+        { key: '1', action: '伐木', group: '采集' },
+    ]);
+    const labelEl = root.querySelector('.hud-hotkey-biome-label');
+    expect(labelEl).not.toBeNull();
+    expect(labelEl!.textContent).toBe('—— 森林 ——');
+});
+
+test('round_150_null_label_omits_header_but_keeps_strip', () => {
+    // When biomeLabel is null, the strip renders WITHOUT
+    // the header (just the bindings).
+    const root = document.getElementById('hud')!;
+    const i18n = new I18n();
+    const hud = new HUD(root, i18n);
+    hud.setBiomeHotkeys(null, [
+        { key: '1', action: '火把' },
+    ]);
+    const biomeStrip = root.querySelector('.hud-hotkeys-biome');
+    expect(biomeStrip).not.toBeNull();
+    // The label is absent.
+    expect(biomeStrip!.querySelector('.hud-hotkey-biome-label')).toBeNull();
+    // But the binding is there.
+    expect(biomeStrip!.querySelectorAll('.hud-hotkey').length).toBe(1);
+});
+
+test('round_150_setBiomeHotkeys_null_clears_strip', () => {
+    // Pass null for hotkeys → biome strip disappears.
+    const root = document.getElementById('hud')!;
+    const i18n = new I18n();
+    const hud = new HUD(root, i18n);
+    hud.setBiomeHotkeys('沙漠', [{ key: '1', action: '挖井' }]);
+    expect(root.querySelector('.hud-hotkeys-biome')).not.toBeNull();
+    hud.setBiomeHotkeys(null, null);
+    expect(root.querySelector('.hud-hotkeys-biome')).toBeNull();
+});
+
+test('round_150_biome_and_base_strips_render_together', () => {
+    // Both strips are set → both render in the same
+    // `hud-stats` panel. Biome strip is BELOW the base
+    // strip (rendered later in the template).
+    const root = document.getElementById('hud')!;
+    const i18n = new I18n();
+    const hud = new HUD(root, i18n);
+    hud.setHotkeys([
+        { key: 'P', action: '设置', group: '面板' },
+        { key: 'Q', action: '代码', group: '面板' },
+    ]);
+    hud.setBiomeHotkeys('冰原', [
+        { key: '1', action: '凿冰', group: '采集' },
+        { key: '2', action: '雪橇', group: '移动' },
+    ]);
+    const allStrips = root.querySelectorAll('.hud-hotkeys');
+    // 2 strips total: 1 base + 1 biome.
+    expect(allStrips.length).toBe(2);
+    // The first is the base (no `.hud-hotkeys-biome` class).
+    expect(allStrips[0].classList.contains('hud-hotkeys-biome')).toBe(false);
+    // The second is the biome strip.
+    expect(allStrips[1].classList.contains('hud-hotkeys-biome')).toBe(true);
+});
+
+test('round_150_biome_strip_uses_defensive_copy_round_trip', () => {
+    // Mutating the source array after pushing to the HUD
+    // must NOT leak into the HUD's stored state
+    // (defensive-copy contract — mirrors the round-147
+    // setHotkeys pattern).
+    const root = document.getElementById('hud')!;
+    const i18n = new I18n();
+    const hud = new HUD(root, i18n);
+    const source = [
+        { key: '1', action: '黑客', group: '入侵' },
+    ];
+    hud.setBiomeHotkeys('赛博', source);
+    // Mutate the source AFTER setBiomeHotkeys.
+    source.push({ key: '2', action: '机甲', group: '战斗' });
+    // The biome strip is still just 1 binding.
+    const biomeStrip = root.querySelector('.hud-hotkeys-biome');
+    expect(biomeStrip!.querySelectorAll('.hud-hotkey').length).toBe(1);
+});
+
+test('round_150_chinese_label_is_escaped_round_150', () => {
+    // The biome label goes through `escapeHtml` for XSS
+    // safety. A label containing HTML metacharacters
+    // (e.g. `<script>`) is rendered as TEXT, not
+    // parsed as HTML.
+    const root = document.getElementById('hud')!;
+    const i18n = new I18n();
+    const hud = new HUD(root, i18n);
+    hud.setBiomeHotkeys('<script>alert(1)</script>', [
+        { key: '1', action: '火把' },
+    ]);
+    const labelEl = root.querySelector('.hud-hotkey-biome-label');
+    expect(labelEl).not.toBeNull();
+    // The text content is the literal string (escaped).
+    expect(labelEl!.textContent).toContain('<script>');
+    // But no actual <script> element was created.
+    expect(labelEl!.querySelector('script')).toBeNull();
+});

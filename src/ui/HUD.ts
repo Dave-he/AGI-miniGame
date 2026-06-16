@@ -189,6 +189,71 @@ export interface HUDState {
         action: string;
         group?: string;
     }> | null;
+    /**
+     * Round 150 — biome-
+     * contextual hotkey
+     * bindings. When set
+     * + non-empty, the
+     * HUD renders a
+     * SECOND hotkey
+     * strip BELOW the
+     * round-147 base
+     * strip, prefixed
+     * with a small
+     * `—— ${biomeLabel} ——`
+     * header so the
+     * player can tell
+     * the two strips
+     * apart at a glance.
+     *
+     * Used for
+     * biome-specific
+     * shortcuts (e.g.
+     * `Q` for 仙侠
+     * "符箓", `Y` for
+     * 赛博 "黑客"). The
+     * host pushes a
+     * different list
+     * per dimension /
+     * biome via
+     * `setBiomeHotkeys`
+     * — when the player
+     * enters a new
+     * biome, the strip
+     * auto-updates.
+     *
+     * Optional: when
+     * omitted (or empty
+     * array), the
+     * biome strip is
+     * hidden (back to
+     * the round-147
+     * layout for HUDs
+     * that don't want
+     * contextual
+     * hints).
+     */
+    biomeHotkeys?: ReadonlyArray<{
+        key: string;
+        action: string;
+        group?: string;
+    }> | null;
+    /**
+     * Round 150 — the
+     * Chinese label for
+     * the current biome
+     * (e.g. "仙侠",
+     * "赛博", "冰原").
+     * Used as the
+     * header for the
+     * biome hotkey
+     * strip. When
+     * `biomeHotkeys`
+     * is set, this
+     * label is also
+     * shown.
+     */
+    biomeHotkeyLabel?: string | null;
 }
 
 export class HUD {
@@ -520,6 +585,70 @@ export class HUD {
     }
 
     /**
+     * Round 150 — push
+     * biome-contextual
+     * hotkey bindings
+     * into the HUD.
+     * Renders a second
+     * hotkey strip
+     * BELOW the round-
+     * 147 base strip
+     * (or, when
+     * `setHotkeys`
+     * wasn't called,
+     * just the biome
+     * strip alone) —
+     * prefixed with a
+     * `—— ${biomeLabel}
+     * ——` header so the
+     * player can tell
+     * the two strips
+     * apart at a glance.
+     *
+     * Pass `null` for
+     * either arg to
+     * clear the
+     * corresponding
+     * piece:
+     *   - `null` hotkeys
+     *     → strip
+     *     hidden
+     *   - `null` label
+     *     → header
+     *     hidden (just
+     *     the strip
+     *     renders)
+     *
+     * The host (App)
+     * is expected to
+     * call this on
+     * dimension change
+     * with the new
+     * biome's bindings.
+     */
+    setBiomeHotkeys(
+        biomeLabel: string | null,
+        hotkeys: ReadonlyArray<{ key: string; action: string; group?: string }> | null,
+    ): void {
+        if (hotkeys == null) {
+            this.state = { ...this.state, biomeHotkeys: null, biomeHotkeyLabel: null };
+        } else {
+            // Defensive copy mirrors the round-147
+            // setHotkeys pattern.
+            this.state = {
+                ...this.state,
+                biomeHotkeys: hotkeys.map((h) => ({
+                    key: h.key,
+                    action: h.action,
+                    group: h.group,
+                })),
+                biomeHotkeyLabel: biomeLabel,
+            };
+        }
+        this.render();
+    }
+
+    /**
      * Round 53 — push a non-modal recovery banner into
      * the HUD. Called by `App.recoverFromRenderFailure`
      * when loadGame's rehydrate pipeline failed and the
@@ -698,6 +827,11 @@ export class HUD {
         // row.
         const hotkeysOn = Array.isArray(s.hotkeys)
             && (s.hotkeys as ReadonlyArray<unknown>).length > 0;
+        // Round 150 — biome-contextual hotkey strip (shown
+        // BELOW the base strip). Mirrors the same gate
+        // pattern (array + non-empty).
+        const biomeHotkeysOn = Array.isArray(s.biomeHotkeys)
+            && (s.biomeHotkeys as ReadonlyArray<unknown>).length > 0;
 
         this.root.innerHTML = `
             <div class="hud-panel hud-stats">
@@ -713,6 +847,12 @@ export class HUD {
                 <div class="hud-row"><span>Score</span><b>${s.score}</b></div>
                 ${hotkeysOn && s.hotkeys
                     ? renderHotkeysStrip(s.hotkeys as ReadonlyArray<{ key: string; action: string; group?: string }>)
+                    : ''}
+                ${biomeHotkeysOn && s.biomeHotkeys
+                    ? renderBiomeHotkeysStrip(
+                        s.biomeHotkeyLabel ?? null,
+                        s.biomeHotkeys as ReadonlyArray<{ key: string; action: string; group?: string }>,
+                    )
                     : ''}
             </div>
             <div class="hud-panel hud-dim" style="${s.lastBiomeAccent ? `--biome-accent: ${escapeHtml(s.lastBiomeAccent)};` : ''}">
@@ -1175,4 +1315,69 @@ function renderHotkeysStrip(
         }
     });
     return `<div class="hud-hotkeys">${parts.join('')}</div>`;
+}
+
+/**
+ * Round 150 — render
+ * a biome-contextual
+ * hotkey strip with
+ * a `—— ${label} ——`
+ * header. The strip
+ * itself reuses the
+ * round-147 single-
+ * pass layout (so the
+ * visual rhythm is
+ * consistent between
+ * the base strip and
+ * the biome strip).
+ *
+ * The header is shown
+ * only when `label`
+ * is non-null +
+ * non-empty. When
+ * null, the strip is
+ * just the bindings
+ * (the host can
+ * optionally push a
+ * label-less strip
+ * for biomes with no
+ * dedicated label).
+ *
+ * Uses distinct CSS
+ * classes (`hud-hotkeys-
+ * biome` / `hud-hotkey-
+ * biome-label`) so the
+ * stylesheet can
+ * visually distinguish
+ * the two strips (e.g.
+ * the biome strip uses
+ * a slightly different
+ * background tint that
+ * picks up the round-
+ * 87 biome accent).
+ */
+function renderBiomeHotkeysStrip(
+    label: string | null,
+    hotkeys: ReadonlyArray<{ key: string; action: string; group?: string }>,
+): string {
+    const header = (label != null && label !== '')
+        ? `<div class="hud-hotkey-biome-label">—— ${escapeHtml(label)} ——</div>`
+        : '';
+    const parts: string[] = [];
+    hotkeys.forEach((h, i) => {
+        const prevGroup = i > 0 ? hotkeys[i - 1].group : undefined;
+        if (h.group && h.group !== prevGroup) {
+            parts.push(`<span class="hud-hotkey-group">${escapeHtml(h.group)}</span>`);
+        }
+        parts.push(`
+            <span class="hud-hotkey">
+                <kbd class="hud-hotkey-key">${escapeHtml(h.key)}</kbd>
+                <span class="hud-hotkey-action">${escapeHtml(h.action)}</span>
+            </span>
+        `);
+        if (i < hotkeys.length - 1) {
+            parts.push('<span class="hud-hotkey-sep">·</span>');
+        }
+    });
+    return `<div class="hud-hotkeys hud-hotkeys-biome">${header}${parts.join('')}</div>`;
 }

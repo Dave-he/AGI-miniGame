@@ -284,6 +284,74 @@ function stableSeedFromSnapshot(snap: { wfcTileWeights: readonly number[]; npcCo
     return h;
 }
 
+/**
+ * Round 150 — biome-
+ * contextual hotkey
+ * bindings. Each
+ * biome id maps to
+ * (label, bindings)
+ * where the label is
+ * the small `——
+ * ${label} ——` header
+ * shown above the
+ * biome strip.
+ *
+ * Bindings use the
+ * same shape as the
+ * round-147 base
+ * strip (`{ key,
+ * action, group? }`).
+ * Unknown biomes
+ * (e.g. the welcome
+ * hub) get `null`
+ * so the biome
+ * strip is hidden.
+ */
+const BIOME_HOTKEYS: ReadonlyMap<string, {
+    label: string;
+    bindings: ReadonlyArray<{ key: string; action: string; group?: string }>;
+} | null> = new Map([
+    ['forest', {
+        label: '森林',
+        bindings: [
+            { key: '1', action: '伐木', group: '采集' },
+            { key: '2', action: '种树', group: '采集' },
+            { key: '3', action: '篝火', group: '生存' },
+        ],
+    }],
+    ['desert', {
+        label: '沙漠',
+        bindings: [
+            { key: '1', action: '挖井', group: '采集' },
+            { key: '2', action: '沙堡', group: '建造' },
+            { key: '3', action: '绿洲', group: '探索' },
+        ],
+    }],
+    ['cyberpunk', {
+        label: '赛博',
+        bindings: [
+            { key: '1', action: '黑客', group: '入侵' },
+            { key: '2', action: '机甲', group: '战斗' },
+            { key: '3', action: '芯片', group: '升级' },
+        ],
+    }],
+    ['ice', {
+        label: '冰原',
+        bindings: [
+            { key: '1', action: '凿冰', group: '采集' },
+            { key: '2', action: '雪橇', group: '移动' },
+            { key: '3', action: '火把', group: '生存' },
+        ],
+    }],
+    // Welcome hub and
+    // unknown biomes
+    // get null (the
+    // biome strip is
+    // hidden in the
+    // hub).
+    ['', null],
+]);
+
 class App {
     private scene: SceneManager;
     private i18n: I18n;
@@ -771,6 +839,23 @@ class App {
                 // Resolved here (not in the HUD) so the HUD
                 // module stays decoupled from BiomeAtmosphere.
                 this.hud.setLastBiomeAccent(getBiomeAtmosphere(biome.id).particleColor);
+                // Round 150 — push
+                // the biome-
+                // contextual
+                // hotkey strip
+                // (mirrors the
+                // round-150 push
+                // in the
+                // keyboard 1-8
+                // jump path).
+                {
+                    const ctx = BIOME_HOTKEYS.get(biome.id) ?? null;
+                    if (ctx === null) {
+                        this.hud.setBiomeHotkeys(null, null);
+                    } else {
+                        this.hud.setBiomeHotkeys(ctx.label, ctx.bindings);
+                    }
+                }
                 this.worldState.lastMinimap = renderMiniMap(dungeon.tiles, biome.id);
                 this.hud.setMinimap(this.worldState.lastMinimap);
                 // Round 71 — synthesize a content-driven event chain
@@ -1194,6 +1279,27 @@ class App {
             { key: 'T', action: '状态',    group: '面板' },
             { key: 'R', action: '回滚',    group: '系统' },
         ]);
+        // Round 150 — push an
+        // initial biome
+        // hotkey context
+        // (the round-30
+        // welcome
+        // dimension's
+        // biome). The
+        // biome strip is
+        // EMPTY in the
+        // welcome hub (no
+        // contextual
+        // bindings), so
+        // we pass null to
+        // start — the
+        // strip is hidden
+        // until the
+        // player enters a
+        // dimension with
+        // biome-specific
+        // bindings.
+        this.hud.setBiomeHotkeys(null, null);
         // Round 132 — wire the
         // EventLog panel. The
         // panel renders the
@@ -1882,6 +1988,27 @@ class App {
             this.hud.setLastBiome(biome.id);
             // Round 87 — dim panel left-border accent.
             this.hud.setLastBiomeAccent(getBiomeAtmosphere(biome.id).particleColor);
+            // Round 150 — push
+            // the biome-
+            // contextual hotkey
+            // strip. The
+            // BIOME_HOTKEYS map
+            // maps biome id →
+            // (label, bindings).
+            // Unknown biomes
+            // (e.g. round-30
+            // welcome hub) get
+            // null → the
+            // biome strip is
+            // hidden.
+            {
+                const ctx = BIOME_HOTKEYS.get(biome.id) ?? null;
+                if (ctx === null) {
+                    this.hud.setBiomeHotkeys(null, null);
+                } else {
+                    this.hud.setBiomeHotkeys(ctx.label, ctx.bindings);
+                }
+            }
             this.worldState.lastMinimap = renderMiniMap(dungeon.tiles, biome.id);
             this.hud.setMinimap(this.worldState.lastMinimap);
             const sceneScalars: SceneScalars = sceneBp
