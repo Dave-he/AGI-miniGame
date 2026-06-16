@@ -1361,6 +1361,28 @@ class App {
             { debouncer: this.debouncerRollWorldEvent, chineseLabel: '世界事件' },
             { debouncer: this.debouncerEnterAtom,      chineseLabel: '进入 atom' },
         ]);
+        // Round 162 — push the
+        // current scene speed
+        // preset into the HUD
+        // so the round-162
+        // scene-speed mini-strip
+        // renders. Mirrors
+        // `setDebouncers`:
+        // called once at App
+        // construction; the
+        // strip stays
+        // permanently visible
+        // (the `,` key cycle
+        // just re-renders with
+        // the new active
+        // preset). The
+        // `currentSceneSpeed`
+        // field was already
+        // restored from
+        // localStorage above,
+        // so this reflects the
+        // persisted choice.
+        this.hud.setSceneSpeed(this.currentSceneSpeed);
         // Round 147 — push the
         // 4 essential hotkey
         // bindings into the HUD
@@ -2617,6 +2639,21 @@ class App {
         this.currentSceneSpeed = next;
         saveSceneSpeedToStorage(next);
         this.applySceneSpeed(next);
+        // Round 162 — push
+        // the new preset
+        // into the HUD so
+        // the scene-speed
+        // mini-strip
+        // re-renders with
+        // the new active
+        // cell. Without
+        // this, the strip
+        // would stay on
+        // the previous
+        // active preset
+        // until the next
+        // setState call.
+        this.hud.setSceneSpeed(next);
     }
 
     /**

@@ -8908,3 +8908,90 @@ describe('App — round 161: `,` (comma) key scene speed cycle (操控性好 UX)
     });
 });
 
+// ---------------------------------------------------------------------------
+// Round 162 — `setSceneSpeed` HUD wiring.
+//
+// Round 161 wired the scene-speed cycle through
+// the comma key + SettingsPanel hooks, but the
+// HUD didn't show the current preset until the
+// next `setState` call. Round 162 adds the
+// `setSceneSpeed` setter on HUD + a pipe-
+// separated mini-strip + wires it from the
+// App constructor (after the round-146
+// `setDebouncers` call) AND from the
+// `cycleSceneSpeed` method so the active cell
+// flips immediately on key press.
+//
+// Pins:
+//   1. `HUD_exposes_setSceneSpeed_setter_round_162`.
+//   2. `main_ts_constructor_calls_setSceneSpeed_round_162`.
+//   3. `cycleSceneSpeed_calls_hud_setSceneSpeed_round_162`.
+//   4. `index_html_has_hud_scene_speed_strip_styles_round_162`.
+// ---------------------------------------------------------------------------
+
+describe('App — round 162: scene-speed HUD wiring', () => {
+    test('HUD_exposes_setSceneSpeed_setter_round_162', () => {
+        // The HUD class must
+        // expose a
+        // `setSceneSpeed(multiplier)`
+        // setter so the App
+        // can push the
+        // restored preset on
+        // boot and the live
+        // cycle result on
+        // every comma-key
+        // press.
+        const hudTs = fs.readFileSync(path.resolve(__dirname, 'ui/HUD.ts'), 'utf-8');
+        expect(hudTs).toMatch(/setSceneSpeed\(multiplier:\s*number\s*\|\s*null\)\s*:\s*void/);
+    });
+
+    test('main_ts_constructor_calls_setSceneSpeed_round_162', () => {
+        // The constructor
+        // must call
+        // `this.hud.setSceneSpeed(this.currentSceneSpeed)`
+        // right after the
+        // round-146
+        // `setDebouncers`
+        // call so the
+        // restored scene
+        // speed shows up
+        // on the very
+        // first render.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/this\.hud\.setSceneSpeed\(this\.currentSceneSpeed\)/);
+    });
+
+    test('cycleSceneSpeed_calls_hud_setSceneSpeed_round_162', () => {
+        // The
+        // `cycleSceneSpeed`
+        // method must call
+        // `this.hud.setSceneSpeed(next)`
+        // after updating
+        // `currentSceneSpeed`
+        // so the active
+        // cell flips
+        // immediately.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/cycleSceneSpeed[\s\S]{0,1500}this\.hud\.setSceneSpeed\(next\)/);
+    });
+
+    test('index_html_has_hud_scene_speed_strip_styles_round_162', () => {
+        // The CSS rules for
+        // the new strip
+        // must live in
+        // index.html (the
+        // stylesheet is
+        // inlined in this
+        // repo). Pin the
+        // 3 class
+        // selectors: strip
+        // container,
+        // active cell,
+        // label span.
+        const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf-8');
+        expect(html).toMatch(/\.hud-scene-speed-strip\s*\{/);
+        expect(html).toMatch(/\.hud-scene-speed-strip-cell\.is-active\s*\{/);
+        expect(html).toMatch(/\.hud-scene-speed-strip-label\s*\{/);
+    });
+});
+

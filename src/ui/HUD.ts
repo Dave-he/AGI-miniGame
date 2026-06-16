@@ -163,6 +163,31 @@ export interface HUDState {
         chineseLabel: string;
     }> | null;
     /**
+     * Round 162 — the round-161
+     * scene speed preset
+     * (0.5 / 1 / 2 / 4). Optional;
+     * when omitted, the
+     * scene-speed mini-strip
+     * is hidden entirely. When
+     * set, the HUD renders a
+     * compact badge in the
+     * round-51 memories block
+     * showing the current
+     * multiplier — gives the
+     * player a one-glance
+     * "what speed am I
+     * running at" indicator
+     * after pressing the `,`
+     * key to cycle. The
+     * status is also styled
+     * (slow / normal / fast /
+     * turbo) so the player
+     * can see the speed
+     * category without
+     * reading the number.
+     */
+    sceneSpeed?: number | null;
+    /**
      * Round 147 — the player's essential hotkey
      * bindings, shown as a compact hint strip in
      * the HUD's `hud-stats` panel. Each binding is
@@ -804,6 +829,36 @@ export class HUD {
                 })),
             };
         }
+        this.render();
+    }
+
+    /**
+     * Round 162 — push the
+     * current scene speed
+     * preset (0.5 / 1 / 2 / 4)
+     * into the HUD so the
+     * scene-speed mini-strip
+     * renders. Mirrors
+     * `setDebouncers`:
+     * single field, single
+     * setter, render-on-set.
+     *
+     * Pass `null` to clear
+     * the strip (the
+     * round-51 default when
+     * no scene-speed is
+     * configured). The
+     * setter is idempotent —
+     * setting the same value
+     * twice still triggers a
+     * re-render (so the
+     * `,` key cycle always
+     * shows the new
+     * multiplier in the
+     * strip).
+     */
+    setSceneSpeed(multiplier: number | null): void {
+        this.state = { ...this.state, sceneSpeed: multiplier };
         this.render();
     }
 
@@ -1864,6 +1919,11 @@ export class HUD {
         // hidden so the HUD doesn't render a useless row.
         const debouncersOn = Array.isArray(s.debouncers)
             && (s.debouncers as ReadonlyArray<unknown>).length > 0;
+        // Round 162 — the scene-speed mini-strip is "on"
+        // when a non-null multiplier has been pushed. A
+        // null (round-146 default, no scene-speed wired)
+        // keeps the strip hidden.
+        const sceneSpeedOn = s.sceneSpeed != null;
 
         const count = (biomeOn ? 1 : 0)
             + (speakerOn ? 1 : 0)
@@ -1874,7 +1934,8 @@ export class HUD {
             + (wasmOn ? 1 : 0)
             + (chainOn ? 1 : 0)
             + (rollbackOn ? 1 : 0)
-            + (debouncersOn ? 1 : 0);
+            + (debouncersOn ? 1 : 0)
+            + (sceneSpeedOn ? 1 : 0);
         if (count === 0) return '';
 
         const emojiOrder: string[] = [];
@@ -1888,6 +1949,7 @@ export class HUD {
         if (chainOn) emojiOrder.push('⏰');
         if (rollbackOn) emojiOrder.push('🛟');
         if (debouncersOn) emojiOrder.push('⏱');
+        if (sceneSpeedOn) emojiOrder.push('⏩');
 
         // sessionStorage may be absent in non-browser test envs;
         // guard with a typeof check before reading. The key
@@ -1985,6 +2047,9 @@ export class HUD {
                     : ''}
                 ${debouncersOn && s.debouncers
                     ? renderDebouncerStrip(s.debouncers as ReadonlyArray<{ debouncer: ActionDebouncer; chineseLabel: string }>, s.compact === true)
+                    : ''}
+                ${s.sceneSpeed != null
+                    ? renderSceneSpeedStrip(s.sceneSpeed)
                     : ''}
             </details>
         `;
@@ -2100,6 +2165,74 @@ function summarizeEventKinds(chain: ReadonlyArray<EventStep>): string {
  * footer's visual
  * rhythm.
  */
+/**
+ * Round 162 — render the
+ * scene-speed mini-strip
+ * in the round-51
+ * `<details>` memories
+ * block. Renders as a
+ * single
+ * `<div class="hud-scene-speed-strip">`
+ * showing the current
+ * multiplier + a status
+ * label (slow / normal /
+ * fast / turbo).
+ *
+ * Status mapping
+ * (mirrors the
+ * round-161 i18n
+ * `settings.sceneSpeed.*`
+ * labels):
+ *   - 0.5 → "慢"
+ *   - 1   → "标准"
+ *   - 2   → "快"
+ *   - 4   → "极速"
+ *
+ * The 4 cells are
+ * pipe-separated to
+ * match the round-146
+ * debouncer mini-strip's
+ * visual rhythm. The
+ * active preset is
+ * marked with the
+ * `is-active` class so
+ * CSS can highlight it.
+ *
+ * The `,` key cycles
+ * through the 4
+ * presets; the strip
+ * makes the new
+ * multiplier visible
+ * without the player
+ * having to open the
+ * settings panel.
+ */
+function renderSceneSpeedStrip(
+    multiplier: number,
+): string {
+    const presets: ReadonlyArray<{ value: number; label: string; status: string }> = [
+        { value: 0.5, label: '0.5x', status: '慢' },
+        { value: 1,   label: '1x',   status: '标准' },
+        { value: 2,   label: '2x',   status: '快' },
+        { value: 4,   label: '4x',   status: '极速' },
+    ];
+    const cells = presets.map((p) => {
+        const isActive = multiplier === p.value;
+        return `<span class="hud-scene-speed-strip-cell ${isActive ? 'is-active' : ''}">
+            <span class="hud-scene-speed-strip-label">${escapeHtml(p.label)}</span>
+            <span class="hud-scene-speed-strip-status">${escapeHtml(p.status)}</span>
+        </span>`;
+    });
+    const cellsWithSeps: string[] = [];
+    presets.forEach((_, i) => {
+        cellsWithSeps.push(cells[i]!);
+        if (i < presets.length - 1) {
+            cellsWithSeps.push('<span class="hud-scene-speed-strip-sep">|</span>');
+        }
+    });
+    return `<div class="hud-scene-speed-strip">${cellsWithSeps.join('')}</div>`;
+}
+
 function renderDebouncerStrip(
     debouncers: ReadonlyArray<{ debouncer: ActionDebouncer; chineseLabel: string }>,
     compact: boolean = false,

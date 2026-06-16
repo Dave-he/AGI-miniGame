@@ -2872,4 +2872,154 @@ describe('HUD — round 152 compact mode', () => {
         );
         expect(rows.length).toBeGreaterThanOrEqual(1);
     });
+
+    // =========================================================
+    // Round 162 — HUD
+    // scene-speed mini-strip.
+    // Companion to the
+    // round-161 `,` (comma)
+    // scene-speed cycle
+    // feature. Mirrors the
+    // round-146 debouncer
+    // mini-strip pattern:
+    // a compact
+    // pipe-separated strip
+    // of 4 cells (0.5x /
+    // 1x / 2x / 4x) with
+    // an `is-active`
+    // highlight on the
+    // current preset.
+    //
+    // The strip is gated
+    // on `s.sceneSpeed
+    // != null`: when no
+    // preset has been
+    // pushed, the strip is
+    // omitted from the
+    // render output (the
+    // round-146 default
+    // layout for HUDs that
+    // don't bind to scene
+    // speed).
+    // =========================================================
+
+    test('does_not_render_strip_when_scene_speed_omitted_round_162', () => {
+        // No `setSceneSpeed` call → strip is hidden.
+        const { root } = makeHud();
+        const strip = root.querySelector('.hud-scene-speed-strip');
+        expect(strip).toBeNull();
+    });
+
+    test('renders_strip_with_4_cells_when_scene_speed_set_round_162', () => {
+        const { hud, root } = makeHud();
+        hud.setSceneSpeed(1);
+        const cells = root.querySelectorAll('.hud-scene-speed-strip-cell');
+        expect(cells.length).toBe(4);
+    });
+
+    test('renders_3_separators_between_4_cells_round_162', () => {
+        const { hud, root } = makeHud();
+        hud.setSceneSpeed(1);
+        const seps = root.querySelectorAll('.hud-scene-speed-strip-sep');
+        expect(seps.length).toBe(3);
+        for (const s of Array.from(seps)) {
+            expect(s.textContent).toBe('|');
+        }
+    });
+
+    test('is_active_class_marks_current_preset_round_162', () => {
+        // For each of the 4 presets, only that cell
+        // should have the `is-active` class.
+        const { hud, root } = makeHud();
+        hud.setSceneSpeed(2);
+        const cells = root.querySelectorAll('.hud-scene-speed-strip-cell');
+        // Only the 3rd cell (value 2) is active.
+        expect(cells[0].classList.contains('is-active')).toBe(false);
+        expect(cells[1].classList.contains('is-active')).toBe(false);
+        expect(cells[2].classList.contains('is-active')).toBe(true);
+        expect(cells[3].classList.contains('is-active')).toBe(false);
+    });
+
+    test('switches_active_cell_when_multiplier_changes_round_162', () => {
+        // Cycle from 0.5 → 1 → 2 → 4 and verify the
+        // active cell follows.
+        const { hud, root } = makeHud();
+        hud.setSceneSpeed(0.5);
+        let cells = root.querySelectorAll('.hud-scene-speed-strip-cell');
+        expect(cells[0].classList.contains('is-active')).toBe(true);
+        hud.setSceneSpeed(1);
+        cells = root.querySelectorAll('.hud-scene-speed-strip-cell');
+        expect(cells[1].classList.contains('is-active')).toBe(true);
+        hud.setSceneSpeed(2);
+        cells = root.querySelectorAll('.hud-scene-speed-strip-cell');
+        expect(cells[2].classList.contains('is-active')).toBe(true);
+        hud.setSceneSpeed(4);
+        cells = root.querySelectorAll('.hud-scene-speed-strip-cell');
+        expect(cells[3].classList.contains('is-active')).toBe(true);
+    });
+
+    test('does_not_render_strip_after_setSceneSpeed_null_round_162', () => {
+        const { hud, root } = makeHud();
+        hud.setSceneSpeed(1);
+        expect(root.querySelector('.hud-scene-speed-strip')).not.toBeNull();
+        hud.setSceneSpeed(null);
+        expect(root.querySelector('.hud-scene-speed-strip')).toBeNull();
+    });
+
+    test('state_round_trips_scene_speed_through_getState_round_162', () => {
+        const { hud } = makeHud();
+        expect(hud.getState().sceneSpeed).toBeUndefined();
+        hud.setSceneSpeed(2);
+        expect(hud.getState().sceneSpeed).toBe(2);
+        hud.setSceneSpeed(null);
+        expect(hud.getState().sceneSpeed).toBeNull();
+    });
+
+    test('renders_status_labels_round_162', () => {
+        // The 4 status labels (慢 / 标准 / 快 / 极速)
+        // give the player a categorical cue
+        // ("am I in slow mode?") without reading
+        // the multiplier number.
+        const { hud, root } = makeHud();
+        hud.setSceneSpeed(1);
+        const statuses = root.querySelectorAll('.hud-scene-speed-strip-status');
+        expect(statuses.length).toBe(4);
+        expect(statuses[0].textContent).toBe('慢');
+        expect(statuses[1].textContent).toBe('标准');
+        expect(statuses[2].textContent).toBe('快');
+        expect(statuses[3].textContent).toBe('极速');
+    });
+
+    test('renders_label_text_round_162', () => {
+        // The 4 multiplier labels (0.5x / 1x / 2x /
+        // 4x) are the canonical cycle preset names.
+        const { hud, root } = makeHud();
+        hud.setSceneSpeed(1);
+        const labels = root.querySelectorAll('.hud-scene-speed-strip-label');
+        expect(labels.length).toBe(4);
+        expect(labels[0].textContent).toBe('0.5x');
+        expect(labels[1].textContent).toBe('1x');
+        expect(labels[2].textContent).toBe('2x');
+        expect(labels[3].textContent).toBe('4x');
+    });
+
+    test('coexists_with_debouncer_strip_round_162', () => {
+        // The scene-speed strip is rendered AFTER
+        // the round-146 debouncer strip but inside
+        // the same `hud-stats` panel. Setting both
+        // → both strips are visible in the same
+        // panel.
+        const { hud, root } = makeHud();
+        const debouncer = new ActionDebouncer(500, 'save', 'round 162', () => {});
+        hud.setDebouncers([{ debouncer, chineseLabel: '保存' }]);
+        hud.setSceneSpeed(2);
+        const speedStrip = root.querySelector('.hud-scene-speed-strip');
+        const debouncerStrip = root.querySelector('.hud-debouncer-strip');
+        expect(speedStrip).not.toBeNull();
+        expect(debouncerStrip).not.toBeNull();
+        // Both strips live in the stats panel.
+        const statsPanel = root.querySelector('.hud-stats');
+        expect(statsPanel!.querySelector('.hud-scene-speed-strip')).not.toBeNull();
+        expect(statsPanel!.querySelector('.hud-debouncer-strip')).not.toBeNull();
+    });
 });

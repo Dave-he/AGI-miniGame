@@ -143,6 +143,35 @@
       .hud-minimized { width: 32px; height: 32px; border-radius: 50%; }
       .hud-minimized { overflow: hidden; }
 
+      /* Round 162 — `.hud-scene-speed-strip`
+         is a compact badge in
+         the round-51 memories
+         block showing the
+         current scene speed
+         (0.5x / 1x / 2x / 4x).
+         The active preset gets
+         a brighter background
+         so the player can see
+         "what speed am I
+         running at" at a
+         glance after pressing
+         the `,` key to cycle.
+         The 4 cells are pipe-
+         separated to match the
+         round-146 debouncer
+         mini-strip's visual
+         rhythm. The status
+         label (慢 / 标准 /
+         快 / 极速) gives
+         the player a one-word
+         category without
+         reading the number. */
+      .hud-scene-speed-strip { display: flex; gap: 4px; align-items: center; }
+      .hud-scene-speed-strip-cell { padding: 2px 6px; border-radius: 4px; opacity: 0.5; }
+      .hud-scene-speed-strip-cell.is-active { opacity: 1; background: rgba(255, 255, 255, 0.12); }
+      .hud-scene-speed-strip-label { font-weight: 600; margin-right: 4px; }
+      .hud-scene-speed-strip-sep { opacity: 0.3; }
+
       /* Round 112 — settings-root: bottom-right corner
          so it sits under the HUD. Hidden by default;
          App.toggleSettings() flips the `hidden` attribute.
