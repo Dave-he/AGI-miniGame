@@ -1149,6 +1149,27 @@ class App {
                 this.debugOverlayHandle?.refresh();
             }, 200);
         }
+        // Round 146 — push the 4
+        // ActionDebouncer
+        // instances into the
+        // HUD so the
+        // round-51 memories
+        // block renders the
+        // debouncer mini-strip.
+        // Mirrors the
+        // round-128 debug
+        // panel's source
+        // (same `chineseLabel`
+        // map) so the player
+        // sees the same
+        // language in both
+        // places.
+        this.hud.setDebouncers([
+            { debouncer: this.debouncerLoadGame,       chineseLabel: '读取存档' },
+            { debouncer: this.debouncerSaveGame,       chineseLabel: '保存游戏' },
+            { debouncer: this.debouncerRollWorldEvent, chineseLabel: '世界事件' },
+            { debouncer: this.debouncerEnterAtom,      chineseLabel: '进入 atom' },
+        ]);
         // Round 132 — wire the
         // EventLog panel. The
         // panel renders the

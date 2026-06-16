@@ -4,6 +4,7 @@
 
 import { HUD } from '../ui/HUD';
 import { I18n } from '../i18n/I18n';
+import { ActionDebouncer } from '../utils/ActionDebouncer';
 import type { EventStep } from '../ai/SceneGen';
 
 function makeHud() {
@@ -1284,5 +1285,196 @@ describe('HUD — round 79 setRollbackCount', () => {
         hud.setRollbackCount(4);
         const state = hud.getState();
         expect(state.rollbackCount).toBe(4);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 146 — HUD
+// `setDebouncers` +
+// debouncer mini-strip.
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 146 setDebouncers & debouncer mini-strip', () => {
+    // Pin the test's "now" so
+    // the countdown math is
+    // deterministic. The
+    // round-108 ActionDebouncer
+    // reads Date.now() at
+    // check() time.
+    let nowSpy: jest.SpyInstance<number, []>;
+    beforeEach(() => {
+        nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    });
+    afterEach(() => {
+        nowSpy.mockRestore();
+    });
+
+    function makeDebouncer(windowMs = 500, name = 'saveGame', round = 'round 106'): ActionDebouncer {
+        return new ActionDebouncer(windowMs, name, round, () => { /* logFn */ });
+    }
+
+    test('does_not_render_strip_when_debouncers_omitted', () => {
+        // Pre-round-146 layout: the strip is hidden when
+        // setDebouncers has never been called. Mirrors
+        // the "null rolls back to the pre-round-79
+        // layout" contract.
+        const { root } = makeHud();
+        const strip = root.querySelector('.hud-debouncer-strip');
+        expect(strip).toBeNull();
+    });
+
+    test('renders_strip_with_4_cells_when_4_debouncers_set', () => {
+        const { hud, root } = makeHud();
+        hud.setDebouncers([
+            { debouncer: makeDebouncer(500, 'loadGame', 'round 104'), chineseLabel: '读取存档' },
+            { debouncer: makeDebouncer(500, 'saveGame', 'round 106'), chineseLabel: '保存游戏' },
+            { debouncer: makeDebouncer(500, 'rollWorldEvent', 'round 107'), chineseLabel: '世界事件' },
+            { debouncer: makeDebouncer(500, 'enterAtom', 'round 109'), chineseLabel: '进入 atom' },
+        ]);
+        const cells = root.querySelectorAll('.hud-debouncer-strip-cell');
+        expect(cells.length).toBe(4);
+    });
+
+    test('all_4_cells_render_as_可触发_when_no_debouncer_has_fired', () => {
+        const { hud, root } = makeHud();
+        hud.setDebouncers([
+            { debouncer: makeDebouncer(500, 'a', 'r1'), chineseLabel: 'A' },
+            { debouncer: makeDebouncer(500, 'b', 'r2'), chineseLabel: 'B' },
+            { debouncer: makeDebouncer(500, 'c', 'r3'), chineseLabel: 'C' },
+            { debouncer: makeDebouncer(500, 'd', 'r4'), chineseLabel: 'D' },
+        ]);
+        const cells = root.querySelectorAll('.hud-debouncer-strip-cell');
+        for (const cell of Array.from(cells)) {
+            expect(cell.classList.contains('is-open')).toBe(true);
+            expect(cell.classList.contains('is-shielding')).toBe(false);
+            expect(cell.textContent).toContain('可触发');
+        }
+    });
+
+    test('shielding_cell_switches_to_屏蔽中_after_stamp_inside_window_round_146', () => {
+        // Stamp the 2nd debouncer 100ms in the past. With
+        // a 500ms window, that's still inside the window →
+        // the 2nd cell should switch to 屏蔽中 + show
+        // a "100/500ms" countdown.
+        const debouncers = [
+            makeDebouncer(500, 'a', 'r1'),
+            makeDebouncer(500, 'b', 'r2'),
+            makeDebouncer(500, 'c', 'r3'),
+            makeDebouncer(500, 'd', 'r4'),
+        ];
+        // Advance Date.now() so `stamp()` records a
+        // baseline, then roll back so the read happens
+        // 100ms "after" the stamp.
+        nowSpy.mockReturnValue(1_700_000_000_000);
+        debouncers[1].stamp();
+        nowSpy.mockReturnValue(1_700_000_000_100);
+
+        const { hud, root } = makeHud();
+        hud.setDebouncers([
+            { debouncer: debouncers[0], chineseLabel: 'A' },
+            { debouncer: debouncers[1], chineseLabel: 'B' },
+            { debouncer: debouncers[2], chineseLabel: 'C' },
+            { debouncer: debouncers[3], chineseLabel: 'D' },
+        ]);
+        const cells = root.querySelectorAll('.hud-debouncer-strip-cell');
+        // The 2nd cell (index 1) is shielding.
+        expect(cells[1].classList.contains('is-shielding')).toBe(true);
+        expect(cells[1].classList.contains('is-open')).toBe(false);
+        expect(cells[1].textContent).toContain('屏蔽中');
+        expect(cells[1].textContent).toContain('100/500ms');
+        // The other 3 cells are still open.
+        for (const idx of [0, 2, 3]) {
+            expect(cells[idx].classList.contains('is-open')).toBe(true);
+            expect(cells[idx].textContent).toContain('可触发');
+        }
+    });
+
+    test('shielding_cell_reverts_to_可触发_after_window_expires_round_146', () => {
+        // Stamp 600ms in the past (window = 500ms) → the
+        // window has expired → cell is back to 可触发.
+        const debouncers = [
+            makeDebouncer(500, 'a', 'r1'),
+            makeDebouncer(500, 'b', 'r2'),
+        ];
+        nowSpy.mockReturnValue(1_700_000_000_000);
+        debouncers[0].stamp();
+        nowSpy.mockReturnValue(1_700_000_000_600);
+
+        const { hud, root } = makeHud();
+        hud.setDebouncers([
+            { debouncer: debouncers[0], chineseLabel: 'A' },
+            { debouncer: debouncers[1], chineseLabel: 'B' },
+        ]);
+        const cells = root.querySelectorAll('.hud-debouncer-strip-cell');
+        expect(cells[0].classList.contains('is-open')).toBe(true);
+        expect(cells[0].textContent).toContain('可触发');
+    });
+
+    test('renders_3_separators_between_4_cells_round_146', () => {
+        const { hud, root } = makeHud();
+        hud.setDebouncers([
+            { debouncer: makeDebouncer(500, 'a', 'r1'), chineseLabel: 'A' },
+            { debouncer: makeDebouncer(500, 'b', 'r2'), chineseLabel: 'B' },
+            { debouncer: makeDebouncer(500, 'c', 'r3'), chineseLabel: 'C' },
+            { debouncer: makeDebouncer(500, 'd', 'r4'), chineseLabel: 'D' },
+        ]);
+        const seps = root.querySelectorAll('.hud-debouncer-strip-sep');
+        expect(seps.length).toBe(3);
+        for (const s of Array.from(seps)) {
+            expect(s.textContent).toBe('|');
+        }
+    });
+
+    test('adds_⏱_to_emoji_strip_and_increments_count_round_146', () => {
+        const { hud, root } = makeHud();
+        hud.setDebouncers([
+            { debouncer: makeDebouncer(500, 'a', 'r1'), chineseLabel: 'A' },
+            { debouncer: makeDebouncer(500, 'b', 'r2'), chineseLabel: 'B' },
+        ]);
+        const summary = root.querySelector('.hud-memories > summary')!;
+        expect(summary.textContent).toContain('⏱');
+    });
+
+    test('does_not_render_strip_when_debouncers_array_is_empty_round_146', () => {
+        // Empty array is treated as "no strip" (mirrors
+        // the "null is no strip" contract).
+        const { hud, root } = makeHud();
+        hud.setDebouncers([]);
+        const strip = root.querySelector('.hud-debouncer-strip');
+        expect(strip).toBeNull();
+    });
+
+    test('does_not_render_strip_after_setDebouncers_null_round_146', () => {
+        const { hud, root } = makeHud();
+        hud.setDebouncers([
+            { debouncer: makeDebouncer(500, 'a', 'r1'), chineseLabel: 'A' },
+        ]);
+        expect(root.querySelector('.hud-debouncer-strip')).not.toBeNull();
+        hud.setDebouncers(null);
+        expect(root.querySelector('.hud-debouncer-strip')).toBeNull();
+    });
+
+    test('state_snapshot_round_trips_debouncers_through_getState_round_146', () => {
+        // Mirrors the round-26 read-only snapshot
+        // contract: external callers (e.g. debug
+        // overlays) can read the debouncers without
+        // parsing the DOM. The getter returns a fresh
+        // array snapshot.
+        const { hud } = makeHud();
+        const debouncers = [
+            { debouncer: makeDebouncer(500, 'a', 'r1'), chineseLabel: 'A' },
+            { debouncer: makeDebouncer(500, 'b', 'r2'), chineseLabel: 'B' },
+        ];
+        hud.setDebouncers(debouncers);
+        const state = hud.getState();
+        expect(state.debouncers).not.toBeNull();
+        expect(state.debouncers!.length).toBe(2);
+        expect(state.debouncers![0].chineseLabel).toBe('A');
+        expect(state.debouncers![1].chineseLabel).toBe('B');
+        // The snapshot is a copy: mutating the source
+        // array should NOT leak into the state.
+        (debouncers as Array<{ chineseLabel: string }>).pop();
+        const state2 = hud.getState();
+        expect(state2.debouncers!.length).toBe(2);
     });
 });

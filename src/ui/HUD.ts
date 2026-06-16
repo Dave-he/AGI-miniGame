@@ -14,6 +14,7 @@ import type { NpcDisposition } from '../world/NpcMind';
 import type { WasmLatencySummary } from '../analytics/WasmLatencyStats';
 import type { EventStep } from '../ai/SceneGen';
 import type { SceneScalars } from '../ai/SceneScalars';
+import type { ActionDebouncer } from '../utils/ActionDebouncer';
 
 export interface HUDState {
     dimension: DimensionBlueprint | null;
@@ -139,6 +140,28 @@ export interface HUDState {
      * never saw a recoverable failure).
      */
     rollbackCount?: number | null;
+    /**
+     * Round 146 — the 4 `ActionDebouncer` instances
+     * (loadGame / saveGame / rollWorldEvent / enterAtom).
+     * When set (and non-empty), the HUD renders a
+     * debouncer mini-strip in the round-51 memories
+     * block showing each debouncer's current status
+     * ("可触发" / "屏蔽中" + a compact "Ns/Nms" countdown)
+     * so the player can see at a glance "is save on
+     * cooldown?" without opening the round-128 debug
+     * panel. The 4 statuses are derived from the
+     * debouncers themselves (no separate bookkeeping
+     * needed) — the same `msSinceLastFire` + `windowSizeMs`
+     * accessors the round-128/130/145 panel reads.
+     *
+     * Optional: when omitted, the strip is hidden
+     * entirely (the round-51/87/128/130/145/79 default
+     * layout for HUDs that aren't bound to debouncers).
+     */
+    debouncers?: ReadonlyArray<{
+        debouncer: ActionDebouncer;
+        chineseLabel: string;
+    }> | null;
 }
 
 export class HUD {
@@ -386,6 +409,49 @@ export class HUD {
      */
     setRollbackCount(count: number | null): void {
         this.state = { ...this.state, rollbackCount: count };
+        this.render();
+    }
+
+    /**
+     * Round 146 — push the 4 `ActionDebouncer` instances
+     * into the HUD. The round-51 `<details>` memories
+     * block renders a debouncer mini-strip showing each
+     * debouncer's current status ("可触发" / "屏蔽中" +
+     * a compact "Ns/Nms" countdown) when the array is
+     * set and non-empty. The strip gives the player a
+     * single-glance "is save on cooldown?" read directly
+     * in the gameplay HUD, without opening the round-128
+     * debug panel.
+     *
+     * The 4 statuses are derived from the debouncers
+     * themselves (the same `msSinceLastFire` +
+     * `windowSizeMs` accessors the round-128/130/145
+     * debug panel reads) so the host doesn't need to
+     * track them separately. The strip auto-refreshes
+     * on every `setDebouncers` / `setState` / `log`
+     * call (and via the existing round-130 panel
+     * auto-refresh path).
+     *
+     * Pass `null` to clear the strip (e.g. on a hard
+     * reset or when no debouncers exist yet).
+     */
+    setDebouncers(debouncers: ReadonlyArray<{ debouncer: ActionDebouncer; chineseLabel: string }> | null): void {
+        if (debouncers == null) {
+            this.state = { ...this.state, debouncers: null };
+        } else {
+            // Defensive copy — the caller may mutate the source
+            // array after storing (the round-130 snapshot
+            // pattern), and the HUD's render() reads
+            // `debouncer.msSinceLastFire` live so the
+            // references themselves must stay live.
+            this.state = {
+                ...this.state,
+                debouncers: debouncers.map((d) => ({
+                    debouncer: d.debouncer,
+                    chineseLabel: d.chineseLabel,
+                })),
+            };
+        }
         this.render();
     }
 
@@ -686,6 +752,13 @@ export class HUD {
         // when the save has actually triggered ≥ 1
         // rollback.
         const rollbackOn = typeof s.rollbackCount === 'number' && s.rollbackCount > 0;
+        // Round 146 — the debouncer mini-strip is "on"
+        // when the debouncers array is set AND non-empty.
+        // A null (no App-level debouncers) or empty array
+        // (legacy save, hard reset) both keep the strip
+        // hidden so the HUD doesn't render a useless row.
+        const debouncersOn = Array.isArray(s.debouncers)
+            && (s.debouncers as ReadonlyArray<unknown>).length > 0;
 
         const count = (biomeOn ? 1 : 0)
             + (speakerOn ? 1 : 0)
@@ -695,7 +768,8 @@ export class HUD {
             + (minimapOn ? 1 : 0)
             + (wasmOn ? 1 : 0)
             + (chainOn ? 1 : 0)
-            + (rollbackOn ? 1 : 0);
+            + (rollbackOn ? 1 : 0)
+            + (debouncersOn ? 1 : 0);
         if (count === 0) return '';
 
         const emojiOrder: string[] = [];
@@ -708,6 +782,7 @@ export class HUD {
         if (wasmOn) emojiOrder.push('⚡');
         if (chainOn) emojiOrder.push('⏰');
         if (rollbackOn) emojiOrder.push('🛟');
+        if (debouncersOn) emojiOrder.push('⏱');
 
         // sessionStorage may be absent in non-browser test envs;
         // guard with a typeof check before reading. The key
@@ -789,6 +864,9 @@ export class HUD {
                 ${rollbackOn
                     ? `<div class="hud-rollback-count">🛟 回滚了 <b>${s.rollbackCount}</b> 次</div>`
                     : ''}
+                ${debouncersOn && s.debouncers
+                    ? renderDebouncerStrip(s.debouncers as ReadonlyArray<{ debouncer: ActionDebouncer; chineseLabel: string }>)
+                    : ''}
             </details>
         `;
     }
@@ -846,4 +924,100 @@ function summarizeEventKinds(chain: ReadonlyArray<EventStep>): string {
         parts.push(`${escapeHtml(kind)} ×${count}`);
     }
     return parts.join(', ');
+}
+
+/**
+ * Round 146 — render the
+ * 4-debouncer mini-strip
+ * in the round-51
+ * `<details>` memories
+ * block. Renders as a
+ * single
+ * `<div class="hud-debouncer-strip">`
+ * with one
+ * `<span>` cell per
+ * debouncer showing:
+ *
+ *   可触发 · 5/0.5s | 屏蔽中 300/500ms · …
+ *
+ * Status derivation:
+ *   - A debouncer that
+ *     has NEVER fired
+ *     (msSinceLastFire is
+ *     Infinity) is
+ *     "可触发" (open) —
+ *     the first call
+ *     always passes.
+ *   - A debouncer that
+ *     has fired and the
+ *     elapsed time
+ *     exceeds the window
+ *     is "可触发" (open)
+ *     — next call will
+ *     pass.
+ *   - A debouncer that
+ *     has fired and the
+ *     elapsed time is
+ *     still inside the
+ *     window is "屏蔽中"
+ *     (shielding) — next
+ *     call will be
+ *     short-circuited.
+ *
+ * The status class
+ * (`is-open` /
+ * `is-shielding`) lets
+ * CSS style the cell
+ * with a different
+ * background / glow so
+ * the player can see
+ * the cooldown without
+ * reading the label.
+ *
+ * The 4 cells are
+ * pipe-separated to
+ * match the round-145
+ * derived-summary
+ * footer's visual
+ * rhythm.
+ */
+function renderDebouncerStrip(
+    debouncers: ReadonlyArray<{ debouncer: ActionDebouncer; chineseLabel: string }>,
+): string {
+    const cells = debouncers.map((info) => {
+        const d = info.debouncer;
+        const sinceMs = d.msSinceLastFire;
+        const window = d.windowSizeMs;
+        // Mirror the round-128 `isDebouncing` derivation: a
+        // never-stamped debouncer is "open" (not shielding).
+        const isShielding = Number.isFinite(sinceMs) && sinceMs < window;
+        const statusClass = isShielding ? 'is-shielding' : 'is-open';
+        const statusLabel = isShielding ? '屏蔽中' : '可触发';
+        // Compact countdown: when shielding, show
+        // "<sinceMs>/<window>ms" so the player sees the
+        // exact cooldown. When open, show "5/0.5s" style
+        // (the round-128 window header) so the row is
+        // visually stable.
+        const countdown = isShielding
+            ? `${Math.round(sinceMs)}/${window}ms`
+            : `${window}ms 可用`;
+        return `
+            <span class="hud-debouncer-strip-cell ${statusClass}">
+                <span class="hud-debouncer-strip-label">${escapeHtml(info.chineseLabel)}</span>
+                <span class="hud-debouncer-strip-status">${statusLabel}</span>
+                <span class="hud-debouncer-strip-countdown">${countdown}</span>
+            </span>
+        `;
+    });
+    // Pipe-separated (mirrors the round-145 derived-
+    // summary footer). When there's only 1 cell, no
+    // separator is rendered.
+    const cellsWithSeps: string[] = [];
+    debouncers.forEach((_, i) => {
+        cellsWithSeps.push(cells[i]);
+        if (i < debouncers.length - 1) {
+            cellsWithSeps.push('<span class="hud-debouncer-strip-sep">|</span>');
+        }
+    });
+    return `<div class="hud-debouncer-strip">${cellsWithSeps.join('')}</div>`;
 }
