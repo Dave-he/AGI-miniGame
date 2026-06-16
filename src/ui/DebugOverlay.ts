@@ -35,6 +35,16 @@
  * extras are a thin data interface so the
  * test can pass a stub without depending
  * on the App's private fields.
+ *
+ * Round 145 — extends the `extras`
+ * section with a 3-column
+ * derived-summary footer (节奏 / 已用 /
+ * 拦截) so the QA panel answers
+ * "is the panel healthy?" in a single
+ * glance. The 3 columns are derived
+ * from the debouncers themselves (no
+ * new host API) so this is a pure
+ * presentation refinement.
  */
 
 import type { ActionDebouncer } from '../utils/ActionDebouncer';
@@ -72,6 +82,82 @@ export interface DebugOverlayExtraStats {
     currentBiome: string | null;
     /** `Date.now()` snapshot taken at App construction time. */
     sessionStartedAt: number;
+}
+
+/**
+ * Round 145 — derived
+ * summary stats
+ * for the
+ * extras
+ * section's
+ * 3-column
+ * footer.
+ *
+ * All fields are
+ * PURELY DERIVED
+ * from the
+ * debouncers
+ * (no new host API):
+ *   - `tempoLabel` /
+ *     `tempoAgoMs`
+ *     = the
+ *     "节奏"
+ *     (rhythm) of
+ *     the most
+ *     recent
+ *     action;
+ *     same source
+ *     as
+ *     `lastAction`
+ *     above but
+ *     framed as
+ *     "tempo" for
+ *     at-a-glance
+ *     health
+ *   - `usedCount`
+ *     = number of
+ *     debouncers
+ *     that have
+ *     EVER fired
+ *     (finite
+ *     `msSinceLastFire`)
+ *   - `totalCount`
+ *     = total
+ *     debouncers
+ *     (==
+ *     usedCount's
+ *     denominator)
+ *   - `blockedCount`
+ *     = number of
+ *     debouncers
+ *     currently in
+ *     the "屏蔽中"
+ *     (shielding)
+ *     state
+ *     (sinceMs <
+ *     window)
+ *
+ * Renders as a
+ * 3-column footer
+ * row in the
+ * extras section:
+ *   节奏: enterAtom (5s 前) | 已用: 3/4 | 拦截: 1/4
+ * giving QA a
+ * single-glance
+ * "is the panel
+ * healthy?" read.
+ */
+export interface DebugOverlaySummaryStats {
+    /** Most-recent action's debouncer label (e.g. 'enterAtom'). */
+    tempoLabel: string;
+    /** ms since the most-recent action fired. */
+    tempoAgoMs: number;
+    /** How many of the N debouncers have fired at least once. */
+    usedCount: number;
+    /** Total number of debouncers (== `usedCount`'s denominator). */
+    totalCount: number;
+    /** How many debouncers are currently in the "屏蔽中" (shielding) state. */
+    blockedCount: number;
 }
 
 function escapeHtml(s: string): string {
@@ -128,6 +214,229 @@ function pickLastAction(debouncers: readonly DebugOverlayDebouncerInfo[]): { lab
     return best;
 }
 
+/**
+ * Round 145 —
+ * compute the
+ * 3 derived
+ * summary
+ * stats
+ * shown in
+ * the
+ * extras
+ * section's
+ * 3-column
+ * footer.
+ * PURELY
+ * DERIVED
+ * from the
+ * debouncers
+ * (no new
+ * host API).
+ *
+ * Algorithm:
+ *   - `usedCount`
+ *     = number
+ *     of
+ *     debouncers
+ *     with
+ *     FINITE
+ *     `msSinceLastFire`
+ *     (i.e.
+ *     they
+ *     have
+ *     fired
+ *     at
+ *     least
+ *     once)
+ *   - `blockedCount`
+ *     = number
+ *     of
+ *     debouncers
+ *     currently
+ *     in
+ *     "屏蔽中"
+ *     state
+ *     (sinceMs
+ *     <
+ *     windowSizeMs
+ *     AND
+ *     sinceMs
+ *     is
+ *     finite;
+ *     a
+ *     never-
+ *     stamped
+ *     debouncer
+ *     is
+ *     "open",
+ *     not
+ *     "blocked")
+ *   - `tempoLabel`
+ *     /
+ *     `tempoAgoMs`
+ *     = same
+ *     source
+ *     as
+ *     `pickLastAction`
+ *     (the
+ *     most-
+ *     recently-
+ *     fired
+ *     debouncer);
+ *     when
+ *     none
+ *     have
+ *     fired,
+ *     `tempoLabel
+ *     = '—'`
+ *     and
+ *     `tempoAgoMs
+ *     = 0`
+ *   - `totalCount`
+ *     = debouncers.length
+ *     (always
+ *     >
+ *     0 in
+ *     practice;
+ *     the
+ *     panel
+ *     is
+ *     never
+ *     rendered
+ *     with
+ *     0
+ *     debouncers)
+ *
+ * Edge cases:
+ *   - Empty
+ *     debouncers
+ *     list:
+ *     usedCount
+ *     = 0,
+ *     totalCount
+ *     = 0,
+ *     blockedCount
+ *     = 0,
+ *     tempoLabel
+ *     = '—',
+ *     tempoAgoMs
+ *     = 0
+ *     (the
+ *     panel
+ *     is
+ *     not
+ *     rendered
+ *     with
+ *     0
+ *     debouncers
+ *     in
+ *     practice
+ *     — the
+ *     footer
+ *     is
+ *     guarded
+ *     by
+ *     `extras
+ *     ? ...`
+ *     and
+ *     only
+ *     shown
+ *     when
+ *     extras
+ *     is
+ *     provided)
+ *   - All
+ *     debouncers
+ *     never
+ *     fired:
+ *     usedCount
+ *     = 0,
+ *     blockedCount
+ *     = 0,
+ *     tempoLabel
+ *     = '—'
+ */
+function computeSummaryStats(debouncers: readonly DebugOverlayDebouncerInfo[]): DebugOverlaySummaryStats {
+    const last = pickLastAction(debouncers);
+    let usedCount = 0;
+    let blockedCount = 0;
+    for (const info of debouncers) {
+        const d = info.debouncer;
+        const since = d.msSinceLastFire;
+        if (Number.isFinite(since)) {
+            usedCount += 1;
+            if (since < d.windowSizeMs) {
+                blockedCount += 1;
+            }
+        }
+    }
+    return {
+        tempoLabel: last ? last.label : '—',
+        tempoAgoMs: last ? last.sinceMs : 0,
+        usedCount,
+        totalCount: debouncers.length,
+        blockedCount,
+    };
+}
+
+/**
+ * Round 145 —
+ * render the
+ * 3-column
+ * derived-
+ * summary
+ * footer
+ * row in
+ * the
+ * extras
+ * section.
+ * Renders
+ * as a
+ * single
+ * `<div>`
+ * with
+ * 3
+ * inline
+ * cells
+ * (节奏 /
+ * 已用 /
+ * 拦截)
+ * separated
+ * by ` | `
+ * dividers
+ * (mirrors
+ * the
+ * visual
+ * rhythm
+ * of the
+ * table
+ * header
+ * below).
+ */
+function renderExtrasSummary(stats: DebugOverlaySummaryStats): string {
+    const tempoText = stats.tempoLabel === '—'
+        ? '—'
+        : `${stats.tempoLabel} (${formatDuration(stats.tempoAgoMs)} 前)`;
+    return `
+        <div class="debug-overlay-extras-summary">
+            <span class="debug-overlay-extras-summary-cell">
+                <span class="debug-overlay-extras-summary-label">节奏</span>
+                <span class="debug-overlay-extras-summary-value">${escapeHtml(tempoText)}</span>
+            </span>
+            <span class="debug-overlay-extras-summary-sep">|</span>
+            <span class="debug-overlay-extras-summary-cell">
+                <span class="debug-overlay-extras-summary-label">已用</span>
+                <span class="debug-overlay-extras-summary-value">${stats.usedCount}/${stats.totalCount}</span>
+            </span>
+            <span class="debug-overlay-extras-summary-sep">|</span>
+            <span class="debug-overlay-extras-summary-cell">
+                <span class="debug-overlay-extras-summary-label">拦截</span>
+                <span class="debug-overlay-extras-summary-value">${stats.blockedCount}/${stats.totalCount}</span>
+            </span>
+        </div>
+    `;
+}
+
 export function renderDebugOverlay(
     root: HTMLElement,
     debouncers: readonly DebugOverlayDebouncerInfo[],
@@ -169,6 +478,18 @@ export function renderDebugOverlay(
         const lastActionLabel = lastAction ? lastAction.label : '—';
         const lastActionAgo = lastAction ? formatDuration(lastAction.sinceMs) + ' 前' : '—';
 
+        // Round 145 —
+        // compute the
+        // 3 derived
+        // summary
+        // stats for
+        // the
+        // extras
+        // section's
+        // 3-column
+        // footer.
+        const summary = computeSummaryStats(debouncers);
+
         const extrasSection = extras
             ? `
                 <div class="debug-overlay-extras">
@@ -192,6 +513,7 @@ export function renderDebugOverlay(
                         <span class="debug-overlay-extras-label">最后动作距今</span>
                         <span class="debug-overlay-extras-value">${escapeHtml(lastActionAgo)}</span>
                     </div>
+                    ${renderExtrasSummary(summary)}
                 </div>
             `
             : '';
