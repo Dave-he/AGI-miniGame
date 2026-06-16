@@ -327,6 +327,79 @@ textarea:focus {
 }
 
 /* ---------------------------------------------------------------------------
+ * Round 147 — `.hud-hotkeys` hint strip + sub-classes.
+ *
+ * The HUD stats panel now renders a compact `<div
+ * class="hud-hotkeys">` of `<kbd>` + action-label bindings
+ * below the memories block (or below the world-event row when
+ * memories aren't shown). Each binding is a `.hud-hotkey`
+ * span wrapping a `.hud-hotkey-key` `<kbd>` and a
+ * `.hud-hotkey-action` text label. Bindings sharing a group
+ * (e.g. "面板" / "系统") are prefixed with a small
+ * `.hud-hotkey-group` section header. Bindings are dot-
+ * separated by `.hud-hotkey-sep` to match the round-145
+ * derived-summary footer's visual rhythm and the rest of the
+ * HUD's compact-row cadence.
+ *
+ * Visual: monospace `<kbd>` with a thin border + faint glow,
+ * cyan-tinted group labels that pick up the dim panel's
+ * biome accent via the inherited `color`. The strip is
+ * intentionally small (0.85em) so it fits on a single line
+ * even with 4–6 bindings.
+ * ------------------------------------------------------------------------- */
+
+.hud-hotkeys {
+  font-size: 0.85em;
+  margin-top: 4px;
+  opacity: 0.92;
+  line-height: 1.6;
+}
+
+.hud-hotkey {
+  display: inline-block;
+  white-space: nowrap;
+  margin: 0 1px;
+}
+
+.hud-hotkey-key {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid rgba(136, 204, 255, 0.45);
+  border-radius: 3px;
+  background: rgba(20, 24, 40, 0.55);
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: 0.92em;
+  color: #c8e8ff;
+  text-shadow: 0 0 4px rgba(136, 204, 255, 0.35);
+}
+
+.hud-hotkey-action {
+  margin-left: 4px;
+  margin-right: 2px;
+  opacity: 0.85;
+}
+
+.hud-hotkey-group {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.82em;
+  letter-spacing: 0.04em;
+  color: #88ccff;
+  text-transform: uppercase;
+  opacity: 0.7;
+  border-left: 2px solid rgba(136, 204, 255, 0.35);
+  padding-left: 6px;
+  margin-left: 4px;
+}
+
+.hud-hotkey-sep {
+  display: inline-block;
+  margin: 0 4px;
+  opacity: 0.45;
+  color: #88ccff;
+}
+
+/* ---------------------------------------------------------------------------
  * Round 88 — `.hud-panel.hud-dim` left border via CSS custom property.
  *
  * Round 87 wired the dim panel's left border to each biome's

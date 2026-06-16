@@ -1478,3 +1478,176 @@ describe('HUD — round 146 setDebouncers & debouncer mini-strip', () => {
         expect(state2.debouncers!.length).toBe(2);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Round 147 — HUD
+// `setHotkeys` +
+// quick-action
+// hotkey hint strip.
+// ---------------------------------------------------------------------------
+
+describe('HUD — round 147 setHotkeys & hotkey hint strip', () => {
+    test('does_not_render_strip_when_hotkeys_omitted', () => {
+        // Pre-round-147 layout: the strip is hidden
+        // when setHotkeys has never been called.
+        const { root } = makeHud();
+        const strip = root.querySelector('.hud-hotkeys');
+        expect(strip).toBeNull();
+    });
+
+    test('renders_strip_with_4_hotkeys_when_4_bindings_set', () => {
+        const { hud, root } = makeHud();
+        hud.setHotkeys([
+            { key: 'P', action: '设置' },
+            { key: 'Q', action: '代码' },
+            { key: 'T', action: '状态' },
+            { key: 'R', action: '回滚' },
+        ]);
+        const hotkeys = root.querySelectorAll('.hud-hotkey');
+        expect(hotkeys.length).toBe(4);
+    });
+
+    test('renders_kbd_element_with_correct_key_round_147', () => {
+        // Each hotkey wraps the key in `<kbd>` so CSS
+        // can style it as a key cap.
+        const { hud, root } = makeHud();
+        hud.setHotkeys([
+            { key: 'P', action: '设置' },
+            { key: 'R', action: '回滚' },
+        ]);
+        const kbd = root.querySelectorAll('kbd.hud-hotkey-key');
+        expect(kbd.length).toBe(2);
+        expect(kbd[0].textContent).toBe('P');
+        expect(kbd[1].textContent).toBe('R');
+    });
+
+    test('renders_chinese_action_label_round_147', () => {
+        // The action label is the Chinese
+        // description, e.g. "设置" / "回滚".
+        const { hud, root } = makeHud();
+        hud.setHotkeys([
+            { key: 'P', action: '设置' },
+            { key: 'R', action: '回滚' },
+        ]);
+        const actions = root.querySelectorAll('.hud-hotkey-action');
+        expect(actions[0].textContent).toBe('设置');
+        expect(actions[1].textContent).toBe('回滚');
+    });
+
+    test('renders_3_dot_separators_between_4_hotkeys_round_147', () => {
+        // 4 hotkeys → 3 · separators (mirrors
+        // the round-145/146 separator pattern).
+        const { hud, root } = makeHud();
+        hud.setHotkeys([
+            { key: 'P', action: '设置' },
+            { key: 'Q', action: '代码' },
+            { key: 'T', action: '状态' },
+            { key: 'R', action: '回滚' },
+        ]);
+        const seps = root.querySelectorAll('.hud-hotkey-sep');
+        expect(seps.length).toBe(3);
+        for (const s of Array.from(seps)) {
+            expect(s.textContent).toBe('·');
+        }
+    });
+
+    test('does_not_render_strip_when_hotkeys_array_is_empty_round_147', () => {
+        // Empty array is treated as "no strip" (mirrors
+        // the "null is no strip" contract).
+        const { hud, root } = makeHud();
+        hud.setHotkeys([]);
+        const strip = root.querySelector('.hud-hotkeys');
+        expect(strip).toBeNull();
+    });
+
+    test('does_not_render_strip_after_setHotkeys_null_round_147', () => {
+        const { hud, root } = makeHud();
+        hud.setHotkeys([{ key: 'P', action: '设置' }]);
+        expect(root.querySelector('.hud-hotkeys')).not.toBeNull();
+        hud.setHotkeys(null);
+        expect(root.querySelector('.hud-hotkeys')).toBeNull();
+    });
+
+    test('renders_group_label_when_group_field_changes_round_147', () => {
+        // When `group` differs from the previous
+        // binding's group, a `<span class="hud-hotkey-group">`
+        // section header is emitted.
+        const { hud, root } = makeHud();
+        hud.setHotkeys([
+            { key: 'P', action: '设置', group: '面板' },
+            { key: 'Q', action: '代码', group: '面板' },
+            { key: 'R', action: '回滚', group: '系统' },
+        ]);
+        const groups = root.querySelectorAll('.hud-hotkey-group');
+        // 1st pair shares "面板" → 1 group label.
+        // 3rd binding has "系统" → 2nd group label.
+        expect(groups.length).toBe(2);
+        expect(groups[0].textContent).toBe('面板');
+        expect(groups[1].textContent).toBe('系统');
+    });
+
+    test('does_not_repeat_group_label_for_consecutive_same_group_round_147', () => {
+        // Two consecutive bindings with the same
+        // `group` produce ONE group label, not two.
+        const { hud, root } = makeHud();
+        hud.setHotkeys([
+            { key: 'P', action: '设置', group: '面板' },
+            { key: 'Q', action: '代码', group: '面板' },
+        ]);
+        const groups = root.querySelectorAll('.hud-hotkey-group');
+        expect(groups.length).toBe(1);
+        expect(groups[0].textContent).toBe('面板');
+    });
+
+    test('omits_group_label_when_no_group_provided_round_147', () => {
+        // No `group` field → no group label rendered.
+        const { hud, root } = makeHud();
+        hud.setHotkeys([
+            { key: 'P', action: '设置' },
+            { key: 'R', action: '回滚' },
+        ]);
+        const groups = root.querySelectorAll('.hud-hotkey-group');
+        expect(groups.length).toBe(0);
+    });
+
+    test('state_snapshot_round_trips_hotkeys_through_getState_round_147', () => {
+        // Mirrors the round-26 read-only snapshot
+        // contract: external callers can read the
+        // hotkeys without parsing the DOM. The
+        // snapshot is a copy.
+        const { hud } = makeHud();
+        const hotkeys = [
+            { key: 'P', action: '设置' },
+            { key: 'R', action: '回滚' },
+        ];
+        hud.setHotkeys(hotkeys);
+        const state = hud.getState();
+        expect(state.hotkeys).not.toBeNull();
+        expect(state.hotkeys!.length).toBe(2);
+        expect(state.hotkeys![0].key).toBe('P');
+        expect(state.hotkeys![1].action).toBe('回滚');
+        // Mutating the source array should NOT leak
+        // into the state.
+        (hotkeys as Array<{ action: string }>).pop();
+        const state2 = hud.getState();
+        expect(state2.hotkeys!.length).toBe(2);
+    });
+
+    test('hotkey_strip_renders_inside_hud_stats_panel_round_147', () => {
+        // The strip is rendered INSIDE the
+        // `hud-stats` panel (not in the dim / log
+        // panels) so it acts as a quick-reference
+        // card at the bottom of the stats column.
+        const { hud, root } = makeHud();
+        hud.setHotkeys([{ key: 'P', action: '设置' }]);
+        const statsPanel = root.querySelector('.hud-stats');
+        expect(statsPanel).not.toBeNull();
+        const strip = statsPanel!.querySelector('.hud-hotkeys');
+        expect(strip).not.toBeNull();
+        // The strip is NOT in the dim / log panels.
+        const dimPanel = root.querySelector('.hud-dim');
+        const logPanel = root.querySelector('.hud-log');
+        expect(dimPanel!.querySelector('.hud-hotkeys')).toBeNull();
+        expect(logPanel!.querySelector('.hud-hotkeys')).toBeNull();
+    });
+});

@@ -1170,6 +1170,30 @@ class App {
             { debouncer: this.debouncerRollWorldEvent, chineseLabel: '世界事件' },
             { debouncer: this.debouncerEnterAtom,      chineseLabel: '进入 atom' },
         ]);
+        // Round 147 — push the
+        // 4 essential hotkey
+        // bindings into the HUD
+        // so the player sees the
+        // controls at a glance
+        // (操控性好). Mirrors
+        // the
+        // BINDING_DESCRIPTIONS /
+        // PANEL_TOGGLE_DESCRIPTIONS
+        // source of truth in
+        // main.ts: P = settings
+        // (panel toggle), Q =
+        // codex (panel toggle),
+        // R = rollback (recovery
+        // path), T = stats (panel
+        // toggle). The host can
+        // extend this list in
+        // future rounds.
+        this.hud.setHotkeys([
+            { key: 'P', action: '设置',    group: '面板' },
+            { key: 'Q', action: '代码',    group: '面板' },
+            { key: 'T', action: '状态',    group: '面板' },
+            { key: 'R', action: '回滚',    group: '系统' },
+        ]);
         // Round 132 — wire the
         // EventLog panel. The
         // panel renders the

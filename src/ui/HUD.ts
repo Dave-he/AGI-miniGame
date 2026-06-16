@@ -162,6 +162,33 @@ export interface HUDState {
         debouncer: ActionDebouncer;
         chineseLabel: string;
     }> | null;
+    /**
+     * Round 147 — the player's essential hotkey
+     * bindings, shown as a compact hint strip in
+     * the HUD's `hud-stats` panel. Each binding is
+     * `{ key, action, group? }` where `key` is the
+     * keyboard key (e.g. "P", "Q", "R"), `action`
+     * is the human-readable Chinese label (e.g.
+     * "设置", "代码", "回滚"), and `group` is an
+     * optional section label (e.g. "面板",
+     * "系统"). When the array is set + non-empty,
+     * the HUD renders a `hud-hotkeys` strip at the
+     * bottom of the stats panel so the player
+     * always sees the controls (操控性好). Mirrors
+     * the BINDING_DESCRIPTIONS source of truth in
+     * main.ts — the host passes the same data to
+     * the round-120 keyboard help modal AND the
+     * HUD's quick-strip.
+     *
+     * Optional: when omitted, the strip is hidden
+     * (the round-1/2/3/.../146 default layout for
+     * HUDs that don't want hotkey hints).
+     */
+    hotkeys?: ReadonlyArray<{
+        key: string;
+        action: string;
+        group?: string;
+    }> | null;
 }
 
 export class HUD {
@@ -456,6 +483,43 @@ export class HUD {
     }
 
     /**
+     * Round 147 — push the player's essential hotkey
+     * bindings into the HUD. The `hud-stats` panel
+     * renders a compact `<div class="hud-hotkeys">`
+     * strip showing each binding as `[key] action`
+     * (e.g. `[P] 设置 · [Q] 代码 · [R] 回滚`) at the
+     * bottom of the panel so the player always sees
+     * the controls without opening the round-120
+     * keyboard help modal.
+     *
+     * Mirrors the BINDING_DESCRIPTIONS / PANEL_TOGGLE_
+     * DESCRIPTIONS source of truth in main.ts. The
+     * host can pass any subset (e.g. just the
+     * "essentials" — settings / codex / rollback /
+     * stats) so the strip stays compact.
+     *
+     * Pass `null` to clear the strip.
+     */
+    setHotkeys(hotkeys: ReadonlyArray<{ key: string; action: string; group?: string }> | null): void {
+        if (hotkeys == null) {
+            this.state = { ...this.state, hotkeys: null };
+        } else {
+            // Defensive copy so a caller that mutates the
+            // source array after storing (the round-130
+            // snapshot pattern) doesn't leak into the HUD.
+            this.state = {
+                ...this.state,
+                hotkeys: hotkeys.map((h) => ({
+                    key: h.key,
+                    action: h.action,
+                    group: h.group,
+                })),
+            };
+        }
+        this.render();
+    }
+
+    /**
      * Round 53 — push a non-modal recovery banner into
      * the HUD. Called by `App.recoverFromRenderFailure`
      * when loadGame's rehydrate pipeline failed and the
@@ -622,6 +686,19 @@ export class HUD {
         const otherLocale: 'zh-CN' | 'en-US' = this.i18n.getLocale() === 'zh-CN' ? 'en-US' : 'zh-CN';
         const langLabel = this.i18n.getLocale() === 'zh-CN' ? 'EN' : '中';
 
+        // Round 147 — the hotkey
+        // strip is on when the
+        // array is set + non-empty.
+        // A null (no bindings
+        // provided) or empty array
+        // (legacy save, hard reset)
+        // both keep the strip
+        // hidden so the HUD
+        // doesn't render a useless
+        // row.
+        const hotkeysOn = Array.isArray(s.hotkeys)
+            && (s.hotkeys as ReadonlyArray<unknown>).length > 0;
+
         this.root.innerHTML = `
             <div class="hud-panel hud-stats">
                 <div class="hud-title-row">
@@ -634,6 +711,9 @@ export class HUD {
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gold'))}</span><b>${s.gold}</b></div>
                 <div class="hud-row"><span>${escapeHtml(this.i18n.t('hud.gem'))}</span><b>${s.gem}</b></div>
                 <div class="hud-row"><span>Score</span><b>${s.score}</b></div>
+                ${hotkeysOn && s.hotkeys
+                    ? renderHotkeysStrip(s.hotkeys as ReadonlyArray<{ key: string; action: string; group?: string }>)
+                    : ''}
             </div>
             <div class="hud-panel hud-dim" style="${s.lastBiomeAccent ? `--biome-accent: ${escapeHtml(s.lastBiomeAccent)};` : ''}">
                 <div class="hud-title">${escapeHtml(this.i18n.t('hud.dim'))}</div>
@@ -1020,4 +1100,79 @@ function renderDebouncerStrip(
         }
     });
     return `<div class="hud-debouncer-strip">${cellsWithSeps.join('')}</div>`;
+}
+
+/**
+ * Round 147 — render
+ * the hotkey hint
+ * strip in the
+ * `hud-stats` panel.
+ * Renders as a
+ * single
+ * `<div class="hud-hotkeys">`
+ * with one
+ * `<span class="hud-hotkey">`
+ * per binding showing:
+ *
+ *   [P] 设置 · [Q] 代码 · [R] 回滚 · [T] 状态
+ *
+ * Each hotkey shows
+ * the keyboard key
+ * inside an inline
+ * `<kbd>` element so
+ * CSS can style it as
+ * a key cap (e.g.
+ * rounded box + mono
+ * font), and the
+ * Chinese action
+ * label after it.
+ *
+ * The optional
+ * `group` field is
+ * rendered as a small
+ * section divider
+ * (e.g. "面板" / "系统")
+ * so the strip stays
+ * scannable when the
+ * host passes a longer
+ * list of bindings.
+ *
+ * Hotkeys are dot-
+ * separated (·) to
+ * match the round-145
+ * derived-summary
+ * footer's visual
+ * rhythm and the
+ * existing HUD row
+ * separators.
+ */
+function renderHotkeysStrip(
+    hotkeys: ReadonlyArray<{ key: string; action: string; group?: string }>,
+): string {
+    // Single-pass: for each
+    // binding, optionally
+    // prepend a group label
+    // (only when the group
+    // field changes from the
+    // previous binding's), then
+    // the binding itself, then
+    // a dot separator (omitted
+    // after the last binding).
+    const parts: string[] = [];
+    hotkeys.forEach((h, i) => {
+        const prevGroup = i > 0 ? hotkeys[i - 1].group : undefined;
+        if (h.group && h.group !== prevGroup) {
+            parts.push(`<span class="hud-hotkey-group">${escapeHtml(h.group)}</span>`);
+        }
+        parts.push(`
+            <span class="hud-hotkey">
+                <kbd class="hud-hotkey-key">${escapeHtml(h.key)}</kbd>
+                <span class="hud-hotkey-action">${escapeHtml(h.action)}</span>
+            </span>
+        `);
+        if (i < hotkeys.length - 1) {
+            parts.push('<span class="hud-hotkey-sep">·</span>');
+        }
+    });
+    return `<div class="hud-hotkeys">${parts.join('')}</div>`;
 }
