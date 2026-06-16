@@ -1,5 +1,5 @@
 /**
- * DslCodexPanel — round-133 + round-134 + round-135 + round-136 + round-138 + round-139.
+ * DslCodexPanel — round-133 + round-134 + round-135 + round-136 + round-138 + round-139 + round-140.
  *
  * Renders the AGI's most recently
  * generated / hot-reloaded `DslRule`
@@ -153,9 +153,34 @@
  * uses the post-sort index
  * so the click target is
  * still correct.
+ *
+ * Round 140 — also adds a
+ * "filter by action kind"
+ * dropdown next to the
+ * existing event-kind
+ * filter. The player can
+ * narrow the history list
+ * to rules that contain a
+ * specific action (Heal /
+ * Damage / Spawn /
+ * SpawnEntity). Complements
+ * the event-kind filter:
+ * the player can ask "all
+ * recent Collide rules"
+ * AND "all rules that
+ * contain a Heal action".
+ * Action filter + event
+ * filter + search + sort
+ * all combine (action +
+ * event + search AND the
+ * set, then sort). Click-
+ * to-apply uses the post-
+ * action-filter index so
+ * the click target is
+ * still correct.
  */
 
-import type { DslRule, DslEventKind } from '../dsl/MemeCompiler';
+import type { DslRule, DslEventKind, DslActionKind } from '../dsl/MemeCompiler';
 
 export interface DslCodexPanelHandle {
     refresh(): void;
@@ -301,8 +326,55 @@ function renderHistoryFilter(currentFilter: DslEventKind | null): string {
     ].join('');
     return `
         <div class="dsl-codex-history-filter">
-            <label for="dsl-codex-history-filter-select">筛选:</label>
+            <label for="dsl-codex-history-filter-select">事件:</label>
             <select id="dsl-codex-history-filter-select" class="dsl-codex-history-filter-select">
+                ${opts}
+            </select>
+        </div>
+    `;
+}
+
+/**
+ * Round 140 — render
+ * the "filter by
+ * action kind"
+ * dropdown. Sits
+ * next to the
+ * event-kind filter
+ * (round-136) so the
+ * player can combine
+ * event + action
+ * filters. The
+ * dropdown has 5
+ * options: "全部"
+ * (All) + the 4
+ * `DslActionKind`
+ * variants
+ * (Damage / Heal /
+ * Spawn /
+ * SpawnEntity). The
+ * dropdown fires a
+ * `change` event
+ * that the host's
+ * delegated
+ * `change` listener
+ * catches and
+ * dispatches to the
+ * action-filter
+ * state updater.
+ */
+function renderHistoryActionFilter(currentActionFilter: DslActionKind | null): string {
+    const kinds: DslActionKind[] = ['Damage', 'Heal', 'Spawn', 'SpawnEntity'];
+    const opts = [
+        `<option value=""${currentActionFilter === null ? ' selected' : ''}>全部</option>`,
+        ...kinds.map((k) =>
+            `<option value="${k}"${currentActionFilter === k ? ' selected' : ''}>${k}</option>`
+        ),
+    ].join('');
+    return `
+        <div class="dsl-codex-history-action-filter">
+            <label for="dsl-codex-history-action-filter-select">动作:</label>
+            <select id="dsl-codex-history-action-filter-select" class="dsl-codex-history-action-filter-select">
                 ${opts}
             </select>
         </div>
@@ -512,11 +584,34 @@ function renderHistorySort(currentSort: DslHistorySort): string {
  * deterministic
  * across
  * re-renders.
+ *
+ * Round 140 — when
+ * a non-null action
+ * filter is
+ * supplied, the
+ * list is further
+ * filtered to only
+ * rules whose
+ * `actions` array
+ * contains at least
+ * one action of the
+ * specified
+ * `DslActionKind`.
+ * Event filter +
+ * action filter +
+ * search are
+ * combined with AND
+ * semantics. The
+ * "暂无匹配" empty
+ * state is shared
+ * between all three
+ * filter misses.
  */
 function renderHistoryList(
     history: ReadonlyArray<DslRule>,
     clickable: boolean,
     filter: DslEventKind | null,
+    actionFilter: DslActionKind | null,
     search: string,
     sort: DslHistorySort,
 ): string {
@@ -534,9 +629,21 @@ function renderHistoryList(
     // match on
     // the source
     // DSL form).
+    // Round 140 —
+    // also apply
+    // the action-
+    // kind filter
+    // (rule must
+    // contain at
+    // least one
+    // action of
+    // the
+    // specified
+    // kind).
     const searchLower = search.toLowerCase();
     const filtered = history.filter((r) => {
         if (filter !== null && r.event.kind !== filter) return false;
+        if (actionFilter !== null && !r.actions.some((a) => a.kind === actionFilter)) return false;
         if (searchLower !== '') {
             const source = ruleToSource(r).toLowerCase();
             if (!source.includes(searchLower)) return false;
@@ -763,6 +870,44 @@ export function renderDslCodexPanel(
     let currentSort: DslHistorySort = 'chrono-oldest';
 
     /**
+     * Round 140 —
+     * local action-
+     * kind filter
+     * state. Defaults
+     * to `null`
+     * ("All" — no
+     * filter). When
+     * set, the
+     * history list is
+     * further filtered
+     * to only rules
+     * whose `actions`
+     * array contains
+     * at least one
+     * action of the
+     * specified
+     * `DslActionKind`.
+     * Combines with
+     * the event-kind
+     * filter +
+     * search (AND
+     * semantics).
+     * Persists across
+     * `doRender()`
+     * re-renders so
+     * the player's
+     * action filter
+     * selection
+     * survives
+     * hot-reload
+     * updates. Resets
+     * when the panel
+     * is closed and
+     * re-opened.
+     */
+    let currentActionFilter: DslActionKind | null = null;
+
+    /**
      * Round 135 —
      * delegate click
      * + keyboard
@@ -834,9 +979,25 @@ export function renderDslCodexPanel(
         // the
         // correct
         // rule.
+        // Round 140 —
+        // also
+        // re-apply
+        // the
+        // action
+        // filter so
+        // the
+        // post-
+        // action-
+        // filter
+        // index
+        // maps to
+        // the
+        // correct
+        // rule.
         const searchLower = currentSearch.toLowerCase();
         const filtered = history.filter((r) => {
             if (currentFilter !== null && r.event.kind !== currentFilter) return false;
+            if (currentActionFilter !== null && !r.actions.some((a) => a.kind === currentActionFilter)) return false;
             if (searchLower !== '') {
                 const source = ruleToSource(r).toLowerCase();
                 if (!source.includes(searchLower)) return false;
@@ -900,6 +1061,38 @@ export function renderDslCodexPanel(
             currentFilter = null;
         } else {
             currentFilter = value as DslEventKind;
+        }
+        doRender();
+    };
+
+    /**
+     * Round 140 —
+     * dispatch the
+     * `change` event
+     * on the action-
+     * kind filter
+     * dropdown to
+     * update
+     * `currentActionFilter`
+     * and re-render
+     * the history
+     * list. Mirrors
+     * the round-136
+     * `dispatchFilter`
+     * (event-kind
+     * filter) pattern.
+     */
+    const dispatchActionFilter = (target: EventTarget | null) => {
+        if (!getRuleHistory) return;
+        const sel = (target as HTMLElement | null)?.closest(
+            '#dsl-codex-history-action-filter-select'
+        ) as HTMLSelectElement | null;
+        if (!sel) return;
+        const value = sel.value;
+        if (value === '') {
+            currentActionFilter = null;
+        } else {
+            currentActionFilter = value as DslActionKind;
         }
         doRender();
     };
@@ -998,10 +1191,11 @@ export function renderDslCodexPanel(
                     <div class="dsl-codex-empty">暂无 DSL — 按 1-8 进入 atom 后由 AGI 自动生成</div>
                     ${hasHistory ? `
                         ${renderHistoryFilter(currentFilter)}
+                        ${renderHistoryActionFilter(currentActionFilter)}
                         ${renderHistorySearch(currentSearch)}
                         ${renderHistorySort(currentSort)}
                         <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))}</div>
-                        ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentSearch, currentSort)}
+                        ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentActionFilter, currentSearch, currentSort)}
                     ` : ''}
                 </div>
             `;
@@ -1028,10 +1222,11 @@ export function renderDslCodexPanel(
                 ${renderActionRows(rule)}
                 ${hasHistory ? `
                     ${renderHistoryFilter(currentFilter)}
+                    ${renderHistoryActionFilter(currentActionFilter)}
                     ${renderHistorySearch(currentSearch)}
                     ${renderHistorySort(currentSort)}
                     <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))}</div>
-                    ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentSearch, currentSort)}
+                    ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentActionFilter, currentSearch, currentSort)}
                 ` : ''}
             </div>
         `;
@@ -1092,6 +1287,7 @@ export function renderDslCodexPanel(
     if (getRuleHistory) {
         root.addEventListener('change', (e) => {
             dispatchFilter(e.target);
+            dispatchActionFilter(e.target);
             dispatchSort(e.target);
         });
     }
