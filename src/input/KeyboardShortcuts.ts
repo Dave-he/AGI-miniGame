@@ -216,7 +216,22 @@ export type KeyboardAction =
     // "eXtra on top" / "X-ray" (see
     // through the scene). One keystroke
     // — no sub-menu needed.
-    | { kind: 'toggle-hud-pinned' };
+    | { kind: 'toggle-hud-pinned' }
+    // Round 156 — toggle HUD click-through
+    // mode. When enabled, the `#hud-root`
+    // gets `pointer-events: none` so
+    // mouse clicks on the HUD area pass
+    // through to the 3D scene beneath.
+    // The HUD remains visible (read-only)
+    // — companion to round-155 pin:
+    // pinned controls stacking (HUD stays
+    // above scene), click-through controls
+    // interaction (scene stays clickable
+    // through HUD). They can be enabled
+    // together. Y is the next free letter
+    // after X (which round 155 bound to
+    // pin). Y reads as "bYpass".
+    | { kind: 'toggle-hud-click-through' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -584,6 +599,21 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // localStorage (`agi_hud_pinned`)
     // so it survives page reloads.
     { key: 'X',    action: '切换 HUD 置顶 (z-index 跳到 10000 防被覆盖)' },
+    // Round 156 — Y key toggles HUD
+    // click-through mode. When enabled,
+    // mouse clicks on the HUD area pass
+    // through to the 3D scene beneath
+    // (HUD stays visible but read-only).
+    // Companion to X: pinned controls
+    // stacking (HUD above scene), click
+    // through controls interaction
+    // (scene clickable through HUD).
+    // Both can be enabled together for a
+    // see-everything-and-click-everything
+    // layout. The preference persists in
+    // localStorage (`agi_hud_click_through`)
+    // so it survives page reloads.
+    { key: 'Y',    action: '切换 HUD 穿透 (pointer-events: none 透传至场景)' },
 ];
 
 /**
@@ -1313,6 +1343,18 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'x':
         case 'X':
             return { kind: 'toggle-hud-pinned' };
+        // Round 156 — Y key toggles HUD
+        // click-through mode. Y is the
+        // next free letter after X
+        // (which round 155 bound to
+        // pin). Y reads as "bYpass"
+        // (clicks bypass the HUD onto
+        // the scene). Same pattern as
+        // the other HUD toggles — one
+        // keystroke, no sub-menu.
+        case 'y':
+        case 'Y':
+            return { kind: 'toggle-hud-click-through' };
         default:
             return null;
     }

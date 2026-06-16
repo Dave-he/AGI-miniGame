@@ -385,6 +385,42 @@ export interface HUDState {
      * toggles this.
      */
     hudPinned?: boolean;
+    /**
+     * Round 156 — when `true`, the HUD
+     * root element gets the
+     * `hud-click-through` class which
+     * sets `pointer-events: none` so
+     * mouse clicks on the HUD area
+     * pass through to the scene
+     * beneath. The HUD remains
+     * visible (read-only) so the
+     * player can keep an eye on
+     * score / biome / event log
+     * while interacting with the
+     * 3D scene directly.
+     *
+     * Persisted to localStorage key
+     * `agi_hud_click_through` so a
+     * player who enables it on a visit
+     * doesn't have to re-enable it on
+     * the next page load. The `Y` key
+     * in main.ts toggles this.
+     *
+     * **Why a separate state field
+     * from `hudPinned`**: the two
+     * serve orthogonal purposes —
+     * `hudPinned` controls *stacking*
+     * (z-index, so the HUD stays
+     * visible above the scene),
+     * `hudClickThrough` controls
+     * *interaction* (pointer-events,
+     * so the scene stays clickable
+     * through the HUD). A player may
+     * want the HUD pinned AND
+     * click-through — read stats
+     * without blocking the scene.
+     */
+    hudClickThrough?: boolean;
 }
 
 export class HUD {
@@ -1005,6 +1041,14 @@ export class HUD {
         // pass so toggling the corner
         // doesn't strip the pin state.
         this.applyPinnedClass();
+        // Round 156 — apply the
+        // `hud-click-through` class on the
+        // same pass so toggling the corner
+        // doesn't strip the click-through
+        // state (same destructive-
+        // className-assign concern as
+        // round 155's pin state).
+        this.applyClickThroughClass();
     }
 
     /**
@@ -1075,6 +1119,97 @@ export class HUD {
             }
         } else {
             this.root.classList.remove('hud-pinned');
+        }
+    }
+
+    /**
+     * Round 156 — set the click-through
+     * flag. When `enabled === true`, the
+     * `#hud-root` element gets the
+     * `hud-click-through` class which
+     * sets `pointer-events: none` so
+     * mouse clicks on the HUD area
+     * pass through to the scene
+     * beneath.
+     *
+     * The HUD remains visible
+     * (read-only) — the player keeps
+     * access to the stat readout /
+     * biome indicator / event log /
+     * debouncer strip while clicking
+     * the 3D scene through the HUD
+     * area. Defaults to `false`
+     * (round-1 normal pointer-events
+     * — the HUD blocks clicks on the
+     * scene behind it).
+     *
+     * Persisting the player's
+     * preference is the call-site's
+     * responsibility (mirrors the
+     * round-155 `setPinned` pattern)
+     * so a non-browser test env can
+     * call `setClickThrough(true)`
+     * without crashing on `typeof
+     * localStorage`.
+     */
+    setClickThrough(enabled: boolean): void {
+        this.state = { ...this.state, hudClickThrough: enabled };
+        this.applyClickThroughClass();
+        this.render();
+    }
+
+    /**
+     * Read-only accessor mirroring the
+     * `isPinned()` pattern. Returns the
+     * current click-through flag
+     * (default `false` when never set).
+     */
+    isClickThrough(): boolean {
+        return this.state.hudClickThrough === true;
+    }
+
+    /**
+     * Round 156 — toggle the
+     * click-through flag. Returns
+     * the new value so the host can
+     * persist it. Designed to be
+     * wired directly to the `Y` key
+     * shortcut — one keystroke to
+     * flip click-through on / off.
+     */
+    toggleClickThrough(): boolean {
+        const next = !this.isClickThrough();
+        this.setClickThrough(next);
+        return next;
+    }
+
+    /**
+     * Round 156 — apply the
+     * `hud-click-through` CSS class
+     * on the root element. Internal
+     * helper for `setClickThrough`
+     * and the `applyCornerClass`
+     * post-pass (toggling the
+     * corner must NOT strip the
+     * click-through class, mirroring
+     * the round-155 pin contract).
+     *
+     * Uses `classList.add` /
+     * `classList.remove` (idempotent
+     * — calling twice doesn't
+     * double-add) so
+     * `setClickThrough` can be
+     * called repeatedly without
+     * disturbing other classes on
+     * the root.
+     */
+    private applyClickThroughClass(): void {
+        if (this.isClickThrough()) {
+            if (!this.root.classList.contains('hud-click-through')) {
+                this.root.classList.add('hud-click-through');
+            }
+        } else {
+            this.root.classList.remove('hud-click-through');
         }
     }
 

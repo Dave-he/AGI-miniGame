@@ -2357,4 +2357,164 @@ describe('HUD — round 152 compact mode', () => {
         );
         expect(pinnedRows.length).toBeGreaterThanOrEqual(1);
     });
+
+    // =========================================================
+    // Round 156 — click-through mode (Y key).
+    //
+    // 9 tests pinning the click-through
+    // state machine. The contract is
+    // structurally similar to round-155
+    // pin (boolean flag, classList-based
+    // CSS class) but lives on a separate
+    // state field (`hudClickThrough`)
+    // because pinned controls *stacking*
+    // and click-through controls
+    // *interaction* — orthogonal concerns.
+    // The key cross-cutting test is
+    // `setCorner_preserves_click_through_class_round_156`
+    // which pins the round-154 + 155 + 156
+    // interaction contract: corner cycling
+    // must NOT strip the pin class OR the
+    // click-through class.
+    // =========================================================
+
+    test('default_state_is_not_click_through_round_156', () => {
+        // Fresh HUD: click-through is
+        // OFF by default (mirrors the
+        // round-1 default where the
+        // HUD blocks clicks on the
+        // scene behind it).
+        const { hud } = makeHud();
+        expect(hud.isClickThrough()).toBe(false);
+    });
+
+    test('setClickThrough_true_applies_hud_click_through_class_round_156', () => {
+        // setClickThrough(true) must
+        // add the `hud-click-through`
+        // class to the root element
+        // so the CSS `pointer-events:
+        // none` rule applies.
+        const { hud, root } = makeHud();
+        hud.setClickThrough(true);
+        expect(hud.isClickThrough()).toBe(true);
+        expect(root.classList.contains('hud-click-through')).toBe(true);
+    });
+
+    test('setClickThrough_false_strips_hud_click_through_class_round_156', () => {
+        // setClickThrough(false) must
+        // remove the
+        // `hud-click-through` class.
+        const { hud, root } = makeHud();
+        hud.setClickThrough(true);
+        hud.setClickThrough(false);
+        expect(hud.isClickThrough()).toBe(false);
+        expect(root.classList.contains('hud-click-through')).toBe(false);
+    });
+
+    test('toggleClickThrough_flips_state_round_156', () => {
+        // toggleClickThrough() must
+        // flip the click-through state
+        // and return the new value so
+        // the host can persist it.
+        const { hud } = makeHud();
+        expect(hud.isClickThrough()).toBe(false);
+        const next1 = hud.toggleClickThrough();
+        expect(next1).toBe(true);
+        expect(hud.isClickThrough()).toBe(true);
+        const next2 = hud.toggleClickThrough();
+        expect(next2).toBe(false);
+        expect(hud.isClickThrough()).toBe(false);
+    });
+
+    test('setCorner_preserves_click_through_class_round_156', () => {
+        // Critical interaction test
+        // (round-154/155/156 triple
+        // contract): round-154
+        // setCorner() rebuilds
+        // root.className via
+        // `applyCornerClass()`, which
+        // would silently strip BOTH
+        // the `hud-pinned` class
+        // (round-155) AND the
+        // `hud-click-through` class
+        // (round-156) if the helper
+        // didn't chain all three. The
+        // contract: setCorner MUST
+        // preserve the pin state AND
+        // the click-through state.
+        const { hud, root } = makeHud();
+        hud.setPinned(true);
+        hud.setClickThrough(true);
+        expect(root.classList.contains('hud-pinned')).toBe(true);
+        expect(root.classList.contains('hud-click-through')).toBe(true);
+        // Toggling the corner must NOT
+        // drop EITHER class.
+        hud.setCorner('bl');
+        expect(root.classList.contains('hud-pinned')).toBe(true);
+        expect(root.classList.contains('hud-click-through')).toBe(true);
+        expect(hud.isPinned()).toBe(true);
+        expect(hud.isClickThrough()).toBe(true);
+        expect(root.classList.contains('hud-corner-bl')).toBe(true);
+    });
+
+    test('setPinned_preserves_click_through_class_round_156', () => {
+        // Symmetric interaction test:
+        // setPinned() must NOT strip
+        // the click-through class. The
+        // two methods are independent
+        // (both use classList.add /
+        // remove — non-destructive) so
+        // a regression here would mean
+        // a refactor changed one of
+        // them to root.className = '...'.
+        const { hud, root } = makeHud();
+        hud.setClickThrough(true);
+        hud.setPinned(true);
+        expect(root.classList.contains('hud-click-through')).toBe(true);
+        expect(root.classList.contains('hud-pinned')).toBe(true);
+    });
+
+    test('applyClickThroughClass_is_idempotent_round_156', () => {
+        // Calling setClickThrough(true)
+        // twice must NOT add the
+        // `hud-click-through` class
+        // twice. Regression: a future
+        // refactor that appends
+        // without checking would
+        // duplicate the class.
+        const { hud, root } = makeHud();
+        hud.setClickThrough(true);
+        hud.setClickThrough(true);
+        expect(root.classList.contains('hud-click-through')).toBe(true);
+        const tokens = root.className.split(/\s+/).filter(Boolean);
+        const count = tokens.filter((t) => t === 'hud-click-through').length;
+        expect(count).toBe(1);
+    });
+
+    test('state_round_trips_click_through_through_getState_round_156', () => {
+        // getState() must surface the
+        // `hudClickThrough` field so
+        // test-utils can read it (and
+        // any future SettingsPanel
+        // knob).
+        const { hud } = makeHud();
+        hud.setClickThrough(true);
+        expect(hud.getState().hudClickThrough).toBe(true);
+        hud.setClickThrough(false);
+        expect(hud.getState().hudClickThrough).toBe(false);
+    });
+
+    test('BINDING_DESCRIPTIONS_includes_hud_click_through_hotkey_round_156', () => {
+        // The Y key shortcut for the
+        // HUD click-through toggle is
+        // mirrored in BINDING_DESCRIPTIONS
+        // so the help overlay
+        // auto-iterates it (same
+        // pattern as round-155's X
+        // key).
+        const rows = BINDING_DESCRIPTIONS.filter(
+            (d) => d.key === 'Y' && d.action.includes('穿透')
+        );
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+    });
 });

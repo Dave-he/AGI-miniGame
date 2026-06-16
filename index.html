@@ -74,6 +74,27 @@
          localStorage key `agi_hud_pinned`. */
       .hud-pinned { z-index: 10000; }
 
+      /* Round 156 — `.hud-click-through`
+         pointer-events: none so mouse clicks
+         on the HUD area pass through to the
+         3D scene beneath. The HUD remains
+         visible (read-only) — the player
+         keeps access to the stat readout /
+         biome indicator / event log /
+         debouncer strip while interacting
+         with the scene directly. Companion
+         to round-155 `.hud-pinned`: pinned
+         controls *stacking* (HUD stays above
+         scene), click-through controls
+         *interaction* (scene stays clickable
+         through HUD). They can be enabled
+         together: read stats without
+         blocking the scene. Toggled at
+         runtime via the `Y` key shortcut
+         and persisted to localStorage key
+         `agi_hud_click_through`. */
+      .hud-click-through { pointer-events: none; }
+
       /* Round 112 — settings-root: bottom-right corner
          so it sits under the HUD. Hidden by default;
          App.toggleSettings() flips the `hidden` attribute.

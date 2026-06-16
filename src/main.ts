@@ -706,6 +706,13 @@ class App {
         this.hud.setFadeEnabled(loadHudFadeFromStorage());
         this.hud.setCorner(loadHudCornerFromStorage());
         this.hud.setPinned(loadHudPinnedFromStorage());
+        // Round 156 — restore click-through
+        // state from localStorage alongside
+        // compact, fade, corner, and pin.
+        // The setter is idempotent: a fresh
+        // boot with no saved value defaults
+        // to click-through OFF (false).
+        this.hud.setClickThrough(loadHudClickThroughFromStorage());
         this.worldState = new WorldState('local-player', '次元旅者');
         this.progression = new Progression();
         this.epoch = new EpochSystem(Date.now());
@@ -1301,6 +1308,20 @@ class App {
             // after C (which round 154
             // bound to corner cycling).
             { key: 'X', action: '置顶',    group: '系统' },
+            // Round 156 — Y key toggles
+            // HUD click-through mode.
+            // Y is the next free letter
+            // after X (which round 155
+            // bound to pin toggling). Y
+            // reads as "bYpass" (clicks
+            // bypass the HUD onto the
+            // scene). Companion to X:
+            // pinned controls stacking
+            // (HUD above scene), click-
+            // through controls interaction
+            // (scene clickable through HUD).
+            // Both can be enabled together.
+            { key: 'Y', action: '穿透',    group: '系统' },
         ]);
         // Round 150 — push an
         // initial biome
@@ -2328,6 +2349,41 @@ class App {
     toggleHudPinned(): void {
         const next = this.hud.togglePinned();
         saveHudPinnedToStorage(next);
+    }
+
+    /**
+     * Round 156 — toggle HUD click-through
+     * mode. When enabled, the `#hud-root`
+     * element gets `pointer-events: none`
+     * so mouse clicks on the HUD area
+     * pass through to the 3D scene
+     * beneath. The HUD remains visible
+     * (read-only) — the player can keep
+     * an eye on the stat readout / biome
+     * indicator / event log / debouncer
+     * strip while interacting with the
+     * scene directly.
+     *
+     * **Companion to round-155 `toggleHudPinned`**:
+     * pinned controls *stacking* (HUD
+     * stays above the scene), click-through
+     * controls *interaction* (scene stays
+     * clickable through the HUD). They can
+     * be enabled together: a player with
+     * both modes active gets a see-everything-
+     * and-click-everything layout that is
+     * the "minimal HUD" experience favored
+     * by hardcore min-maxers.
+     *
+     * Mirrors `toggleHudPinned`: one call +
+     * one localStorage write. The Y key
+     * shortcut calls this via the
+     * round-156 `toggle-hud-click-through`
+     * KeyboardAction.
+     */
+    toggleHudClickThrough(): void {
+        const next = this.hud.toggleClickThrough();
+        saveHudClickThroughToStorage(next);
     }
 
     /**
@@ -3960,6 +4016,14 @@ async function bootstrap(): Promise<void> {
         switch (action.kind) {
             case 'cycle-hud-corner': app.cycleHudCorner(); break;
             case 'toggle-hud-pinned': app.toggleHudPinned(); break;
+            // Round 156 — Y key toggles HUD
+            // click-through mode. Routed through
+            // the same handler the panel-toggles
+            // use; the method body is small
+            // (one boolean flip + one
+            // localStorage write) so it
+            // doesn't need its own block.
+            case 'toggle-hud-click-through': app.toggleHudClickThrough(); break;
             case 'enter-atom': void app.enterAtom(action.atomId); break;
             // Round 152 — H key toggles the HUD
             // compact mode (the round-51 memories
@@ -4227,6 +4291,39 @@ function saveHudPinnedToStorage(pinned: boolean): void {
     if (typeof localStorage === 'undefined') return;
     try {
         localStorage.setItem(HUD_PINNED_STORAGE_KEY, pinned ? '1' : '0');
+    } catch {
+        // localStorage can throw in
+        // private mode / quota errors.
+        // Swallow — the in-memory state
+        // is already updated.
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Round 156 — `agi_hud_click_through` localStorage key for the
+// HUD click-through toggle. Same `loadXxxFromStorage` /
+// `saveXxxToStorage` shape as the round-152 compact /
+// round-153 fade / round-154 corner / round-155 pin helpers
+// (typeof guard + try/catch — non-browser test envs skip
+// the call silently).
+// ---------------------------------------------------------------------------
+
+const HUD_CLICK_THROUGH_STORAGE_KEY = 'agi_hud_click_through';
+
+function loadHudClickThroughFromStorage(): boolean {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+        const raw = localStorage.getItem(HUD_CLICK_THROUGH_STORAGE_KEY);
+        return raw === '1';
+    } catch {
+        return false;
+    }
+}
+
+function saveHudClickThroughToStorage(enabled: boolean): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(HUD_CLICK_THROUGH_STORAGE_KEY, enabled ? '1' : '0');
     } catch {
         // localStorage can throw in
         // private mode / quota errors.

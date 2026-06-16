@@ -163,6 +163,18 @@ describe('KeyboardShortcuts', () => {
             expect(routeKey('x')).toEqual({ kind: 'toggle-hud-pinned' });
         });
 
+        it('Round 156 — Y key routes to toggle-hud-click-through', () => {
+            // Round 156 added the Y key for the HUD
+            // click-through toggle (next free letter
+            // after X — round 155 bound X to pin
+            // toggling). Y reads as "bYpass" (clicks
+            // bypass the HUD onto the scene).
+            // Case-insensitive like the rest of
+            // the letter bindings.
+            expect(routeKey('Y')).toEqual({ kind: 'toggle-hud-click-through' });
+            expect(routeKey('y')).toEqual({ kind: 'toggle-hud-click-through' });
+        });
+
         it.each(['0', '9', 'a', 'F1', 'Tab', 'Enter', 'ArrowUp'])(
             'returns null for unbound key "%s"',
             (key) => {
