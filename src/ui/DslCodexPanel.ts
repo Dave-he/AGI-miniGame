@@ -336,6 +336,72 @@ export type DslHistorySort =
     | 'kind-asc';
 
 /**
+ * Round 144 —
+ * column header
+ * identifier.
+ * Matches the
+ * three columns
+ * rendered in
+ * the history
+ * row template:
+ * `idx` (#N),
+ * `source` (rule
+ * source DSL
+ * preview), and
+ * `actions` (the
+ * `${rule.actions.length} 动作`
+ * cell).
+ */
+export type DslHistoryColumn =
+    | 'idx'
+    | 'source'
+    | 'actions';
+
+/**
+ * Round 144 —
+ * active
+ * column-level
+ * sort. When
+ * `null`, the
+ * column header
+ * has no sort
+ * applied and
+ * the dropdown
+ * sort
+ * (`DslHistorySort`)
+ * drives row
+ * order. When
+ * set, the
+ * column sort
+ * takes
+ * precedence
+ * over the
+ * dropdown sort
+ * (a 3-state
+ * click cycle:
+ * null → asc →
+ * desc → null).
+ *
+ * Indirection
+ * (not just
+ * `DslHistoryColumn | null`):
+ * keeps the
+ * direction +
+ * column
+ * coupling
+ * explicit so a
+ * future
+ * "sort icon"
+ * component
+ * can read both
+ * atomically.
+ */
+export type DslHistoryColumnSort = {
+    column: DslHistoryColumn;
+    direction: 'asc' | 'desc';
+} | null;
+
+/**
  * Render a `DslRule` back
  * to its source DSL form
  * (the inverse of
@@ -736,12 +802,28 @@ function isHistoryAtDefault(
     actionFilter: DslActionKind | null,
     search: string,
     sort: DslHistorySort,
+    // Round 144 —
+    // column sort
+    // is part of
+    // the
+    // "default
+    // state"
+    // (no
+    // column
+    // sort
+    // active
+    // →
+    // dropdown
+    // sort
+    // drives).
+    columnSort: DslHistoryColumnSort,
 ): boolean {
     return (
         filter === null
         && actionFilter === null
         && search === ''
         && sort === 'chrono-oldest'
+        && columnSort === null
     );
 }
 
@@ -921,6 +1003,150 @@ function countHistoryVisible(
  * between all three
  * filter misses.
  */
+/**
+ * Round 144 —
+ * render the
+ * clickable
+ * column header
+ * row above the
+ * history list.
+ * Three columns
+ * (索引 / 源码 /
+ * 动作), each a
+ * `<th>`-style
+ * clickable
+ * button with
+ * an
+ * `id` +
+ * `data-column`
+ * so the host's
+ * delegated
+ * `click`
+ * listener can
+ * find it via
+ * `closest()`.
+ *
+ * The active
+ * column (per
+ * `columnSort`)
+ * shows a `↑` /
+ * `↓` indicator
+ * after the
+ * label. Other
+ * columns show
+ * a faint `↕`
+ * hint so the
+ * player knows
+ * the column is
+ * clickable.
+ *
+ * When
+ * `columnSort`
+ * is `null`,
+ * no column
+ * shows a
+ * direction
+ * indicator
+ * (all 3
+ * columns
+ * show the
+ * neutral `↕`).
+ *
+ * Click
+ * semantics
+ * (handled in
+ * `dispatchColumnSort`):
+ *   - click
+ *     inactive
+ *     column →
+ *     set as
+ *     active
+ *     with
+ *     `asc`
+ *   - click
+ *     active
+ *     column
+ *     with
+ *     `asc` →
+ *     flip to
+ *     `desc`
+ *   - click
+ *     active
+ *     column
+ *     with
+ *     `desc` →
+ *     clear
+ *     (back to
+ *     null,
+ *     dropdown
+ *     sort
+ *     drives
+ *     again)
+ *
+ * This 3-state
+ * cycle is the
+ * standard
+ * table-sort
+ * UX; matches
+ * Finder /
+ * Explorer /
+ * most
+ * spreadsheet
+ * UIs.
+ */
+function renderHistoryColumnHeader(
+    columnSort: DslHistoryColumnSort,
+    hasPreview: boolean,
+): string {
+    // When rows have a
+    // trailing "→"
+    // preview button,
+    // we add a 4th
+    // empty cell so the
+    // header row's
+    // column count
+    // matches the row
+    // template's column
+    // count. This keeps
+    // the visual grid
+    // aligned (the
+    // preview buttons
+    // sit in their own
+    // column rather
+    // than being
+    // misaligned with
+    // the last data
+    // column).
+    const previewHeader = hasPreview
+        ? '<span class="dsl-codex-history-col-preview" data-column="preview"></span>'
+        : '';
+    const renderHeader = (
+        id: string,
+        column: DslHistoryColumn,
+        label: string,
+    ): string => {
+        const active = columnSort?.column === column;
+        const indicator = active
+            ? (columnSort?.direction === 'asc' ? ' ↑' : ' ↓')
+            : ' <span class="dsl-codex-history-col-hint">↕</span>';
+        const cls = active
+            ? 'dsl-codex-history-col-header dsl-codex-history-col-header-active'
+            : 'dsl-codex-history-col-header';
+        const ariaSort = active
+            ? (columnSort?.direction === 'asc' ? 'ascending' : 'descending')
+            : 'none';
+        return `<span class="${cls}" id="${id}" data-column="${column}" aria-sort="${ariaSort}" role="button" tabindex="0" title="按${label}排序">${label}${indicator}</span>`;
+    };
+    return `
+        <div class="dsl-codex-history-col-header-row">
+            ${renderHeader('dsl-codex-history-col-header-idx',     'idx',     '索引')}
+            ${renderHeader('dsl-codex-history-col-header-source',  'source',  '源码')}
+            ${renderHeader('dsl-codex-history-col-header-actions', 'actions', '动作')}
+            ${previewHeader}
+        </div>
+    `;
+}
+
 function renderHistoryList(
     history: ReadonlyArray<DslRule>,
     clickable: boolean,
@@ -946,6 +1172,38 @@ function renderHistoryList(
     // only, or
     // both).
     previewable: boolean,
+    // Round 144 —
+    // active
+    // column-
+    // level sort.
+    // When non-
+    // null, this
+    // takes
+    // precedence
+    // over the
+    // `sort`
+    // dropdown
+    // (and a
+    // column
+    // header row
+    // is rendered
+    // above the
+    // list). When
+    // null, the
+    // header row
+    // is still
+    // rendered
+    // (so the
+    // player can
+    // click to
+    // activate a
+    // column
+    // sort) but
+    // the sort
+    // comes from
+    // the
+    // dropdown.
+    columnSort: DslHistoryColumnSort,
 ): string {
     // Round 136 —
     // apply the
@@ -1010,8 +1268,79 @@ function renderHistoryList(
     // original
     // chrono
     // index.
+    //
+    // Round 144 —
+    // when
+    // `columnSort`
+    // is non-null,
+    // it takes
+    // precedence
+    // over the
+    // `sort`
+    // dropdown.
+    // The 3 column
+    // comparators
+    // (idx /
+    // source /
+    // actions) all
+    // break ties
+    // by the
+    // original
+    // chrono index
+    // (stable
+    // sort) so
+    // output is
+    // deterministic
+    // across
+    // re-renders,
+    // mirroring
+    // the round-
+    // 139
+    // dropdown
+    // tie-break
+    // pattern.
     const indexed = filtered.map((rule, i) => ({ rule, origIndex: i }));
+    const compareByColumn = (
+        a: { rule: DslRule; origIndex: number },
+        b: { rule: DslRule; origIndex: number },
+    ): number => {
+        if (columnSort === null) return 0; // unreachable; caller checks
+        const dir = columnSort.direction === 'asc' ? 1 : -1;
+        switch (columnSort.column) {
+            case 'idx':
+                // Sort by the
+                // original
+                // chrono index
+                // (= the
+                // insertion
+                // order in
+                // `history`,
+                // before
+                // filter).
+                return (a.origIndex - b.origIndex) * dir;
+            case 'source': {
+                const aSrc = ruleToSource(a.rule);
+                const bSrc = ruleToSource(b.rule);
+                const cmp = aSrc.localeCompare(bSrc);
+                if (cmp !== 0) return cmp * dir;
+                return a.origIndex - b.origIndex;
+            }
+            case 'actions': {
+                const aLen = a.rule.actions.length;
+                const bLen = b.rule.actions.length;
+                if (aLen !== bLen) return (aLen - bLen) * dir;
+                return a.origIndex - b.origIndex;
+            }
+        }
+    };
     indexed.sort((a, b) => {
+        // Column sort takes
+        // precedence over
+        // the dropdown
+        // sort.
+        if (columnSort !== null) {
+            return compareByColumn(a, b);
+        }
         switch (sort) {
             case 'chrono-oldest':
                 return a.origIndex - b.origIndex;
@@ -1076,7 +1405,30 @@ function renderHistoryList(
             </div>
         `;
     }).join('');
-    return `<div class="dsl-codex-history-list">${rows}</div>`;
+    // Round 144 —
+    // prepend the
+    // column
+    // header row
+    // (rendered as
+    // a `<div>`
+    // grid so it
+    // visually
+    // aligns with
+    // the
+    // data-row
+    // `<div>`s
+    // below via
+    // shared CSS
+    // grid
+    // columns).
+    // The column
+    // headers are
+    // clickable
+    // (handled
+    // via
+    // `dispatchColumnSort`).
+    const headerRow = renderHistoryColumnHeader(columnSort, previewable);
+    return `<div class="dsl-codex-history-list">${headerRow}${rows}</div>`;
 }
 
 export function renderDslCodexPanel(
@@ -1305,6 +1657,88 @@ export function renderDslCodexPanel(
      * re-opened.
      */
     let currentActionFilter: DslActionKind | null = null;
+
+    /**
+     * Round 144 —
+     * local
+     * column-
+     * level
+     * sort
+     * state.
+     * Defaults
+     * to `null`
+     * (no
+     * column
+     * sort
+     * active —
+     * the
+     * dropdown
+     * sort
+     * drives
+     * row
+     * order).
+     * When set,
+     * the
+     * column
+     * sort
+     * takes
+     * precedence
+     * over the
+     * dropdown
+     * sort. The
+     * header
+     * row is
+     * always
+     * rendered
+     * (even when
+     * `null`)
+     * so the
+     * player
+     * can click
+     * to
+     * activate
+     * a column
+     * sort. The
+     * 3-state
+     * click
+     * cycle:
+     * null →
+     * {col,
+     * 'asc'} →
+     * {col,
+     * 'desc'} →
+     * null. (See
+     * `dispatchColumnSort`
+     * for the
+     * state
+     * machine.)
+     *
+     * Persists
+     * across
+     * `doRender()`
+     * re-renders
+     * so the
+     * player's
+     * column
+     * sort
+     * selection
+     * survives
+     * hot-reload
+     * updates.
+     * Resets
+     * when the
+     * panel is
+     * closed and
+     * re-opened
+     * (the
+     * entire
+     * `renderDslCodexPanel`
+     * call
+     * returns a
+     * fresh
+     * closure).
+     */
+    let currentColumnSort: DslHistoryColumnSort = null;
 
     /**
      * Round 135 —
@@ -1657,13 +2091,111 @@ export function renderDslCodexPanel(
             '#dsl-codex-history-reset-button'
         ) as HTMLButtonElement | null;
         if (!btn) return;
-        if (isHistoryAtDefault(currentFilter, currentActionFilter, currentSearch, currentSort)) {
+        if (isHistoryAtDefault(currentFilter, currentActionFilter, currentSearch, currentSort, currentColumnSort)) {
             return;
         }
         currentFilter = null;
         currentActionFilter = null;
         currentSearch = '';
         currentSort = 'chrono-oldest';
+        currentColumnSort = null;
+        doRender();
+    };
+
+    /**
+     * Round 144 —
+     * dispatch the
+     * `click` event on
+     * a column header
+     * (索引 / 源码 /
+     * 动作) to advance
+     * the
+     * 3-state column-
+     * sort state
+     * machine:
+     *
+     *   null
+     *     ↓
+     *   {col,
+     *    'asc'}
+     *     ↓
+     *   {col,
+     *    'desc'}
+     *     ↓
+     *   null
+     *     ↓
+     *   (back to
+     *    column
+     *    click;
+     *    starts
+     *    cycle
+     *    over
+     *    from
+     *    null)
+     *
+     * The header's
+     * `data-column`
+     * attribute holds
+     * the column id
+     * (`'idx'` /
+     * `'source'` /
+     * `'actions'`).
+     * The handler
+     * uses
+     * `closest('.dsl-codex-history-col-header')`
+     * to find the
+     * specific
+     * header element
+     * (so it
+     * coexists
+     * safely with
+     * other
+     * `click`
+     * handlers on
+     * `root`).
+     *
+     * 3-state click
+     * semantics is
+     * the standard
+     * table-sort UX
+     * (matches
+     * Finder /
+     * Explorer /
+     * most
+     * spreadsheet
+     * UIs) and is
+     * the only way
+     * the player
+     * can CLEAR
+     * a column
+     * sort (going
+     * back to the
+     * dropdown
+     * sort).
+     */
+    const dispatchColumnSort = (target: EventTarget | null) => {
+        if (!getRuleHistory) return;
+        const header = (target as HTMLElement | null)?.closest(
+            '.dsl-codex-history-col-header'
+        ) as HTMLElement | null;
+        if (!header) return;
+        const column = header.getAttribute('data-column');
+        if (column !== 'idx' && column !== 'source' && column !== 'actions') return;
+        // 3-state state
+        // machine.
+        if (currentColumnSort === null) {
+            currentColumnSort = { column, direction: 'asc' };
+        } else if (currentColumnSort.column === column) {
+            if (currentColumnSort.direction === 'asc') {
+                currentColumnSort = { column, direction: 'desc' };
+            } else {
+                // direction === 'desc' → clear (back to dropdown sort).
+                currentColumnSort = null;
+            }
+        } else {
+            // Different column → start that column at 'asc'.
+            currentColumnSort = { column, direction: 'asc' };
+        }
         doRender();
     };
 
@@ -1820,7 +2352,7 @@ export function renderDslCodexPanel(
                             ${renderHistorySort(currentSort)}
                             ${renderHistoryReset()}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
-                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable)}
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable, currentColumnSort)}
                         `;
                     })() : ''}
                 </div>
@@ -1858,7 +2390,7 @@ export function renderDslCodexPanel(
                             ${renderHistorySort(currentSort)}
                             ${renderHistoryReset()}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
-                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable)}
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable, currentColumnSort)}
                         `;
                     })()}
                 ` : ''}
@@ -1892,6 +2424,54 @@ export function renderDslCodexPanel(
         });
     }
 
+    // Round 144 —
+    // wire the
+    // `keydown`
+    // event on the
+    // column header
+    // (Enter /
+    // Space
+    // activate the
+    // 3-state sort
+    // cycle, same
+    // as the click
+    // handler). The
+    // header is
+    // rendered
+    // with
+    // `role="button"
+    // tabindex="0"`
+    // (see
+    // `renderHistoryColumnHeader`)
+    // so it can
+    // receive
+    // keyboard
+    // focus and
+    // respond to
+    // Enter / Space
+    // like a
+    // standard
+    // clickable
+    // button.
+    // The keyboard
+    // handler is
+    // wired
+    // REGARDLESS of
+    // `onApplyHistory`
+    // (sorting is
+    // a separate
+    // concern from
+    // click-to-apply).
+    if (getRuleHistory) {
+        root.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const target = e.target as HTMLElement | null;
+            if (!target?.closest('.dsl-codex-history-col-header')) return;
+            e.preventDefault();
+            dispatchColumnSort(target);
+        });
+    }
+
     // Round 142 —
     // wire the
     // `click` event
@@ -1917,6 +2497,51 @@ export function renderDslCodexPanel(
     // clear filters).
     if (getRuleHistory) {
         root.addEventListener('click', (e) => dispatchReset(e.target));
+    }
+
+    // Round 144 —
+    // wire the
+    // `click` event
+    // on the column
+    // header (索引 /
+    // 源码 / 动作)
+    // (event-
+    // delegated on
+    // the stable
+    // `root` element
+    // so it survives
+    // `doRender()`
+    // re-renders).
+    //
+    // The column
+    // headers are
+    // siblings of
+    // (NOT inside)
+    // the data
+    // rows, so no
+    // `stopPropagation`
+    // is needed
+    // (a column-
+    // header click
+    // never reaches
+    // a row click
+    // handler). The
+    // column header
+    // is wired
+    // REGARDLESS of
+    // `onApplyHistory`
+    // — sorting is
+    // a separate
+    // concern from
+    // click-to-apply
+    // (a panel
+    // without the
+    // click-to-apply
+    // feature still
+    // needs
+    // sorting).
+    if (getRuleHistory) {
+        root.addEventListener('click', (e) => dispatchColumnSort(e.target));
     }
 
     // Round 143 —
