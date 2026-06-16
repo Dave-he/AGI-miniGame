@@ -1805,3 +1805,613 @@ test('round_138_searched_click_to_apply_passes_correct_rule', () => {
     expect(applied[0].actions[0].args[0]).toBe('orc');
 });
 
+// ---------------------------------------------------------------------------
+// Round 139 — sort dropdown tests
+// (extends round-136 filter +
+// round-138 search with a
+// sort mode dropdown).
+//
+// The sort dropdown has 5
+// options:
+//   - chrono-oldest (default)
+//   - chrono-newest (reverse)
+//   - actions-desc (by action count, desc)
+//   - actions-asc (by action count, asc)
+//   - kind-asc (by event kind, alphabetical)
+//
+// Filter + search + sort all
+// combine: filter+search AND the
+// set, then sort the result.
+// Click-to-apply (`data-rule-idx`)
+// uses the post-sort index so
+// the click target is still
+// correct after sort changes.
+//
+// Pattern matches round-136 +
+// round-138: re-query the
+// `<select>` element each time
+// because `doRender()` rebuilds
+// the DOM and detaches the old
+// element.
+// ---------------------------------------------------------------------------
+
+test('round_139_no_history_callback_means_no_sort_dropdown', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+    );
+    const sel = root.querySelector('#dsl-codex-history-sort-select');
+    expect(sel).toBeNull();
+});
+
+test('round_139_with_history_renders_sort_dropdown', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement | null;
+    expect(sel).not.toBeNull();
+    // Default
+    // sort
+    // is
+    // 'chrono-oldest'.
+    expect(sel!.value).toBe('chrono-oldest');
+    // 5 options
+    // (chrono-oldest
+    // / -newest /
+    // actions-desc
+    // / actions-asc
+    // / kind-asc).
+    const opts = sel!.querySelectorAll('option');
+    expect(opts.length).toBe(5);
+    expect(opts[0].value).toBe('chrono-oldest');
+    expect(opts[1].value).toBe('chrono-newest');
+    expect(opts[2].value).toBe('actions-desc');
+    expect(opts[3].value).toBe('actions-asc');
+    expect(opts[4].value).toBe('kind-asc');
+});
+
+test('round_139_default_sort_is_chrono_oldest', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Default
+    // (no
+    // change
+    // event):
+    // row #1
+    // is the
+    // first
+    // history
+    // entry,
+    // row #2
+    // is the
+    // second.
+    const rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(2);
+    const historyListHtml = root.querySelector('.dsl-codex-history-list')?.innerHTML ?? '';
+    // #1
+    // appears
+    // before
+    // #2
+    // (oldest
+    // first).
+    const idx1Pos = historyListHtml.indexOf('#1');
+    const idx2Pos = historyListHtml.indexOf('#2');
+    expect(idx1Pos).toBeGreaterThanOrEqual(0);
+    expect(idx2Pos).toBeGreaterThan(idx1Pos);
+});
+
+test('round_139_chrono_newest_reverses_order', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X'] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Damage', args: [3] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Change
+    // the
+    // sort
+    // dropdown
+    // to
+    // 'chrono-newest'.
+    const sel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    sel.value = 'chrono-newest';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Row #1
+    // is now
+    // the LAST
+    // (newest)
+    // history
+    // entry:
+    // Spawn
+    // rule.
+    // Row #2
+    // is the
+    // middle
+    // entry.
+    // Row #3
+    // is the
+    // first
+    // (oldest)
+    // entry.
+    const historyListHtml = root.querySelector('.dsl-codex-history-list')?.innerHTML ?? '';
+    const spawnPos = historyListHtml.indexOf('On(Spawn)');
+    const timerPos = historyListHtml.indexOf('On(Timer, 5)');
+    const collidePos = historyListHtml.indexOf('On(Collide)');
+    // Newest
+    // first:
+    // Spawn
+    // before
+    // Timer
+    // before
+    // Collide.
+    expect(spawnPos).toBeGreaterThanOrEqual(0);
+    expect(timerPos).toBeGreaterThan(spawnPos);
+    expect(collidePos).toBeGreaterThan(timerPos);
+});
+
+test('round_139_actions_desc_sorts_by_action_count', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        // #1:
+        // 1
+        // action
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        // #2:
+        // 3
+        // actions
+        { event: { kind: 'Timer', arg: 5 }, actions: [
+            { kind: 'Heal', args: [] },
+            { kind: 'Damage', args: [2] },
+            { kind: 'Spawn', args: ['X'] },
+        ] },
+        // #3:
+        // 2
+        // actions
+        { event: { kind: 'Spawn' }, actions: [
+            { kind: 'Damage', args: [3] },
+            { kind: 'Heal', args: [1] },
+        ] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Change
+    // the
+    // sort
+    // dropdown
+    // to
+    // 'actions-desc'.
+    const sel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    sel.value = 'actions-desc';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Order
+    // should
+    // be:
+    // row
+    // #1 = 3
+    // actions
+    // (Timer
+    // rule),
+    // row
+    // #2 = 2
+    // actions
+    // (Spawn
+    // rule),
+    // row
+    // #3 = 1
+    // action
+    // (Collide
+    // rule).
+    const rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(3);
+    // Verify
+    // action
+    // counts
+    // by
+    // checking
+    // the
+    // displayed
+    // count
+    // text.
+    expect(rows[0].textContent).toContain('3 动作');
+    expect(rows[1].textContent).toContain('2 动作');
+    expect(rows[2].textContent).toContain('1 动作');
+});
+
+test('round_139_actions_asc_sorts_by_action_count_asc', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] }, // 1
+        { event: { kind: 'Timer', arg: 5 }, actions: [
+            { kind: 'Heal', args: [] },
+            { kind: 'Damage', args: [2] },
+            { kind: 'Spawn', args: ['X'] },
+        ] }, // 3
+        { event: { kind: 'Spawn' }, actions: [
+            { kind: 'Damage', args: [3] },
+            { kind: 'Heal', args: [1] },
+        ] }, // 2
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    sel.value = 'actions-asc';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Ascending:
+    // #1 = 1
+    // action,
+    // #2 = 2
+    // actions,
+    // #3 = 3
+    // actions.
+    const rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows[0].textContent).toContain('1 动作');
+    expect(rows[1].textContent).toContain('2 动作');
+    expect(rows[2].textContent).toContain('3 动作');
+});
+
+test('round_139_kind_asc_sorts_alphabetically', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Damage', args: [1] }] },   // S
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Heal', args: [] }] }, // T
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [3] }] }, // C
+        { event: { kind: 'PlayerHit' }, actions: [{ kind: 'Heal', args: [4] }] }, // P
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    sel.value = 'kind-asc';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Alphabetical:
+    // Collide
+    // (C)
+    // → PlayerHit
+    // (P)
+    // → Spawn
+    // (S)
+    // → Timer
+    // (T).
+    const historyListHtml = root.querySelector('.dsl-codex-history-list')?.innerHTML ?? '';
+    const cPos = historyListHtml.indexOf('On(Collide)');
+    const pPos = historyListHtml.indexOf('On(PlayerHit)');
+    const sPos = historyListHtml.indexOf('On(Spawn)');
+    const tPos = historyListHtml.indexOf('On(Timer, 5)');
+    expect(cPos).toBeGreaterThanOrEqual(0);
+    expect(pPos).toBeGreaterThan(cPos);
+    expect(sPos).toBeGreaterThan(pPos);
+    expect(tPos).toBeGreaterThan(sPos);
+});
+
+test('round_139_sort_combines_with_filter_and_search', () => {
+    // Filter
+    // = Collide,
+    // search
+    // = "Heal",
+    // sort
+    // =
+    // actions-desc.
+    // Only
+    // Collide +
+    // Heal
+    // rules
+    // match,
+    // sorted
+    // by action
+    // count
+    // desc.
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        // 2 actions, Collide + Heal
+        { event: { kind: 'Collide' }, actions: [
+            { kind: 'Heal', args: [1] },
+            { kind: 'Damage', args: [2] },
+        ] },
+        // 1 action, Collide + Heal
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [5] }] },
+        // 3 actions, but Timer + Heal (filtered out by event kind)
+        { event: { kind: 'Timer', arg: 5 }, actions: [
+            { kind: 'Heal', args: [] },
+            { kind: 'Damage', args: [2] },
+            { kind: 'Spawn', args: ['X'] },
+        ] },
+        // 1 action, Collide + Damage (filtered out by search "Heal")
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [3] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Apply
+    // the
+    // filter
+    // (Collide)
+    // +
+    // search
+    // ("Heal")
+    // +
+    // sort
+    // (actions-desc).
+    const filterSel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    filterSel.value = 'Collide';
+    filterSel.dispatchEvent(new Event('change', { bubbles: true }));
+    const searchInput = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    searchInput.value = 'Heal';
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    // Re-query
+    // the
+    // sort
+    // select
+    // (doRender
+    // detached
+    // the
+    // old
+    // one).
+    const sortSel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    sortSel.value = 'actions-desc';
+    sortSel.dispatchEvent(new Event('change', { bubbles: true }));
+    // 2 rows
+    // visible:
+    // the 2
+    // Collide
+    // + Heal
+    // rules
+    // (Timer
+    // + Heal
+    // is filtered
+    // out by
+    // Collide
+    // filter;
+    // Collide
+    // + Damage
+    // is filtered
+    // out by
+    // "Heal"
+    // search).
+    // Sorted
+    // desc by
+    // action count:
+    // 2 actions
+    // (#1) →
+    // 1 action
+    // (#2).
+    const rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(2);
+    expect(rows[0].textContent).toContain('2 动作');
+    expect(rows[1].textContent).toContain('1 动作');
+});
+
+test('round_139_sort_persists_across_refresh', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['X'] }] },
+    ];
+    const handle = renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Change
+    // to
+    // 'chrono-newest'.
+    const sel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    sel.value = 'chrono-newest';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.querySelector('#dsl-codex-history-sort-select')?.getAttribute('value'))
+        .not.toBe('chrono-oldest');
+    // Refresh.
+    handle.refresh();
+    // Sort
+    // selection
+    // survives
+    // (new
+    // select
+    // carries
+    // 'chrono-newest').
+    const newSel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    expect(newSel.value).toBe('chrono-newest');
+});
+
+test('round_139_sorted_click_to_apply_passes_correct_rule', () => {
+    // After
+    // sorting
+    // by
+    // 'actions-desc',
+    // the
+    // row
+    // #1 is
+    // the
+    // rule
+    // with
+    // the
+    // most
+    // actions.
+    // Clicking
+    // it
+    // should
+    // invoke
+    // onApplyHistory
+    // with
+    // THAT
+    // rule
+    // (not
+    // history[0]).
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        // history[0]:
+        // 1 action
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Damage', args: [1] }] },
+        // history[1]:
+        // 3 actions
+        { event: { kind: 'Collide' }, actions: [
+            { kind: 'Heal', args: [] },
+            { kind: 'Damage', args: [2] },
+            { kind: 'Spawn', args: ['X'] },
+        ] },
+    ];
+    const applied: DslRule[] = [];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+        undefined,
+        (r) => { applied.push(r); },
+    );
+    // Sort
+    // by
+    // actions-desc.
+    const sel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    sel.value = 'actions-desc';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Click
+    // row
+    // #1
+    // (now
+    // the
+    // 3-action
+    // rule,
+    // which
+    // is
+    // history[1]
+    // in
+    // chronological
+    // order).
+    const rows = root.querySelectorAll('.dsl-codex-history-row-clickable');
+    expect(rows.length).toBe(2);
+    expect(rows[0].textContent).toContain('3 动作');
+    (rows[0] as HTMLElement).click();
+    // The
+    // callback
+    // got
+    // the
+    // 3-action
+    // rule
+    // (history[1]),
+    // NOT
+    // history[0].
+    expect(applied.length).toBe(1);
+    expect(applied[0].actions.length).toBe(3);
+    expect(applied[0].event.kind).toBe('Collide');
+});
+
+test('round_139_sort_works_even_when_current_rule_is_null', () => {
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [
+            { kind: 'Heal', args: [] },
+            { kind: 'Damage', args: [2] },
+            { kind: 'Spawn', args: ['X'] },
+        ] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    // Sort
+    // dropdown
+    // should
+    // exist
+    // in
+    // the
+    // empty-state
+    // branch
+    // too.
+    const sel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement | null;
+    expect(sel).not.toBeNull();
+    // Change
+    // to
+    // 'actions-desc'.
+    sel!.value = 'actions-desc';
+    sel!.dispatchEvent(new Event('change', { bubbles: true }));
+    // Row #1
+    // is the
+    // 3-action
+    // rule.
+    const rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(2);
+    expect(rows[0].textContent).toContain('3 动作');
+});
+

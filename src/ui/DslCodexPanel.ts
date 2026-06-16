@@ -1,5 +1,5 @@
 /**
- * DslCodexPanel — round-133 + round-134 + round-135 + round-136 + round-138.
+ * DslCodexPanel — round-133 + round-134 + round-135 + round-136 + round-138 + round-139.
  *
  * Renders the AGI's most recently
  * generated / hot-reloaded `DslRule`
@@ -130,6 +130,29 @@
  * sessions where the
  * history ring buffer is
  * saturated.
+ *
+ * Round 139 — also adds a
+ * "sort by" dropdown so
+ * the player can reorder
+ * the history list. The
+ * default is chronological
+ * (oldest first, newest
+ * last — matches the
+ * ring-buffer insertion
+ * order). Other options:
+ * "newest first"
+ * (reverse chronological),
+ * "action count" asc / desc,
+ * and "event kind"
+ * (alphabetical). Sort +
+ * filter + search all
+ * combine (filter + search
+ * AND the set, then sort
+ * the result). Click-to-
+ * apply (`data-rule-idx`)
+ * uses the post-sort index
+ * so the click target is
+ * still correct.
  */
 
 import type { DslRule, DslEventKind } from '../dsl/MemeCompiler';
@@ -146,6 +169,54 @@ function escapeHtml(s: string): string {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 }
+
+/**
+ * Round 139 —
+ * the 5 sort
+ * modes
+ * supported by
+ * the panel.
+ *
+ * `'chrono-oldest'`
+ * (default)
+ * matches the
+ * ring-buffer
+ * insertion
+ * order
+ * (oldest first,
+ * newest last).
+ * `'chrono-newest'`
+ * is the reverse
+ * (newest first).
+ * `'actions-desc'`
+ * / `'actions-asc'`
+ * sort by the
+ * number of
+ * actions in the
+ * rule (ties
+ * broken by
+ * chronological
+ * index for
+ * determinism).
+ * `'kind-asc'`
+ * sorts by the
+ * event kind
+ * string
+ * (alphabetical).
+ *
+ * The string
+ * literals are
+ * also the
+ * `<option value>`
+ * values in the
+ * dropdown.
+ */
+export type DslHistorySort =
+    | 'chrono-oldest'
+    | 'chrono-newest'
+    | 'actions-desc'
+    | 'actions-asc'
+    | 'kind-asc';
 
 /**
  * Render a `DslRule` back
@@ -287,6 +358,53 @@ function renderHistorySearch(currentSearch: string): string {
 }
 
 /**
+ * Round 139 — render
+ * the "sort by"
+ * dropdown. Placed
+ * next to the
+ * search input so
+ * the player can
+ * combine event-
+ * kind filter +
+ * free-text
+ * substring search
+ * + sort mode. The
+ * dropdown fires a
+ * `change` event
+ * that the host's
+ * delegated
+ * `change` listener
+ * catches and
+ * dispatches to
+ * the sort-state
+ * updater. The
+ * value is
+ * preserved across
+ * `doRender()`
+ * re-renders.
+ */
+function renderHistorySort(currentSort: DslHistorySort): string {
+    const options: Array<{ value: DslHistorySort; label: string }> = [
+        { value: 'chrono-oldest', label: '时间最早' },
+        { value: 'chrono-newest', label: '时间最近' },
+        { value: 'actions-desc', label: '动作最多' },
+        { value: 'actions-asc', label: '动作最少' },
+        { value: 'kind-asc', label: '事件名 A→Z' },
+    ];
+    const opts = options.map((o) =>
+        `<option value="${o.value}"${currentSort === o.value ? ' selected' : ''}>${o.label}</option>`
+    ).join('');
+    return `
+        <div class="dsl-codex-history-sort">
+            <label for="dsl-codex-history-sort-select">排序:</label>
+            <select id="dsl-codex-history-sort-select" class="dsl-codex-history-sort-select">
+                ${opts}
+            </select>
+        </div>
+    `;
+}
+
+/**
  * Round 134 — render
  * the rule history
  * list. The list is
@@ -366,12 +484,41 @@ function renderHistorySearch(currentSearch: string): string {
  * shared between
  * filter and search
  * misses.
+ *
+ * Round 139 — when
+ * a sort mode is
+ * supplied, the
+ * filtered list is
+ * sorted before
+ * rendering. The
+ * indices (`#N`)
+ * reflect the
+ * post-sort order
+ * so the numbering
+ * stays continuous
+ * (1-based, no
+ * gaps). Filter +
+ * search are
+ * applied first
+ * (AND), then
+ * sort. Ties in
+ * `actions-desc` /
+ * `actions-asc` are
+ * broken by the
+ * original chrono
+ * index (stable
+ * sort) so the
+ * output is
+ * deterministic
+ * across
+ * re-renders.
  */
 function renderHistoryList(
     history: ReadonlyArray<DslRule>,
     clickable: boolean,
     filter: DslEventKind | null,
     search: string,
+    sort: DslHistorySort,
 ): string {
     // Round 136 —
     // apply the
@@ -411,7 +558,41 @@ function renderHistoryList(
         // rows.
         return `<div class="dsl-codex-history-empty">暂无匹配</div>`;
     }
-    const rows = filtered.map((rule, i) => {
+    // Round 139 —
+    // apply the
+    // sort after
+    // filtering.
+    // Build an
+    // `indexed`
+    // copy so
+    // ties can be
+    // broken by
+    // the
+    // original
+    // chrono
+    // index.
+    const indexed = filtered.map((rule, i) => ({ rule, origIndex: i }));
+    indexed.sort((a, b) => {
+        switch (sort) {
+            case 'chrono-oldest':
+                return a.origIndex - b.origIndex;
+            case 'chrono-newest':
+                return b.origIndex - a.origIndex;
+            case 'actions-desc':
+                if (a.rule.actions.length !== b.rule.actions.length) {
+                    return b.rule.actions.length - a.rule.actions.length;
+                }
+                return a.origIndex - b.origIndex;
+            case 'actions-asc':
+                if (a.rule.actions.length !== b.rule.actions.length) {
+                    return a.rule.actions.length - b.rule.actions.length;
+                }
+                return a.origIndex - b.origIndex;
+            case 'kind-asc':
+                return a.rule.event.kind.localeCompare(b.rule.event.kind);
+        }
+    });
+    const rows = indexed.map(({ rule }, i) => {
         const source = ruleToSource(rule);
         // Cap the row
         // preview at
@@ -545,6 +726,43 @@ export function renderDslCodexPanel(
     let currentSearch: string = '';
 
     /**
+     * Round 139 —
+     * local sort
+     * mode. Defaults
+     * to
+     * `'chrono-oldest'`
+     * (matches the
+     * ring-buffer
+     * insertion
+     * order —
+     * oldest first,
+     * newest last).
+     * Other options:
+     * `'chrono-newest'`
+     * (reverse),
+     * `'actions-desc'`
+     * /
+     * `'actions-asc'`
+     * (by action
+     * count),
+     * `'kind-asc'`
+     * (alphabetical
+     * by event kind).
+     * Persists across
+     * `doRender()`
+     * re-renders so
+     * the player's
+     * sort selection
+     * survives
+     * hot-reload
+     * updates. Resets
+     * when the panel
+     * is closed and
+     * re-opened.
+     */
+    let currentSort: DslHistorySort = 'chrono-oldest';
+
+    /**
      * Round 135 —
      * delegate click
      * + keyboard
@@ -604,6 +822,18 @@ export function renderDslCodexPanel(
         // semantics
         // with the
         // filter).
+        // Round 139 —
+        // also
+        // re-apply
+        // the
+        // sort so
+        // the
+        // post-sort
+        // index
+        // maps to
+        // the
+        // correct
+        // rule.
         const searchLower = currentSearch.toLowerCase();
         const filtered = history.filter((r) => {
             if (currentFilter !== null && r.event.kind !== currentFilter) return false;
@@ -613,7 +843,28 @@ export function renderDslCodexPanel(
             }
             return true;
         });
-        const rule = filtered[idx];
+        const indexed = filtered.map((rule, i) => ({ rule, origIndex: i }));
+        indexed.sort((a, b) => {
+            switch (currentSort) {
+                case 'chrono-oldest':
+                    return a.origIndex - b.origIndex;
+                case 'chrono-newest':
+                    return b.origIndex - a.origIndex;
+                case 'actions-desc':
+                    if (a.rule.actions.length !== b.rule.actions.length) {
+                        return b.rule.actions.length - a.rule.actions.length;
+                    }
+                    return a.origIndex - b.origIndex;
+                case 'actions-asc':
+                    if (a.rule.actions.length !== b.rule.actions.length) {
+                        return a.rule.actions.length - b.rule.actions.length;
+                    }
+                    return a.origIndex - b.origIndex;
+                case 'kind-asc':
+                    return a.rule.event.kind.localeCompare(b.rule.event.kind);
+            }
+        });
+        const rule = indexed[idx]?.rule;
         if (rule) onApplyHistory(rule);
     };
 
@@ -697,6 +948,44 @@ export function renderDslCodexPanel(
         doRender();
     };
 
+    /**
+     * Round 139 —
+     * dispatch the
+     * `change` event
+     * on the sort
+     * dropdown to
+     * update
+     * `currentSort`
+     * and re-render
+     * the history
+     * list. We pull
+     * the value from
+     * the `<select>`
+     * element (rather
+     * than from a
+     * closure) so the
+     * delegation works
+     * with the
+     * standard DOM
+     * `change` event.
+     */
+    const dispatchSort = (target: EventTarget | null) => {
+        if (!getRuleHistory) return;
+        const sel = (target as HTMLElement | null)?.closest(
+            '#dsl-codex-history-sort-select'
+        ) as HTMLSelectElement | null;
+        if (!sel) return;
+        const value = sel.value;
+        if (value === 'chrono-oldest'
+            || value === 'chrono-newest'
+            || value === 'actions-desc'
+            || value === 'actions-asc'
+            || value === 'kind-asc') {
+            currentSort = value;
+        }
+        doRender();
+    };
+
     const doRender = () => {
         const rule = getCurrentRule();
         const outcome = getLastOutcome();
@@ -710,8 +999,9 @@ export function renderDslCodexPanel(
                     ${hasHistory ? `
                         ${renderHistoryFilter(currentFilter)}
                         ${renderHistorySearch(currentSearch)}
+                        ${renderHistorySort(currentSort)}
                         <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))}</div>
-                        ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentSearch)}
+                        ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentSearch, currentSort)}
                     ` : ''}
                 </div>
             `;
@@ -739,8 +1029,9 @@ export function renderDslCodexPanel(
                 ${hasHistory ? `
                     ${renderHistoryFilter(currentFilter)}
                     ${renderHistorySearch(currentSearch)}
+                    ${renderHistorySort(currentSort)}
                     <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))}</div>
-                    ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentSearch)}
+                    ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentSearch, currentSort)}
                 ` : ''}
             </div>
         `;
@@ -781,8 +1072,28 @@ export function renderDslCodexPanel(
     // on the
     // stable `root`
     // element).
+    // Round 139 —
+    // also route
+    // the `change`
+    // event on
+    // the sort
+    // dropdown to
+    // `dispatchSort`.
+    // Both handlers
+    // use `closest`
+    // to find the
+    // specific
+    // element they
+    // own, so it's
+    // safe to call
+    // both for
+    // every `change`
+    // event.
     if (getRuleHistory) {
-        root.addEventListener('change', (e) => dispatchFilter(e.target));
+        root.addEventListener('change', (e) => {
+            dispatchFilter(e.target);
+            dispatchSort(e.target);
+        });
     }
 
     // Round 138 —
