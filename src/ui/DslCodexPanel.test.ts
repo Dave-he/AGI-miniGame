@@ -3162,3 +3162,276 @@ test('round_141_badge_agrees_with_actual_row_count', () => {
     expect(root.innerHTML).toContain('(1/4)');
 });
 
+// ---------------------------------------------------------------------------
+// Round 142 — "重置" / "Reset" button.
+//   1. no_history_callback_means_no_reset_button
+//   2. with_history_renders_reset_button
+//   3. reset_clears_event_filter
+//   4. reset_clears_action_filter
+//   5. reset_clears_search
+//   6. reset_restores_default_sort
+//   7. reset_restores_all_rows
+//   8. reset_clears_combined_filter_action_search_and_sort
+//   9. reset_is_noop_when_everything_is_already_default
+//  10. reset_button_present_in_null_rule_branch
+// ---------------------------------------------------------------------------
+
+test('round_142_no_history_callback_means_no_reset_button', () => {
+    // No getRuleHistory → no history section → no reset button.
+    const root = makeRoot();
+    renderDslCodexPanel(root, () => null, () => 'none');
+    expect(root.innerHTML).not.toContain('dsl-codex-history-reset-button');
+});
+
+test('round_142_with_history_renders_reset_button', () => {
+    // The button is always rendered when getRuleHistory is provided,
+    // even when every state field is at its default.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const btn = root.querySelector('#dsl-codex-history-reset-button');
+    expect(btn).not.toBeNull();
+    expect(btn!.tagName).toBe('BUTTON');
+});
+
+test('round_142_reset_clears_event_filter', () => {
+    // Apply an event filter, click reset → filter returns to null
+    // (the "全部" option is selected again).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    sel.value = 'Collide';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Pre-reset: only 1 row.
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+    // Click reset — re-query the button after the previous re-render.
+    const btn = root.querySelector('#dsl-codex-history-reset-button') as HTMLButtonElement;
+    btn.click();
+    // Post-reset: all 2 rows visible + filter dropdown is back to "全部" (value="").
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(2);
+    const sel2 = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    expect(sel2.value).toBe('');
+});
+
+test('round_142_reset_clears_action_filter', () => {
+    // Apply an action filter, click reset → action filter returns to null.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-action-filter-select') as HTMLSelectElement;
+    sel.value = 'Heal';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+    const btn = root.querySelector('#dsl-codex-history-reset-button') as HTMLButtonElement;
+    btn.click();
+    // Post-reset: 2 rows + action filter dropdown is back to "全部".
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(2);
+    const sel2 = root.querySelector('#dsl-codex-history-action-filter-select') as HTMLSelectElement;
+    expect(sel2.value).toBe('');
+});
+
+test('round_142_reset_clears_search', () => {
+    // Type a search substring, click reset → search returns to ''.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input.value = 'Heal';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+    const btn = root.querySelector('#dsl-codex-history-reset-button') as HTMLButtonElement;
+    btn.click();
+    // Post-reset: 2 rows + search input is empty.
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(2);
+    const input2 = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    expect(input2.value).toBe('');
+});
+
+test('round_142_reset_restores_default_sort', () => {
+    // Change sort to actions-desc, click reset → sort returns to
+    // 'chrono-oldest' (the default).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    sel.value = 'actions-desc';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const btn = root.querySelector('#dsl-codex-history-reset-button') as HTMLButtonElement;
+    btn.click();
+    // Post-reset: sort dropdown is back to 'chrono-oldest'.
+    const sel2 = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    expect(sel2.value).toBe('chrono-oldest');
+});
+
+test('round_142_reset_restores_all_rows', () => {
+    // Stack 3 filters → 0 matches. Click reset → all rows back.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Damage', args: [2] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['A'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const filterSel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    filterSel.value = 'Collide';
+    filterSel.dispatchEvent(new Event('change', { bubbles: true }));
+    // 1 row visible (Collide + Heal).
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+    // Reset.
+    const btn = root.querySelector('#dsl-codex-history-reset-button') as HTMLButtonElement;
+    btn.click();
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(3);
+});
+
+test('round_142_reset_clears_combined_filter_action_search_and_sort', () => {
+    // The headline test: stack ALL FOUR knobs (filter + action +
+    // search + sort), then one click on reset clears all of them.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }, { kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    // Apply event filter = Collide.
+    const filterSel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    filterSel.value = 'Collide';
+    filterSel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Apply action filter = Heal (no narrowing, both Collide rules have Heal).
+    const actionSel = root.querySelector('#dsl-codex-history-action-filter-select') as HTMLSelectElement;
+    actionSel.value = 'Heal';
+    actionSel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Apply search = "Heal" (also matches both).
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input.value = 'Heal';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    // Apply sort = actions-desc (the 2-action rule first).
+    const sortSel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    sortSel.value = 'actions-desc';
+    sortSel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Pre-reset: 2 rows visible + badge (2/3).
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(2);
+    expect(root.innerHTML).toContain('dsl-codex-history-count');
+    // Click reset.
+    const btn = root.querySelector('#dsl-codex-history-reset-button') as HTMLButtonElement;
+    btn.click();
+    // Post-reset: all 3 rows visible + every control back to default.
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(3);
+    const filterSel2 = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    expect(filterSel2.value).toBe('');
+    const actionSel2 = root.querySelector('#dsl-codex-history-action-filter-select') as HTMLSelectElement;
+    expect(actionSel2.value).toBe('');
+    const input2 = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    expect(input2.value).toBe('');
+    const sortSel2 = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    expect(sortSel2.value).toBe('chrono-oldest');
+    // Badge is hidden (visible == total).
+    expect(root.innerHTML).not.toContain('dsl-codex-history-count');
+});
+
+test('round_142_reset_is_noop_when_everything_is_already_default', () => {
+    // When every state field is at its default, clicking the
+    // reset button is a no-op — no `doRender()` churn.
+    // We verify by checking the badge (which is hidden at
+    // default) stays hidden AND by counting the row count
+    // before / after.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    // Sanity: badge hidden at default.
+    expect(root.innerHTML).not.toContain('dsl-codex-history-count');
+    const rowsBefore = root.querySelectorAll('.dsl-codex-history-row').length;
+    // Click reset.
+    const btn = root.querySelector('#dsl-codex-history-reset-button') as HTMLButtonElement;
+    btn.click();
+    // Row count unchanged.
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(rowsBefore);
+    // Badge still hidden.
+    expect(root.innerHTML).not.toContain('dsl-codex-history-count');
+});
+
+test('round_142_reset_button_present_in_null_rule_branch', () => {
+    // The reset button is also present in the empty-state
+    // branch (currentRule === null), mirrors the
+    // round-136/138/140/141 "X works even when current rule
+    // is null" tests.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    // Sanity: button is there.
+    const btn = root.querySelector('#dsl-codex-history-reset-button');
+    expect(btn).not.toBeNull();
+    // Filter + click reset → still all rows visible.
+    const filterSel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    filterSel.value = 'Collide';
+    filterSel.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+    const btn2 = root.querySelector('#dsl-codex-history-reset-button') as HTMLButtonElement;
+    btn2.click();
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+});
+

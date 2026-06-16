@@ -1,5 +1,5 @@
 /**
- * DslCodexPanel — round-133 + round-134 + round-135 + round-136 + round-138 + round-139 + round-140 + round-141.
+ * DslCodexPanel — round-133 + round-134 + round-135 + round-136 + round-138 + round-139 + round-140 + round-141 + round-142.
  *
  * Renders the AGI's most recently
  * generated / hot-reloaded `DslRule`
@@ -201,6 +201,37 @@
  * reads "(0/N)" so the
  * player knows how many
  * are hidden.
+ *
+ * Round 142 — also adds
+ * a "重置" / "Reset"
+ * button next to the
+ * filter controls. The
+ * button clears the
+ * event filter + action
+ * filter + search
+ * substring + sort mode
+ * back to their defaults
+ * in one click
+ * (mirrors how a single
+ * click can apply
+ * multiple filters).
+ * Useful when the player
+ * has stacked several
+ * filters and wants to
+ * start over without
+ * manually clearing each
+ * one. The button is a
+ * sibling of the filter
+ * controls; the host's
+ * delegated `click`
+ * listener on `root`
+ * catches it and routes
+ * to `dispatchReset`.
+ * No-op when every
+ * control is already at
+ * its default (so we
+ * don't churn `doRender`
+ * for no reason).
  */
 
 import type { DslRule, DslEventKind, DslActionKind } from '../dsl/MemeCompiler';
@@ -550,6 +581,85 @@ function renderHistorySort(currentSort: DslHistorySort): string {
 function renderHistoryCountBadge(visible: number, total: number): string {
     if (visible === total) return '';
     return `<span class="dsl-codex-history-count">(${visible}/${total})</span>`;
+}
+
+/**
+ * Round 142 — render
+ * the "重置" / "Reset"
+ * button. The button is
+ * a sibling of the
+ * filter / search / sort
+ * controls. Clicking it
+ * clears the event
+ * filter + action filter
+ * + search substring +
+ * sort mode back to
+ * their defaults. The
+ * host's delegated
+ * `click` listener on
+ * `root` catches the
+ * click and routes to
+ * `dispatchReset`.
+ *
+ * The button is always
+ * rendered (we don't
+ * hide it when every
+ * control is at default)
+ * because the player
+ * can still click it as
+ * a confirmation that
+ * the panel is in its
+ * default state. The
+ * `dispatchReset`
+ * handler is the one
+ * that decides whether
+ * the click is a no-op
+ * (when every state
+ * field is already at
+ * default) — see the
+ * round-142 test
+ * `reset_is_noop_when_everything_is_already_default`.
+ */
+function renderHistoryReset(): string {
+    return `
+        <button
+            id="dsl-codex-history-reset-button"
+            class="dsl-codex-history-reset-button"
+            type="button"
+            title="重置事件 / 动作 / 搜索 / 排序为默认"
+        >重置</button>
+    `;
+}
+
+/**
+ * Round 142 — predicate
+ * for whether the
+ * history panel is in
+ * its default state
+ * (no event filter, no
+ * action filter, no
+ * search, default
+ * sort). Used by the
+ * "重置" button to skip
+ * a `doRender()` call
+ * when there's nothing
+ * to reset. Mirrors the
+ * initial state set in
+ * the `renderDslCodexPanel`
+ * closure.
+ */
+function isHistoryAtDefault(
+    filter: DslEventKind | null,
+    actionFilter: DslActionKind | null,
+    search: string,
+    sort: DslHistorySort,
+): boolean {
+    return (
+        filter === null
+        && actionFilter === null
+        && search === ''
+        && sort === 'chrono-oldest'
+    );
 }
 
 /**
@@ -1300,6 +1410,54 @@ export function renderDslCodexPanel(
         doRender();
     };
 
+    /**
+     * Round 142 —
+     * dispatch the
+     * `click` event on
+     * the "重置" /
+     * "Reset" button to
+     * clear the event
+     * filter + action
+     * filter + search
+     * substring + sort
+     * mode back to
+     * their defaults
+     * (null / null / '' /
+     * 'chrono-oldest').
+     *
+     * The click is a
+     * no-op when every
+     * state field is
+     * already at default
+     * (so we don't churn
+     * `doRender()` for
+     * no reason). When
+     * the click DOES
+     * change state, we
+     * re-render the
+     * panel so the
+     * visible controls
+     * (dropdowns +
+     * search input) snap
+     * back to their
+     * default values.
+     */
+    const dispatchReset = (target: EventTarget | null) => {
+        if (!getRuleHistory) return;
+        const btn = (target as HTMLElement | null)?.closest(
+            '#dsl-codex-history-reset-button'
+        ) as HTMLButtonElement | null;
+        if (!btn) return;
+        if (isHistoryAtDefault(currentFilter, currentActionFilter, currentSearch, currentSort)) {
+            return;
+        }
+        currentFilter = null;
+        currentActionFilter = null;
+        currentSearch = '';
+        currentSort = 'chrono-oldest';
+        doRender();
+    };
+
     const doRender = () => {
         const rule = getCurrentRule();
         const outcome = getLastOutcome();
@@ -1319,6 +1477,7 @@ export function renderDslCodexPanel(
                             ${renderHistoryActionFilter(currentActionFilter)}
                             ${renderHistorySearch(currentSearch)}
                             ${renderHistorySort(currentSort)}
+                            ${renderHistoryReset()}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
                             ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort)}
                         `;
@@ -1356,6 +1515,7 @@ export function renderDslCodexPanel(
                             ${renderHistoryActionFilter(currentActionFilter)}
                             ${renderHistorySearch(currentSearch)}
                             ${renderHistorySort(currentSort)}
+                            ${renderHistoryReset()}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
                             ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort)}
                         `;
@@ -1389,6 +1549,33 @@ export function renderDslCodexPanel(
                 dispatchClick(e.target);
             }
         });
+    }
+
+    // Round 142 —
+    // wire the
+    // `click` event
+    // on the "重置" /
+    // "Reset" button
+    // (event-delegated
+    // on the stable
+    // `root` element so
+    // it survives
+    // `doRender()`
+    // re-renders).
+    // The reset button
+    // is wired
+    // REGARDLESS of
+    // `onApplyHistory`
+    // — it's a separate
+    // concern from
+    // click-to-apply
+    // (a panel without
+    // the click-to-apply
+    // feature still
+    // needs a way to
+    // clear filters).
+    if (getRuleHistory) {
+        root.addEventListener('click', (e) => dispatchReset(e.target));
     }
 
     // Round 136 —
