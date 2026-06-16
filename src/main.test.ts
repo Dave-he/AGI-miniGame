@@ -7124,7 +7124,7 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         expect(main).not.toMatch(/bind\('btn-epoch',\s*\(\)\s*=>\s*app\.toggleEpoch\(\)\)/);
     });
 
-    test('main_ts_help_overlay_header_says_16_keys (round 121/128/132/133/137/159)', () => {
+    test('main_ts_help_overlay_header_says_17_keys (round 121/128/132/133/137/159/160)', () => {
         // The 3rd section header
         // in the help overlay
         // (round-120
@@ -7148,15 +7148,22 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         // auto-hide-on-fullscreen
         // toggle, joining
         // the 15 already
+        // listed). Round 160
+        // bumped the count
+        // to 17 keys (the B
+        // key adds the
+        // minimize-to-icon
+        // toggle, joining
+        // the 16 already
         // listed). The
-        // round-137/159
+        // round-137/159/160
         // update is
         // important so a player
         // scanning the section
         // knows how many keys
         // are listed.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toMatch(/面板开关 \(16 键\)/);
+        expect(main).toMatch(/面板开关 \(17 键\)/);
     });
 });
 
@@ -7965,7 +7972,7 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
         expect(main).toMatch(/dslCodexRoot:\s*dslCodexRoot\s*\?\?\s*undefined/);
     });
 
-    test('main_ts_help_overlay_header_reads_16_keys_not_15 (round 133/159)', () => {
+    test('main_ts_help_overlay_header_reads_17_keys_not_16 (round 133/159/160)', () => {
         // The help overlay
         // section header
         // text was updated
@@ -7979,6 +7986,11 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
         // "15 键" to "16 键"
         // for the
         // auto-hide-on-fullscreen
+        // mode. Round 160
+        // bumped it from
+        // "16 键" to "17 键"
+        // for the
+        // minimize-to-icon
         // mode. A
         // regression that
         // forgets to bump
@@ -7987,8 +7999,8 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
         // drift caught by
         // this test.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toContain('面板开关 (16 键)');
-        expect(main).not.toContain('面板开关 (15 键)');
+        expect(main).toContain('面板开关 (17 键)');
+        expect(main).not.toContain('面板开关 (16 键)');
     });
 });
 

@@ -117,6 +117,32 @@
       .hud-auto-hide-fullscreen:fullscreen { display: none; }
       .hud-auto-hide-fullscreen:fullscreen { pointer-events: none; }
 
+      /* Round 160 — `.hud-minimized`
+         collapses the HUD to a
+         single 32×32 icon. The
+         root element shrinks to
+         a small circle in the
+         current corner (the
+         round-154 `hud-corner-*`
+         class still applies so
+         the icon moves to the
+         chosen quadrant). The
+         host binds a click
+         handler on the root
+         that calls
+         `hud.setMinimized(false)`
+         to expand the panel.
+         A subtle tooltip via the
+         `title` attribute hints
+         at the click-to-expand
+         interaction. Toggled at
+         runtime via the `B` key
+         shortcut and persisted
+         to localStorage key
+         `agi_hud_minimized`. */
+      .hud-minimized { width: 32px; height: 32px; border-radius: 50%; }
+      .hud-minimized { overflow: hidden; }
+
       /* Round 112 — settings-root: bottom-right corner
          so it sits under the HUD. Hidden by default;
          App.toggleSettings() flips the `hidden` attribute.

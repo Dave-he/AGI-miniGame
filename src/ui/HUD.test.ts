@@ -2685,4 +2685,191 @@ describe('HUD — round 152 compact mode', () => {
         );
         expect(rows.length).toBeGreaterThanOrEqual(1);
     });
+
+    // =========================================================
+    // Round 160 — HUD
+    // minimize-to-icon mode.
+    // Companion to the
+    // round-152 compact /
+    // round-153 fade /
+    // round-154 corner /
+    // round-155 pin /
+    // round-156 click-through
+    // / round-159
+    // auto-hide-fullscreen
+    // stack.
+    //
+    // The 17th mode is a
+    // collapse-to-icon flag:
+    // the HUD applies the
+    // `hud-minimized` CSS
+    // class on the root,
+    // which the index.html
+    // rule pairs with a
+    // 32×32 circle. The
+    // player can click the
+    // icon to expand the
+    // panel back to its
+    // full size.
+    //
+    // 8 tests pinning the
+    // new state machine +
+    // class + BINDING_DESCRIPTIONS
+    // + class preservation
+    // across the round-152
+    // → round-159 stack.
+    // =========================================================
+
+    test('default_state_is_not_minimized_round_160', () => {
+        // A fresh HUD has
+        // the minimized flag
+        // off (default
+        // `false` when never
+        // set). A regression
+        // that pre-set the
+        // flag would silently
+        // auto-minimize the
+        // HUD for new players
+        // who never opted in.
+        const { hud } = makeHud();
+        expect(hud.isMinimized()).toBe(false);
+    });
+
+    test('setMinimized_true_applies_hud_minimized_class_round_160', () => {
+        // The setter applies
+        // the CSS class on
+        // the root so the
+        // index.html rule
+        // can pair it with
+        // a 32×32 circle.
+        const { hud, root } = makeHud();
+        hud.setMinimized(true);
+        expect(hud.isMinimized()).toBe(true);
+        expect(root.classList.contains('hud-minimized')).toBe(true);
+    });
+
+    test('setMinimized_false_strips_hud_minimized_class_round_160', () => {
+        // Toggling back off
+        // removes the class
+        // (idempotent —
+        // calling twice
+        // doesn't error).
+        const { hud, root } = makeHud();
+        hud.setMinimized(true);
+        hud.setMinimized(false);
+        expect(hud.isMinimized()).toBe(false);
+        expect(root.classList.contains('hud-minimized')).toBe(false);
+    });
+
+    test('toggleMinimized_flips_state_round_160', () => {
+        // The toggle
+        // returns the new
+        // value so the host
+        // can persist it to
+        // localStorage.
+        // Mirrors the
+        // round-156
+        // `toggleClickThrough`
+        // /
+        // round-159
+        // `toggleAutoHideFullscreen`
+        // contract.
+        const { hud } = makeHud();
+        expect(hud.toggleMinimized()).toBe(true);
+        expect(hud.isMinimized()).toBe(true);
+        expect(hud.toggleMinimized()).toBe(false);
+        expect(hud.isMinimized()).toBe(false);
+    });
+
+    test('setMinimized_preserves_click_through_class_round_160', () => {
+        // The 5-way pin /
+        // click-through /
+        // auto-hide /
+        // minimized /
+        // (round-154
+        // corner)
+        // coordination. A
+        // regression that
+        // used
+        // `this.root.className = ...`
+        // (raw string set)
+        // instead of
+        // `classList.add /
+        // remove` would
+        // strip the
+        // click-through
+        // class on the same
+        // pass.
+        const { hud, root } = makeHud();
+        hud.setClickThrough(true);
+        expect(root.classList.contains('hud-click-through')).toBe(true);
+        hud.setMinimized(true);
+        expect(root.classList.contains('hud-click-through')).toBe(true);
+        expect(root.classList.contains('hud-minimized')).toBe(true);
+    });
+
+    test('setCorner_preserves_minimized_class_round_160', () => {
+        // The corner
+        // cycle
+        // (round-154)
+        // must not strip
+        // the minimized
+        // class.
+        // Symmetric to
+        // the round-156
+        // `setCorner_preserves_click_through`
+        // /
+        // round-159
+        // `setCorner_preserves_auto_hide_fullscreen`
+        // contract.
+        const { hud, root } = makeHud();
+        hud.setMinimized(true);
+        expect(root.classList.contains('hud-minimized')).toBe(true);
+        hud.setCorner('br');
+        expect(root.classList.contains('hud-minimized')).toBe(true);
+    });
+
+    test('applyMinimizedClass_is_idempotent_round_160', () => {
+        // The class
+        // manipulation
+        // uses
+        // `classList.add` /
+        // `remove` (not
+        // `className =`)
+        // so calling the
+        // setter twice
+        // doesn't
+        // double-add the
+        // class. Defense
+        // in depth.
+        const { hud, root } = makeHud();
+        hud.setMinimized(true);
+        hud.setMinimized(true);
+        const matches = root.className.match(/hud-minimized/g) || [];
+        expect(matches.length).toBe(1);
+    });
+
+    test('BINDING_DESCRIPTIONS_includes_hud_minimized_hotkey_round_160', () => {
+        // The B key
+        // shortcut for
+        // the HUD
+        // minimize-to-icon
+        // toggle is
+        // mirrored in
+        // BINDING_DESCRIPTIONS
+        // so the help
+        // overlay
+        // auto-iterates
+        // it (same
+        // pattern as
+        // round-155's X
+        // /
+        // round-156's Y
+        // /
+        // round-159's K).
+        const rows = BINDING_DESCRIPTIONS.filter(
+            (d) => d.key === 'B' && d.action.includes('最小化')
+        );
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+    });
 });

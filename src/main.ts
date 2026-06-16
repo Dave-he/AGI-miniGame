@@ -724,6 +724,18 @@ class App {
         // the player has to explicitly
         // press K to opt in.
         this.hud.setAutoHideFullscreen(loadHudAutoHideFullscreenFromStorage());
+        // Round 160 — restore the
+        // minimized state alongside
+        // compact, fade, corner,
+        // pin, click-through, and
+        // auto-hide. The setter
+        // is idempotent: a fresh
+        // boot with no saved value
+        // defaults to minimized
+        // OFF (false) — the player
+        // has to explicitly press
+        // B to opt in.
+        this.hud.setMinimized(loadHudMinimizedFromStorage());
         this.worldState = new WorldState('local-player', '次元旅者');
         this.progression = new Progression();
         this.epoch = new EpochSystem(Date.now());
@@ -2426,6 +2438,37 @@ class App {
     }
 
     /**
+     * Round 160 — toggle the
+     * minimize-to-icon mode.
+     * When enabled, the
+     * `#hud-root` element gets
+     * the `hud-minimized` CSS
+     * class which collapses the
+     * panel to a single 32×32
+     * icon (the index.html
+     * `index.html` rule sets
+     * `width: 32px; height: 32px;
+     * border-radius: 50%`). The
+     * player can click the icon
+     * to expand the panel back
+     * to its full size.
+     *
+     * Mirrors `toggleHudPinned` /
+     * `toggleHudClickThrough` /
+     * `toggleHudAutoHideFullscreen`:
+     * one call + one
+     * localStorage write. The
+     * B key shortcut calls this
+     * via the round-160
+     * `toggle-hud-minimized`
+     * KeyboardAction.
+     */
+    toggleHudMinimized(): void {
+        const next = this.hud.toggleMinimized();
+        saveHudMinimizedToStorage(next);
+    }
+
+    /**
      * Round 113 — toggle the progression panel
      * overlay. The progression panel
      * (`<div id="progression-root">`) is populated
@@ -4039,9 +4082,14 @@ async function bootstrap(): Promise<void> {
             // plus the HUD-mode
             // roster combine to
             // fill the section).
+            // Round 160 — B key
+            // (17th entry) added
+            // for the
+            // minimize-to-icon
+            // HUD mode.
             const toggleHeader = document.createElement('div');
             toggleHeader.className = 'kb-help-section kb-help-section-toggle';
-            toggleHeader.textContent = '面板开关 (16 键)';
+            toggleHeader.textContent = '面板开关 (17 键)';
             body.appendChild(toggleHeader);
             for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
                 const keyEl = document.createElement('div');
@@ -4093,6 +4141,21 @@ async function bootstrap(): Promise<void> {
             // localStorage write +
             // re-render).
             case 'toggle-hud-auto-hide-fullscreen': app.toggleHudAutoHideFullscreen(); break;
+            // Round 160 — B key
+            // toggles the
+            // minimize-to-icon
+            // mode. The HUD
+            // collapses to a
+            // 32×32 icon; click
+            // the icon to
+            // expand. Same
+            // handler pattern
+            // as the other HUD
+            // toggles (one
+            // boolean flip +
+            // localStorage write
+            // + re-render).
+            case 'toggle-hud-minimized': app.toggleHudMinimized(); break;
             case 'enter-atom': void app.enterAtom(action.atomId); break;
             // Round 152 — H key toggles the HUD
             // compact mode (the round-51 memories
@@ -4424,6 +4487,37 @@ function saveHudAutoHideFullscreenToStorage(enabled: boolean): void {
     if (typeof localStorage === 'undefined') return;
     try {
         localStorage.setItem(HUD_AUTO_HIDE_FULLSCREEN_STORAGE_KEY, enabled ? '1' : '0');
+    } catch {
+        // localStorage can throw in
+        // private mode / quota errors.
+        // Swallow — the in-memory state
+        // is already updated.
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Round 160 — `agi_hud_minimized` localStorage key for
+// the HUD minimize-to-icon toggle. Same `loadXxxFromStorage` /
+// `saveXxxToStorage` shape as the round-152/153/154/155/156/159
+// persistence helpers. Stores `'1'` / `'0'` boolean literal.
+// ---------------------------------------------------------------------------
+
+const HUD_MINIMIZED_STORAGE_KEY = 'agi_hud_minimized';
+
+function loadHudMinimizedFromStorage(): boolean {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+        const raw = localStorage.getItem(HUD_MINIMIZED_STORAGE_KEY);
+        return raw === '1';
+    } catch {
+        return false;
+    }
+}
+
+function saveHudMinimizedToStorage(enabled: boolean): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(HUD_MINIMIZED_STORAGE_KEY, enabled ? '1' : '0');
     } catch {
         // localStorage can throw in
         // private mode / quota errors.

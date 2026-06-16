@@ -246,7 +246,23 @@ export type KeyboardAction =
     // click-through). K reads as
     // "sKip" — skip the HUD when
     // fullscreen.
-    | { kind: 'toggle-hud-auto-hide-fullscreen' };
+    | { kind: 'toggle-hud-auto-hide-fullscreen' }
+    // Round 160 — toggle the
+    // minimize-to-icon HUD
+    // mode. When enabled, the
+    // HUD collapses to a
+    // 32×32 clickable icon
+    // (a "screenshot mode"
+    // for streamers /
+    // recording sessions).
+    // B is the next free
+    // letter after K (which
+    // round 159 bound to
+    // auto-hide-fullscreen).
+    // B reads as "Bar" — the
+    // panel collapses to a
+    // single icon bar.
+    | { kind: 'toggle-hud-minimized' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -636,6 +652,13 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // (`agi_hud_auto_hide_fullscreen`)
     // so it survives page reloads.
     { key: 'K',    action: '切换 HUD 全屏自动隐藏 (document.fullscreenElement 时收起)' },
+    // Round 160 — B key toggles
+    // the minimize-to-icon HUD
+    // mode. The preference
+    // persists in localStorage
+    // (`agi_hud_minimized`) so
+    // it survives page reloads.
+    { key: 'B',    action: '切换 HUD 最小化 (折叠为 32×32 图标, 点图标还原)' },
 ];
 
 /**
@@ -1391,6 +1414,25 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'k':
         case 'K':
             return { kind: 'toggle-hud-auto-hide-fullscreen' };
+        // Round 160 — B key
+        // toggles the
+        // minimize-to-icon HUD
+        // mode. B is the next
+        // free letter after K
+        // (which round 159
+        // bound to
+        // auto-hide-fullscreen).
+        // B reads as "Bar" —
+        // the panel collapses
+        // to a single icon
+        // bar. Same pattern
+        // as the other HUD
+        // toggles — one
+        // keystroke, no
+        // sub-menu.
+        case 'b':
+        case 'B':
+            return { kind: 'toggle-hud-minimized' };
         default:
             return null;
     }

@@ -468,6 +468,44 @@ export interface HUDState {
      * `K` key in main.ts toggles this.
      */
     hudAutoHideFullscreen?: boolean;
+    /**
+     * Round 160 — minimize the HUD
+     * to a small 32×32 icon
+     * (the "B" key toggle). When
+     * enabled, the HUD applies the
+     * `hud-minimized` CSS class on
+     * the root which collapses the
+     * stats panel + biome indicator
+     * + event log into a single
+     * clickable icon. The player
+     * can click the icon to expand
+     * the HUD back to its full
+     * size (the click handler
+     * calls `setMinimized(false)`).
+     *
+     * Companion to the round-152
+     * compact / round-153 fade /
+     * round-159 auto-hide modes:
+     *   - compact hides the
+     *     memory detail blocks
+     *   - fade auto-fades the
+     *     panel after 3s idle
+     *   - auto-hide collapses
+     *     the HUD on fullscreen
+     *   - minimized collapses
+     *     the HUD to a 32×32 icon
+     *     at all times (a "screen-
+     *     shot mode" for streamers
+     *     / recording sessions)
+     *
+     * The minimized state is
+     * persisted to localStorage key
+     * `agi_hud_minimized` so the
+     * player's preference survives
+     * page reloads. The `B` key
+     * in main.ts toggles this.
+     */
+    hudMinimized?: boolean;
 }
 
 export class HUD {
@@ -1107,6 +1145,19 @@ export class HUD {
         // click-through + auto-hide
         // coordination).
         this.applyAutoHideFullscreenClass();
+        // Round 160 — apply the
+        // `hud-minimized` class on
+        // the same pass so toggling
+        // the corner doesn't strip
+        // the minimized state
+        // (extending the
+        // round-155/156/159
+        // coordination to a
+        // four-way pin +
+        // click-through +
+        // auto-hide + minimized
+        // coordination).
+        this.applyMinimizedClass();
     }
 
     /**
@@ -1358,6 +1409,110 @@ export class HUD {
             }
         } else {
             this.root.classList.remove('hud-auto-hide-fullscreen');
+        }
+    }
+
+    /**
+     * Round 160 — set the
+     * minimized flag. When
+     * `enabled` is `true`, the
+     * HUD applies the
+     * `hud-minimized` CSS class
+     * on the root which collapses
+     * the panel to a single
+     * 32×32 icon. The host binds
+     * a click handler on the
+     * icon that calls
+     * `setMinimized(false)` to
+     * expand the panel.
+     *
+     * Companion to
+     * `setAutoHideFullscreen` /
+     * `setClickThrough` /
+     * `setPinned` /
+     * `setCorner` /
+     * `setFadeEnabled` /
+     * `setCompact`. The 7 modes
+     * are orthogonal:
+     *   - `setCompact` controls
+     *     memory block detail
+     *   - `setFadeEnabled`
+     *     controls idle fade
+     *   - `setCorner` controls
+     *     screen quadrant
+     *   - `setPinned` controls
+     *     z-index stacking
+     *   - `setClickThrough`
+     *     controls pointer-events
+     *   - `setAutoHideFullscreen`
+     *     controls visibility on
+     *     fullscreen
+     *   - `setMinimized` controls
+     *     collapse-to-icon state
+     *
+     * So a non-browser test env
+     * can call
+     * `setMinimized(true)` without
+     * crashing on `typeof
+     * localStorage`.
+     */
+    setMinimized(enabled: boolean): void {
+        this.state = { ...this.state, hudMinimized: enabled };
+        this.applyMinimizedClass();
+        this.render();
+    }
+
+    /**
+     * Read-only accessor mirroring
+     * the `isAutoHideFullscreen()` /
+     * `isClickThrough()` /
+     * `isPinned()` pattern. Returns
+     * the current minimized flag
+     * (default `false` when never
+     * set).
+     */
+    isMinimized(): boolean {
+        return this.state.hudMinimized === true;
+    }
+
+    /**
+     * Round 160 — toggle the
+     * minimized flag. Returns the
+     * new value so the host can
+     * persist it. Designed to be
+     * wired directly to the `B`
+     * key shortcut — one keystroke
+     * to flip the minimized state
+     * on / off.
+     */
+    toggleMinimized(): boolean {
+        const next = !this.isMinimized();
+        this.setMinimized(next);
+        return next;
+    }
+
+    /**
+     * Round 160 — apply the
+     * `hud-minimized` CSS class
+     * on the root element.
+     * Internal helper for
+     * `setMinimized`.
+     *
+     * Uses `classList.add` /
+     * `classList.remove`
+     * (idempotent — calling
+     * twice doesn't double-add)
+     * so callers can re-apply
+     * without disturbing other
+     * classes on the root.
+     */
+    private applyMinimizedClass(): void {
+        if (this.isMinimized()) {
+            if (!this.root.classList.contains('hud-minimized')) {
+                this.root.classList.add('hud-minimized');
+            }
+        } else {
+            this.root.classList.remove('hud-minimized');
         }
     }
 
