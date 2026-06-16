@@ -40,6 +40,18 @@ const EVENT_TO_CUE: Record<GameAudioEvent, AudioCue> = {
 export class GameAudio {
     private svc: AudioService;
     private muted: boolean = false;
+    /**
+     * Round 157 — master volume in
+     * [0, 1]. Mirrors the
+     * `AudioService.volume` field.
+     * Updated via `setVolume`; read
+     * via `getVolume`. Persisted to
+     * localStorage so the player's
+     * choice survives a page reload
+     * (same pattern as the muted
+     * flag).
+     */
+    private volume: number = 0.4;
 
     constructor(svc: AudioService) {
         this.svc = svc;
@@ -55,6 +67,18 @@ export class GameAudio {
         if (restored != null) {
             this.muted = restored;
             this.svc.setMuted(restored);
+        }
+        // Round 157 — restore the master
+        // volume from localStorage (the
+        // 4-preset UI: off / low / med /
+        // high). Defaults to 0.4 (the
+        // round-1 "polite" default) when
+        // the key is missing or storage is
+        // unavailable.
+        const restoredVolume = readVolumeFromStorage();
+        if (restoredVolume != null) {
+            this.volume = restoredVolume;
+            this.svc.setVolume(restoredVolume);
         }
     }
 
@@ -86,6 +110,38 @@ export class GameAudio {
         writeMutedToStorage(muted);
     }
     isMuted(): boolean { return this.muted; }
+
+    /**
+     * Round 157 — set the master volume
+     * in [0, 1]. The SettingsPanel
+     * exposes 4 presets (off=0, low=0.25,
+     * med=0.5, high=1.0) but the API
+     * accepts any value in [0, 1]. The
+     * value is persisted to localStorage
+     * so a page reload doesn't reset to
+     * the round-1 default of 0.4. The
+     * service handles the clamp contract
+     * (NaN, negative, > 1 are pinned to
+     * the nearest bound).
+     */
+    setVolume(volume: number): void {
+        this.svc.setVolume(volume);
+        this.volume = this.svc.getVolume();
+        // Round 157 — persist the
+        // player's choice. The 4-preset
+        // UI sends clean values, but we
+        // persist the post-clamp value
+        // (so a future read sees the
+        // exact value that's in effect).
+        writeVolumeToStorage(this.volume);
+    }
+    /**
+     * Round 157 — read the current
+     * master volume (range [0, 1]).
+     * Used by the SettingsPanel to
+     * highlight the active preset.
+     */
+    getVolume(): number { return this.volume; }
 
     /**
      * Round 61 — switch the ambient drone to the given biome's
@@ -163,6 +219,46 @@ function writeMutedToStorage(muted: boolean): void {
     if (typeof localStorage === 'undefined') return;
     try {
         localStorage.setItem(MUTED_STORAGE_KEY, muted ? '1' : '0');
+    } catch {
+        // localStorage can throw in
+        // private browsing mode or when
+        // the quota is exceeded. Swallow
+        // — the in-memory state is
+        // already updated.
+    }
+}
+
+// Round 157 — localStorage persistence
+// for the master volume. Same pattern
+// as the muted flag: separate
+// namespaced key (`agi_volume`),
+// typeof guard for non-browser test
+// envs, try/catch swallow for SSR /
+// private mode / quota errors.
+// Stored as a JSON number string so
+// the full [0, 1] range is preserved
+// (the 4-preset UI sends 0/0.25/0.5
+// /1.0, but the API supports any
+// value between).
+const VOLUME_STORAGE_KEY = 'agi_volume';
+
+function readVolumeFromStorage(): number | null {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(VOLUME_STORAGE_KEY);
+        if (raw == null) return null;
+        const parsed = Number(raw);
+        if (Number.isNaN(parsed) || !Number.isFinite(parsed)) return null;
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
+function writeVolumeToStorage(volume: number): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(VOLUME_STORAGE_KEY, String(volume));
     } catch {
         // localStorage can throw in
         // private browsing mode or when

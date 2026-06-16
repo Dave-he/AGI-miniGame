@@ -71,6 +71,22 @@ export const CATALOG: Record<Locale, Record<string, string>> = {
         'settings.debounce.500': '500ms (默认)',
         'settings.debounce.1000':'1000ms',
         'settings.debounce.2000':'2000ms',
+        // Round 157 — audio volume
+        // presets. 4 buttons (off /
+        // low / med / high) in the
+        // SettingsPanel volume row.
+        // The 4 values map to
+        // GameAudio.setVolume(0/0.25
+        // /0.5/1.0) and are
+        // independent from the
+        // round-127 mute toggle
+        // (mute hard-mutes
+        // regardless of volume).
+        'settings.volume':       '音量',
+        'settings.volume.0':     '关闭',
+        'settings.volume.0.25':  '低',
+        'settings.volume.0.5':   '中',
+        'settings.volume.1':     '高',
 
         'stats.title':           '统计',
         'stats.counters':        '计数器',
@@ -137,6 +153,14 @@ export const CATALOG: Record<Locale, Record<string, string>> = {
         'settings.debounce.500': '500ms (default)',
         'settings.debounce.1000':'1000ms',
         'settings.debounce.2000':'2000ms',
+        // Round 157 — audio volume
+        // presets. 4 buttons in the
+        // SettingsPanel volume row.
+        'settings.volume':       'Volume',
+        'settings.volume.0':     'Off',
+        'settings.volume.0.25':  'Low',
+        'settings.volume.0.5':   'Med',
+        'settings.volume.1':     'High',
 
         'stats.title':           'Stats',
         'stats.counters':        'Counters',

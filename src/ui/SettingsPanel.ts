@@ -2,6 +2,10 @@
  * SettingsPanel — runtime configuration overlay.
  *
  *   - audio mute toggle (calls GameAudio.setMuted)
+ *   - audio volume preset (off / low / med / high) —
+ *     round 157: calls GameAudio.setVolume; persisted
+ *     to localStorage so the choice survives a page
+ *     reload
  *   - difficulty selector (easy / normal / hard) — adjusts the
  *     AIEngine's BalanceTuner target win rate
  *   - language switcher (zh-CN / en-US) — wraps the I18n singleton
@@ -38,6 +42,40 @@ export type Difficulty = 'easy' | 'normal' | 'hard';
  * letting intentional bursts through quickly.
  */
 export type DebounceWindow = 0 | 100 | 250 | 500 | 1000 | 2000;
+
+/**
+ * Round 157 — the 4 audio volume presets exposed in the
+ * SettingsPanel. Companion to the round-127 mute toggle:
+ * mute is the boolean "I want no sound" state, volume is
+ * the continuous "how loud" state. The 4 presets were
+ * chosen to give meaningful coverage of the [0, 1] range
+ * without forcing the player to drag a slider:
+ *   - 0   = off (effectively mutes; the round-127 mute
+ *           button also still works for hard-mute)
+ *   - 0.25 = low (late-night play; the procedural SFX
+ *           are still audible but unobtrusive)
+ *   - 0.5  = med (default — same as the round-1 0.4
+ *           "polite" master gain, rounded to the nearest
+ *           0.05 for clean UI values)
+ *   - 1.0  = high (full master gain; for players with
+ *           headphones on small speakers or anyone who
+ *           wants the procedural SFX to really cut through)
+ *
+ * The API is open — `GameAudio.setVolume` accepts any
+ * value in [0, 1] — but the panel only exposes these
+ * 4 presets for clean UI / clean tests.
+ */
+export type VolumePreset = 0 | 0.25 | 0.5 | 1.0;
+
+/**
+ * Round 157 — canonical ordering of the volume presets
+ * rendered in the SettingsPanel's volume row. Kept as a
+ * separate const so the click-handler guard and the render
+ * pass share the same source of truth (avoids drift if
+ * the type grows).
+ */
+export const VOLUME_PRESETS: readonly VolumePreset[] =
+    [0, 0.25, 0.5, 1.0];
 
 /**
  * Round 129 — canonical ordering of the debounce presets
@@ -141,6 +179,24 @@ export class SettingsPanel {
 
         const muted = this.audio.isMuted();
         const muteLabel = muted ? this.t('audio.unmute') : this.t('audio.mute');
+        // Round 157 — volume row.
+        // The active preset is the
+        // closest match to the current
+        // master volume (since the API
+        // accepts any value in [0, 1]
+        // but the UI only exposes 4
+        // discrete presets, we have
+        // to find the closest one).
+        // The volume is independent
+        // from the mute state (the
+        // round-127 mute button
+        // hard-mutes everything
+        // regardless of volume).
+        const currentVolume = this.audio.getVolume();
+        const volumeRow = VOLUME_PRESETS.map(v => {
+            const cur = Math.abs(currentVolume - v) < 1e-6;
+            return `<button class="set-volume ${cur ? 'is-active' : ''}" data-volume="${v}">${escapeHtml(this.t(`settings.volume.${v}`))}</button>`;
+        }).join('');
 
         this.root.innerHTML = `
             <div class="settings-panel">
@@ -148,6 +204,10 @@ export class SettingsPanel {
                 <div class="set-section-label">${escapeHtml(this.t('settings.audio'))}</div>
                 <div class="set-row">
                     <button class="set-mute ${muted ? 'is-active' : ''}" data-action="mute">${escapeHtml(muteLabel)}</button>
+                </div>
+                <div class="set-volume-row">
+                    <div class="set-section-label">${escapeHtml(this.t('settings.volume'))}</div>
+                    <div class="set-row">${volumeRow}</div>
                 </div>
                 ${diffSection}
                 <div class="set-section-label">${escapeHtml(this.t('settings.language'))}</div>
@@ -159,6 +219,27 @@ export class SettingsPanel {
         this.root.querySelector('.set-mute')?.addEventListener('click', () => {
             this.audio.setMuted(!muted);
             this.render();
+        });
+        // Round 157 — volume click handler.
+        // Reads the `data-volume` attribute
+        // (set to "0" / "0.25" / "0.5" /
+        // "1"), parses to number, narrows
+        // to `VolumePreset`, and calls
+        // `GameAudio.setVolume` (which
+        // persists to localStorage). The
+        // click also re-renders so the
+        // active-preset highlight updates.
+        this.root.querySelectorAll<HTMLButtonElement>('.set-volume').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const raw = btn.getAttribute('data-volume');
+                const v = raw == null ? NaN : Number(raw);
+                const isValidVolume =
+                    v === 0 || v === 0.25 || v === 0.5 || v === 1.0;
+                if (isValidVolume) {
+                    this.audio.setVolume(v);
+                    this.render();
+                }
+            });
         });
         this.root.querySelectorAll<HTMLButtonElement>('.set-diff').forEach(btn => {
             btn.addEventListener('click', () => {

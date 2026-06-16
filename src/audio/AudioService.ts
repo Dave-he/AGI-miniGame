@@ -38,6 +38,26 @@ export interface AudioService {
     setMuted(muted: boolean): void;
     isMuted(): boolean;
     /**
+     * Round 157 — set the master volume in
+     * the range [0, 1]. Multiplied into
+     * every cue + ambient drone. Defaults
+     * to 0.4 (the round-1 "polite"
+     * default — the procedural SFX can be
+     * loud on small speakers). Persisted
+     * by GameAudio to localStorage so a
+     * player's preference survives a page
+     * reload.
+     */
+    setVolume(volume: number): void;
+    /**
+     * Round 157 — read the current master
+     * volume (range [0, 1]). Used by the
+     * SettingsPanel to display the active
+     * preset + by tests to verify the
+     * round-trip contract.
+     */
+    getVolume(): number;
+    /**
      * Round 61 — switch the ambient drone to the given biome's
      * audio config. Calling twice with the same biome is a no-op
      * (no audible glitch). Calling with a different biome
@@ -80,6 +100,16 @@ export class WebAudioService implements AudioService {
     private masterGain: GainNode | null = null;
     private muted: boolean = false;
     /**
+     * Round 157 — master volume in [0, 1].
+     * Defaults to 0.4 (the round-1
+     * "polite" master gain). Mutated via
+     * `setVolume`; mirrored into
+     * `masterGain.gain.value` whenever the
+     * context is alive (and on first
+     * `ensureCtx` call).
+     */
+    private volume: number = 0.4;
+    /**
      * Round 61 — the active ambient drone, if any. A bundle of
      * the gain node (so we can fade it) + the current biome id
      * (so we can detect same-biome no-op). The oscillators
@@ -113,7 +143,7 @@ export class WebAudioService implements AudioService {
         try {
             this.ctx = new Ctor();
             this.masterGain = this.ctx.createGain();
-            this.masterGain.gain.value = this.muted ? 0 : 0.4;
+            this.masterGain.gain.value = this.muted ? 0 : this.volume;
             this.masterGain.connect(this.ctx.destination);
         } catch (e) {
             return null;
@@ -134,13 +164,56 @@ export class WebAudioService implements AudioService {
 
     setMuted(muted: boolean): void {
         this.muted = muted;
-        if (this.masterGain) this.masterGain.gain.value = muted ? 0 : 0.4;
+        if (this.masterGain) this.masterGain.gain.value = muted ? 0 : this.volume;
         // The ambient drone rides on the master gain, so the
         // existing muted = 0 path is enough. No additional
         // per-ambient mute handling needed.
     }
 
     isMuted(): boolean { return this.muted; }
+
+    /**
+     * Round 157 — set the master volume
+     * in [0, 1]. The value is clamped
+     * (NaN / negative / > 1 are all
+     * pinned to the nearest bound) so
+     * the contract is total: any float
+     * is a valid input and the stored
+     * value is always in [0, 1]. If
+     * the AudioContext is alive, the
+     * change is reflected in
+     * `masterGain.gain.value`
+     * immediately. If the context is
+     * not yet created (lazy init), the
+     * change is stored in `volume` and
+     * applied on the first
+     * `ensureCtx` call.
+     */
+    setVolume(volume: number): void {
+        // Clamp to [0, 1] — defense
+        // against NaN, Infinity, and
+        // out-of-range UI values.
+        let v = volume;
+        if (Number.isNaN(v) || !Number.isFinite(v)) v = 0.4;
+        if (v < 0) v = 0;
+        if (v > 1) v = 1;
+        this.volume = v;
+        if (this.masterGain && !this.muted) {
+            this.masterGain.gain.value = v;
+        }
+    }
+
+    /**
+     * Round 157 — read the current
+     * master volume. Always in [0, 1].
+     * Mirrors the `volume` field
+     * directly (no rounding / no
+     * quantization — the SettingsPanel
+     * presets are 0/0.25/0.5/1.0, but
+     * the API supports any value
+     * between).
+     */
+    getVolume(): number { return this.volume; }
 
     /**
      * Round 61 — switch the ambient drone to the supplied biome
@@ -400,11 +473,34 @@ function pad(ctx: AudioContext, out: AudioNode, freq: number, dur: number): void
 /** Silent stub for tests / environments without Web Audio. */
 export class NullAudioService implements AudioService {
     private muted = false;
+    /**
+     * Round 157 — round-157 master volume
+     * state for the test stub. Default
+     * 0.4 mirrors the WebAudioService
+     * default (so a test that
+     * `new NullAudioService()` and never
+     * calls setVolume sees a consistent
+     * "polite" default).
+     */
+    private volume: number = 0.4;
     private activeBiome: string | null = null;
     private activeSfxBiome: string | null = null;
     playCue(_cue: AudioCue): void { /* noop */ }
     setMuted(muted: boolean): void { this.muted = muted; }
     isMuted(): boolean { return this.muted; }
+    setVolume(volume: number): void {
+        // Same clamp contract as
+        // WebAudioService.setVolume —
+        // NaN / Infinity / out-of-range
+        // values are pinned to the
+        // nearest bound.
+        let v = volume;
+        if (Number.isNaN(v) || !Number.isFinite(v)) v = 0.4;
+        if (v < 0) v = 0;
+        if (v > 1) v = 1;
+        this.volume = v;
+    }
+    getVolume(): number { return this.volume; }
     setBiomeAmbient(biome: string, _audio: BiomeAudio): void { this.activeBiome = biome; }
     stopAmbient(): void { this.activeBiome = null; }
     getActiveBiome(): string | null { return this.activeBiome; }

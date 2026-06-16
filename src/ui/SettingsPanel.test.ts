@@ -2,7 +2,7 @@
  * SettingsPanel tests.
  */
 
-import { SettingsPanel, SettingsPanelHooks, Difficulty, DebounceWindow, DEBOUNCE_PRESETS } from '../ui/SettingsPanel';
+import { SettingsPanel, SettingsPanelHooks, Difficulty, DebounceWindow, DEBOUNCE_PRESETS, VOLUME_PRESETS } from '../ui/SettingsPanel';
 import { I18n } from '../i18n/I18n';
 import { GameAudio } from '../audio/GameAudio';
 import { NullAudioService } from '../audio/AudioService';
@@ -36,6 +36,7 @@ describe('SettingsPanel', () => {
     beforeEach(() => {
         try { localStorage.removeItem('agi_locale'); } catch { /* noop */ }
         try { localStorage.removeItem('agi_muted'); } catch { /* noop */ }
+        try { localStorage.removeItem('agi_volume'); } catch { /* noop */ }
     });
 
     test('initial render shows the title and 3 difficulty buttons', () => {
@@ -245,5 +246,194 @@ describe('SettingsPanel', () => {
         localStorage.setItem('agi_muted', 'banana');
         const audio = new GameAudio(new NullAudioService());
         expect(audio.isMuted()).toBe(false);
+    });
+
+    // =========================================================
+    // Round 157 — audio volume knob.
+    //
+    // 8 tests pinning the volume
+    // state machine + the localStorage
+    // round-trip + the SettingsPanel
+    // UI hooks. Companion to the
+    // round-127 mute toggle: mute is
+    // a boolean "I want no sound"
+    // state, volume is the continuous
+    // "how loud" state. The 2 are
+    // independent — you can be muted
+    // at any volume, and unmuted at
+    // any volume.
+    // =========================================================
+
+    test('initial_render_shows_4_volume_buttons_round_157', () => {
+        // The new volume row has
+        // 4 buttons (off / low /
+        // med / high), mirroring
+        // the round-111 debounce
+        // row's "is-active highlight
+        // on the active preset"
+        // pattern. The data-volume
+        // attribute is set to the
+        // numeric value as a string
+        // ("0" / "0.25" / "0.5" /
+        // "1").
+        const { root } = make();
+        const btns = root.querySelectorAll<HTMLButtonElement>('.set-volume');
+        expect(btns.length).toBe(4);
+        const dataAttrs = Array.from(btns).map(b => b.getAttribute('data-volume'));
+        expect(dataAttrs).toEqual(['0', '0.25', '0.5', '1']);
+    });
+
+    test('volume_buttons_are_ordered_off_low_med_high_round_157', () => {
+        // Pin the canonical
+        // ordering: off → low →
+        // med → high maps to
+        // numeric 0 → 0.25 →
+        // 0.5 → 1.0. The active
+        // preset is the closest
+        // match to the current
+        // volume (not the
+        // index-based match), so
+        // the order is purely
+        // UI / i18n.
+        const { root } = make();
+        const btns = root.querySelectorAll<HTMLButtonElement>('.set-volume');
+        const labels = Array.from(btns).map(b => b.textContent);
+        // en-US default: Off / Low / Med / High
+        expect(labels[0]).toContain('Off');
+        expect(labels[1]).toContain('Low');
+        expect(labels[2]).toContain('Med');
+        expect(labels[3]).toContain('High');
+    });
+
+    test('VOLUME_PRESETS_is_exported_with_4_values_round_157', () => {
+        // Importing the constant
+        // directly from the
+        // SettingsPanel module
+        // lets external callers
+        // (e.g. App-level tests)
+        // avoid duplicating the
+        // canonical ordering.
+        expect(VOLUME_PRESETS).toEqual([0, 0.25, 0.5, 1.0]);
+    });
+
+    test('clicking_low_volume_button_calls_audio_setVolume_with_0_25_round_157', () => {
+        // The click handler
+        // parses the data-volume
+        // attribute as a
+        // number, narrows to
+        // VolumePreset (the 4
+        // allowed values), and
+        // calls GameAudio.setVolume.
+        const { root, audio } = make();
+        const btn = root.querySelector<HTMLButtonElement>('[data-volume="0.25"]')!;
+        btn.click();
+        expect(audio.getVolume()).toBe(0.25);
+    });
+
+    test('clicking_high_volume_button_makes_it_is_active_round_157', () => {
+        // After clicking the
+        // High button, re-render
+        // moves the is-active
+        // class. The Off / Low /
+        // Med buttons lose it.
+        const { root } = make();
+        const high = root.querySelector<HTMLButtonElement>('[data-volume="1"]')!;
+        high.click();
+        // Re-query after re-render
+        // (the click handler
+        // calls this.render()).
+        const high2 = root.querySelector<HTMLButtonElement>('[data-volume="1"]')!;
+        const off2 = root.querySelector<HTMLButtonElement>('[data-volume="0"]')!;
+        const low2 = root.querySelector<HTMLButtonElement>('[data-volume="0.25"]')!;
+        const med2 = root.querySelector<HTMLButtonElement>('[data-volume="0.5"]')!;
+        expect(high2.classList.contains('is-active')).toBe(true);
+        expect(off2.classList.contains('is-active')).toBe(false);
+        expect(low2.classList.contains('is-active')).toBe(false);
+        expect(med2.classList.contains('is-active')).toBe(false);
+    });
+
+    test('setVolume_writes_agi_volume_to_localStorage_round_157', () => {
+        // The SettingsPanel
+        // click handler calls
+        // GameAudio.setVolume
+        // which persists the
+        // post-clamp value to
+        // localStorage. So a
+        // page reload will
+        // restore the same
+        // volume.
+        const { root, audio } = make();
+        const high = root.querySelector<HTMLButtonElement>('[data-volume="1"]')!;
+        high.click();
+        expect(audio.getVolume()).toBe(1.0);
+        expect(localStorage.getItem('agi_volume')).toBe('1');
+        const off = root.querySelector<HTMLButtonElement>('[data-volume="0"]')!;
+        off.click();
+        expect(audio.getVolume()).toBe(0);
+        expect(localStorage.getItem('agi_volume')).toBe('0');
+    });
+
+    test('GameAudio_constructor_restores_volume_from_localStorage_round_157', () => {
+        // Simulate a previous
+        // session where the
+        // player set the
+        // volume to high.
+        // A new GameAudio
+        // should boot at
+        // volume=1.
+        localStorage.setItem('agi_volume', '0.5');
+        const audio = new GameAudio(new NullAudioService());
+        expect(audio.getVolume()).toBe(0.5);
+    });
+
+    test('GameAudio_constructor_falls_back_to_default_volume_for_missing_storage_round_157', () => {
+        // No `agi_volume` key
+        // set. Default is the
+        // round-1 0.4 "polite"
+        // master gain.
+        const audio = new GameAudio(new NullAudioService());
+        expect(audio.getVolume()).toBe(0.4);
+    });
+
+    test('GameAudio_constructor_falls_back_to_default_volume_for_malformed_storage_round_157', () => {
+        // Garbage value (e.g.
+        // an old app version
+        // wrote something
+        // else). Loaders
+        // should reject
+        // anything that
+        // doesn't parse as a
+        // number.
+        localStorage.setItem('agi_volume', 'banana');
+        const audio = new GameAudio(new NullAudioService());
+        expect(audio.getVolume()).toBe(0.4);
+    });
+
+    test('GameAudio_setVolume_clamps_out_of_range_values_round_157', () => {
+        // The service is
+        // total: NaN,
+        // negative, > 1 are
+        // all pinned to the
+        // nearest bound.
+        // This protects the
+        // UI from bugs (a
+        // regression that
+        // sends a raw
+        // number without
+        // bounds-checking
+        // would otherwise
+        // produce a gain
+        // outside [0, 1] and
+        // break the Web Audio
+        // contract).
+        const audio = new GameAudio(new NullAudioService());
+        audio.setVolume(-1);
+        expect(audio.getVolume()).toBe(0);
+        audio.setVolume(5);
+        expect(audio.getVolume()).toBe(1);
+        audio.setVolume(NaN);
+        expect(audio.getVolume()).toBe(0.4);
+        audio.setVolume(0.5);
+        expect(audio.getVolume()).toBe(0.5);
     });
 });
