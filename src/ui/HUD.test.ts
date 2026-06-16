@@ -2517,4 +2517,172 @@ describe('HUD — round 152 compact mode', () => {
         );
         expect(rows.length).toBeGreaterThanOrEqual(1);
     });
+
+    // =========================================================
+    // Round 159 — HUD
+    // auto-hide-on-fullscreen
+    // mode. Companion to the
+    // round-152 compact / round-
+    // 153 fade / round-154
+    // corner / round-155 pin /
+    // round-156 click-through
+    // stack.
+    //
+    // The 16th mode is a
+    // visibility gate tied to
+    // `document.fullscreenElement`:
+    // the host binds a
+    // `fullscreenchange`
+    // listener and calls
+    // `setAutoHideFullscreen`
+    // to sync state. When
+    // enabled, the HUD applies
+    // the
+    // `hud-auto-hide-fullscreen`
+    // CSS class on the root,
+    // which the index.html
+    // rule pairs with
+    // `:fullscreen` to hide
+    // the panel.
+    //
+    // 8 tests pinning the new
+    // state machine + class
+    // + BINDING_DESCRIPTIONS
+    // + class preservation
+    // across the round-152 →
+    // round-158 stack.
+    // =========================================================
+
+    test('default_state_is_not_auto_hide_fullscreen_round_159', () => {
+        // A fresh HUD has the
+        // auto-hide flag off
+        // (default `false`
+        // when never set).
+        // A regression that
+        // pre-set the flag
+        // would silently
+        // auto-hide the HUD
+        // for new players
+        // who never opted in.
+        const { hud } = makeHud();
+        expect(hud.isAutoHideFullscreen()).toBe(false);
+    });
+
+    test('setAutoHideFullscreen_true_applies_hud_auto_hide_fullscreen_class_round_159', () => {
+        // The setter applies
+        // the CSS class on
+        // the root so the
+        // index.html rule
+        // can pair it with
+        // `:fullscreen`.
+        const { hud, root } = makeHud();
+        hud.setAutoHideFullscreen(true);
+        expect(hud.isAutoHideFullscreen()).toBe(true);
+        expect(root.classList.contains('hud-auto-hide-fullscreen')).toBe(true);
+    });
+
+    test('setAutoHideFullscreen_false_strips_hud_auto_hide_fullscreen_class_round_159', () => {
+        // Toggling back off
+        // removes the class
+        // (idempotent — calling
+        // twice doesn't error).
+        const { hud, root } = makeHud();
+        hud.setAutoHideFullscreen(true);
+        hud.setAutoHideFullscreen(false);
+        expect(hud.isAutoHideFullscreen()).toBe(false);
+        expect(root.classList.contains('hud-auto-hide-fullscreen')).toBe(false);
+    });
+
+    test('toggleAutoHideFullscreen_flips_state_round_159', () => {
+        // The toggle returns
+        // the new value so
+        // the host can persist
+        // it to localStorage.
+        // Mirrors the
+        // round-156
+        // `toggleClickThrough`
+        // contract.
+        const { hud } = makeHud();
+        expect(hud.toggleAutoHideFullscreen()).toBe(true);
+        expect(hud.isAutoHideFullscreen()).toBe(true);
+        expect(hud.toggleAutoHideFullscreen()).toBe(false);
+        expect(hud.isAutoHideFullscreen()).toBe(false);
+    });
+
+    test('setAutoHideFullscreen_preserves_click_through_class_round_159', () => {
+        // The 4-way pin /
+        // click-through /
+        // auto-hide /
+        // (round-154 corner)
+        // coordination. A
+        // regression that
+        // used
+        // `this.root.className = ...`
+        // (raw string set)
+        // instead of
+        // `classList.add /
+        // remove` would
+        // strip the
+        // click-through
+        // class on the same
+        // pass.
+        const { hud, root } = makeHud();
+        hud.setClickThrough(true);
+        expect(root.classList.contains('hud-click-through')).toBe(true);
+        hud.setAutoHideFullscreen(true);
+        expect(root.classList.contains('hud-click-through')).toBe(true);
+        expect(root.classList.contains('hud-auto-hide-fullscreen')).toBe(true);
+    });
+
+    test('setCorner_preserves_auto_hide_fullscreen_class_round_159', () => {
+        // The corner cycle
+        // (round-154) must
+        // not strip the
+        // auto-hide class.
+        // Symmetric to the
+        // round-156
+        // `setCorner_preserves_click_through`
+        // contract.
+        const { hud, root } = makeHud();
+        hud.setAutoHideFullscreen(true);
+        expect(root.classList.contains('hud-auto-hide-fullscreen')).toBe(true);
+        hud.setCorner('br');
+        expect(root.classList.contains('hud-auto-hide-fullscreen')).toBe(true);
+    });
+
+    test('applyAutoHideFullscreenClass_is_idempotent_round_159', () => {
+        // The class
+        // manipulation uses
+        // `classList.add` /
+        // `remove` (not
+        // `className =`)
+        // so calling the
+        // setter twice
+        // doesn't double-add
+        // the class. Defense
+        // in depth.
+        const { hud, root } = makeHud();
+        hud.setAutoHideFullscreen(true);
+        hud.setAutoHideFullscreen(true);
+        // The class is present exactly once.
+        const matches = root.className.match(/hud-auto-hide-fullscreen/g) || [];
+        expect(matches.length).toBe(1);
+    });
+
+    test('BINDING_DESCRIPTIONS_includes_hud_auto_hide_fullscreen_hotkey_round_159', () => {
+        // The K key shortcut
+        // for the HUD
+        // auto-hide-on-fullscreen
+        // toggle is mirrored
+        // in BINDING_DESCRIPTIONS
+        // so the help overlay
+        // auto-iterates it
+        // (same pattern as
+        // round-155's X /
+        // round-156's Y).
+        const rows = BINDING_DESCRIPTIONS.filter(
+            (d) => d.key === 'K' && d.action.includes('全屏自动隐藏')
+        );
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+    });
 });

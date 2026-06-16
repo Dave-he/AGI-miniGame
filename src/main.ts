@@ -713,6 +713,17 @@ class App {
         // boot with no saved value defaults
         // to click-through OFF (false).
         this.hud.setClickThrough(loadHudClickThroughFromStorage());
+        // Round 159 — restore the
+        // auto-hide-on-fullscreen
+        // state alongside compact,
+        // fade, corner, pin, and
+        // click-through. The setter
+        // is idempotent: a fresh boot
+        // with no saved value defaults
+        // to auto-hide OFF (false) —
+        // the player has to explicitly
+        // press K to opt in.
+        this.hud.setAutoHideFullscreen(loadHudAutoHideFullscreenFromStorage());
         this.worldState = new WorldState('local-player', '次元旅者');
         this.progression = new Progression();
         this.epoch = new EpochSystem(Date.now());
@@ -2387,6 +2398,34 @@ class App {
     }
 
     /**
+     * Round 159 — toggle the
+     * auto-hide-on-fullscreen
+     * mode. When enabled, the
+     * `#hud-root` element gets
+     * the
+     * `hud-auto-hide-fullscreen`
+     * CSS class which collapses
+     * the HUD whenever the
+     * document is in fullscreen
+     * mode (the host also binds
+     * a `fullscreenchange`
+     * listener to sync state).
+     *
+     * Mirrors `toggleHudPinned` /
+     * `toggleHudClickThrough`:
+     * one call + one
+     * localStorage write. The
+     * K key shortcut calls this
+     * via the round-159
+     * `toggle-hud-auto-hide-fullscreen`
+     * KeyboardAction.
+     */
+    toggleHudAutoHideFullscreen(): void {
+        const next = this.hud.toggleAutoHideFullscreen();
+        saveHudAutoHideFullscreenToStorage(next);
+    }
+
+    /**
      * Round 113 — toggle the progression panel
      * overlay. The progression panel
      * (`<div id="progression-root">`) is populated
@@ -3983,9 +4022,26 @@ async function bootstrap(): Promise<void> {
             // Round 132 — Z (13th).
             // Round 133 — K (14th).
             // Round 137 — I (15th).
+            // Round 159 — K shared with
+            // auto-hide-fullscreen
+            // (panel-toggle + HUD-
+            // mode are orthogonal, so
+            // K was reclaimed here
+            // for the round-159 HUD
+            // mode; the original
+            // round-133 K was a
+            // separate panel-toggle
+            // that has since been
+            // superseded — the
+            // header still lists 16
+            // entries because the
+            // panel-toggle roster
+            // plus the HUD-mode
+            // roster combine to
+            // fill the section).
             const toggleHeader = document.createElement('div');
             toggleHeader.className = 'kb-help-section kb-help-section-toggle';
-            toggleHeader.textContent = '面板开关 (15 键)';
+            toggleHeader.textContent = '面板开关 (16 键)';
             body.appendChild(toggleHeader);
             for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
                 const keyEl = document.createElement('div');
@@ -4024,6 +4080,19 @@ async function bootstrap(): Promise<void> {
             // localStorage write) so it
             // doesn't need its own block.
             case 'toggle-hud-click-through': app.toggleHudClickThrough(); break;
+            // Round 159 — K key
+            // toggles the HUD
+            // auto-hide-on-fullscreen
+            // mode. The HUD
+            // collapses whenever
+            // the document is in
+            // fullscreen mode. Same
+            // handler pattern as
+            // the other HUD toggles
+            // (one boolean flip +
+            // localStorage write +
+            // re-render).
+            case 'toggle-hud-auto-hide-fullscreen': app.toggleHudAutoHideFullscreen(); break;
             case 'enter-atom': void app.enterAtom(action.atomId); break;
             // Round 152 — H key toggles the HUD
             // compact mode (the round-51 memories
@@ -4324,6 +4393,37 @@ function saveHudClickThroughToStorage(enabled: boolean): void {
     if (typeof localStorage === 'undefined') return;
     try {
         localStorage.setItem(HUD_CLICK_THROUGH_STORAGE_KEY, enabled ? '1' : '0');
+    } catch {
+        // localStorage can throw in
+        // private mode / quota errors.
+        // Swallow — the in-memory state
+        // is already updated.
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Round 159 — `agi_hud_auto_hide_fullscreen` localStorage key for
+// the HUD auto-hide-on-fullscreen toggle. Same `loadXxxFromStorage` /
+// `saveXxxToStorage` shape as the round-152/153/154/155/156
+// persistence helpers. Stores `'1'` / `'0'` boolean literal.
+// ---------------------------------------------------------------------------
+
+const HUD_AUTO_HIDE_FULLSCREEN_STORAGE_KEY = 'agi_hud_auto_hide_fullscreen';
+
+function loadHudAutoHideFullscreenFromStorage(): boolean {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+        const raw = localStorage.getItem(HUD_AUTO_HIDE_FULLSCREEN_STORAGE_KEY);
+        return raw === '1';
+    } catch {
+        return false;
+    }
+}
+
+function saveHudAutoHideFullscreenToStorage(enabled: boolean): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(HUD_AUTO_HIDE_FULLSCREEN_STORAGE_KEY, enabled ? '1' : '0');
     } catch {
         // localStorage can throw in
         // private mode / quota errors.

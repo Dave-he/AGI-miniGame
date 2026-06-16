@@ -7124,7 +7124,7 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         expect(main).not.toMatch(/bind\('btn-epoch',\s*\(\)\s*=>\s*app\.toggleEpoch\(\)\)/);
     });
 
-    test('main_ts_help_overlay_header_says_15_keys (round 121/128/132/133/137)', () => {
+    test('main_ts_help_overlay_header_says_16_keys (round 121/128/132/133/137/159)', () => {
         // The 3rd section header
         // in the help overlay
         // (round-120
@@ -7140,14 +7140,23 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         // "面板开关 (14 键)"
         // post-round-133, and
         // "面板开关 (15 键)"
-        // post-round-137. The
-        // round-137 update is
+        // post-round-137.
+        // Round 159 bumped
+        // the count to 16
+        // keys (the K key
+        // adds the
+        // auto-hide-on-fullscreen
+        // toggle, joining
+        // the 15 already
+        // listed). The
+        // round-137/159
+        // update is
         // important so a player
         // scanning the section
         // knows how many keys
         // are listed.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toMatch(/面板开关 \(15 键\)/);
+        expect(main).toMatch(/面板开关 \(16 键\)/);
     });
 });
 
@@ -7956,7 +7965,7 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
         expect(main).toMatch(/dslCodexRoot:\s*dslCodexRoot\s*\?\?\s*undefined/);
     });
 
-    test('main_ts_help_overlay_header_reads_14_keys_not_13 (round 133)', () => {
+    test('main_ts_help_overlay_header_reads_16_keys_not_15 (round 133/159)', () => {
         // The help overlay
         // section header
         // text was updated
@@ -7965,7 +7974,12 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
         // player sees the
         // K-key DslCodex
         // panel in the
-        // count. A
+        // count. Round 159
+        // bumped it from
+        // "15 键" to "16 键"
+        // for the
+        // auto-hide-on-fullscreen
+        // mode. A
         // regression that
         // forgets to bump
         // the number would
@@ -7973,8 +7987,8 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
         // drift caught by
         // this test.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toContain('面板开关 (15 键)');
-        expect(main).not.toContain('面板开关 (14 键)');
+        expect(main).toContain('面板开关 (16 键)');
+        expect(main).not.toContain('面板开关 (15 键)');
     });
 });
 

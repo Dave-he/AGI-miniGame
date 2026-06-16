@@ -95,6 +95,28 @@
          `agi_hud_click_through`. */
       .hud-click-through { pointer-events: none; }
 
+      /* Round 159 — `.hud-auto-hide-fullscreen`
+         collapses the HUD whenever the
+         document is in fullscreen mode
+         (the player wants an "immersive
+         scene" experience with no chrome).
+         The `:fullscreen` pseudo-class on
+         `<html>` matches whenever
+         `document.fullscreenElement` is
+         non-null (browser F11, Cmd+Ctrl+F,
+         or a `requestFullscreen()` call).
+         We also set `pointer-events: none`
+         so the hidden HUD area still
+         passes clicks through to the
+         scene — the player doesn't have
+         to manually disable click-through
+         for the fullscreen case. Toggled
+         at runtime via the `K` key shortcut
+         and persisted to localStorage key
+         `agi_hud_auto_hide_fullscreen`. */
+      .hud-auto-hide-fullscreen:fullscreen { display: none; }
+      .hud-auto-hide-fullscreen:fullscreen { pointer-events: none; }
+
       /* Round 112 — settings-root: bottom-right corner
          so it sits under the HUD. Hidden by default;
          App.toggleSettings() flips the `hidden` attribute.

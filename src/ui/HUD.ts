@@ -421,6 +421,53 @@ export interface HUDState {
      * without blocking the scene.
      */
     hudClickThrough?: boolean;
+    /**
+     * Round 159 — auto-hide the HUD
+     * whenever the scene enters
+     * fullscreen mode (e.g. via the
+     * browser's native F11 / Cmd+Ctrl+F
+     * / `requestFullscreen()` call).
+     *
+     * Companion to the round-153
+     * idle-fade: the idle-fade hides
+     * the HUD after N ms of no input;
+     * the fullscreen auto-hide hides
+     * the HUD whenever the player has
+     * explicitly asked for an
+     * "immersive full-screen scene"
+     * (no chrome, no UI).
+     *
+     * When `hudAutoHideFullscreen ===
+     * true`, the HUD applies the
+     * `hud-auto-hide-fullscreen` CSS
+     * class on the root. The host
+     * (App) listens to the
+     * `fullscreenchange` DOM event
+     * and calls `setAutoHideFullscreen`
+     * once at startup to apply the
+     * initial visibility based on
+     * `document.fullscreenElement`.
+     *
+     * The host also toggles
+     * `enterFullscreen()` /
+     * `exitFullscreen()` calls based
+     * on whether the player wants to
+     * keep the HUD visible. When the
+     * HUD is hidden, mouse clicks on
+     * the hidden HUD still pass
+     * through (the class also sets
+     * `pointer-events: none` so the
+     * scene is clickable through the
+     * invisible HUD).
+     *
+     * Persisted to localStorage key
+     * `agi_hud_auto_hide_fullscreen`
+     * so a player who enables it on a
+     * visit doesn't have to re-enable
+     * it on the next page load. The
+     * `K` key in main.ts toggles this.
+     */
+    hudAutoHideFullscreen?: boolean;
 }
 
 export class HUD {
@@ -1049,6 +1096,17 @@ export class HUD {
         // className-assign concern as
         // round 155's pin state).
         this.applyClickThroughClass();
+        // Round 159 — apply the
+        // `hud-auto-hide-fullscreen` class
+        // on the same pass so toggling
+        // the corner doesn't strip the
+        // auto-hide state (extending the
+        // round-155/156 pin +
+        // click-through coordination
+        // to a three-way pin +
+        // click-through + auto-hide
+        // coordination).
+        this.applyAutoHideFullscreenClass();
     }
 
     /**
@@ -1210,6 +1268,96 @@ export class HUD {
             }
         } else {
             this.root.classList.remove('hud-click-through');
+        }
+    }
+
+    /**
+     * Round 159 — set the
+     * auto-hide-on-fullscreen
+     * flag. When `enabled` is
+     * `true`, the HUD applies the
+     * `hud-auto-hide-fullscreen`
+     * CSS class on the root which
+     * hides the HUD whenever
+     * the document is in
+     * fullscreen mode (the host
+     * binds a `fullscreenchange`
+     * listener and calls this
+     * method to sync state).
+     *
+     * Companion to `setClickThrough`
+     * (round-156) and `setPinned`
+     * (round-155). The three are
+     * orthogonal:
+     *   - `setPinned` controls
+     *     z-index stacking
+     *   - `setClickThrough` controls
+     *     pointer-events
+     *   - `setAutoHideFullscreen`
+     *     controls visibility when
+     *     the scene is fullscreen
+     *
+     * So a non-browser test env can
+     * call `setAutoHideFullscreen(true)`
+     * without crashing on `typeof
+     * localStorage`.
+     */
+    setAutoHideFullscreen(enabled: boolean): void {
+        this.state = { ...this.state, hudAutoHideFullscreen: enabled };
+        this.applyAutoHideFullscreenClass();
+        this.render();
+    }
+
+    /**
+     * Read-only accessor mirroring
+     * the `isClickThrough()` /
+     * `isPinned()` pattern. Returns
+     * the current auto-hide-on-fullscreen
+     * flag (default `false` when
+     * never set).
+     */
+    isAutoHideFullscreen(): boolean {
+        return this.state.hudAutoHideFullscreen === true;
+    }
+
+    /**
+     * Round 159 — toggle the
+     * auto-hide-on-fullscreen
+     * flag. Returns the new value
+     * so the host can persist it
+     * to localStorage. Designed
+     * to be wired directly to the
+     * `K` key shortcut — one
+     * keystroke to flip the
+     * auto-hide on / off.
+     */
+    toggleAutoHideFullscreen(): boolean {
+        const next = !this.isAutoHideFullscreen();
+        this.setAutoHideFullscreen(next);
+        return next;
+    }
+
+    /**
+     * Round 159 — apply the
+     * `hud-auto-hide-fullscreen`
+     * CSS class on the root
+     * element. Internal helper
+     * for `setAutoHideFullscreen`.
+     *
+     * Uses `classList.add` /
+     * `classList.remove` (idempotent
+     * — calling twice doesn't
+     * double-add) so callers can
+     * re-apply without disturbing
+     * other classes on the root.
+     */
+    private applyAutoHideFullscreenClass(): void {
+        if (this.isAutoHideFullscreen()) {
+            if (!this.root.classList.contains('hud-auto-hide-fullscreen')) {
+                this.root.classList.add('hud-auto-hide-fullscreen');
+            }
+        } else {
+            this.root.classList.remove('hud-auto-hide-fullscreen');
         }
     }
 

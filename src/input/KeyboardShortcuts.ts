@@ -231,7 +231,22 @@ export type KeyboardAction =
     // together. Y is the next free letter
     // after X (which round 155 bound to
     // pin). Y reads as "bYpass".
-    | { kind: 'toggle-hud-click-through' };
+    | { kind: 'toggle-hud-click-through' }
+    // Round 159 — toggle the
+    // auto-hide-on-fullscreen
+    // HUD mode. When enabled,
+    // the HUD collapses
+    // whenever the document is
+    // in fullscreen mode (the
+    // player wants an
+    // "immersive scene"
+    // experience). K is the next
+    // free letter after Y (which
+    // round 156 bound to
+    // click-through). K reads as
+    // "sKip" — skip the HUD when
+    // fullscreen.
+    | { kind: 'toggle-hud-auto-hide-fullscreen' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -614,6 +629,13 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // localStorage (`agi_hud_click_through`)
     // so it survives page reloads.
     { key: 'Y',    action: '切换 HUD 穿透 (pointer-events: none 透传至场景)' },
+    // Round 159 — K key toggles
+    // the auto-hide-on-fullscreen
+    // HUD mode. The preference
+    // persists in localStorage
+    // (`agi_hud_auto_hide_fullscreen`)
+    // so it survives page reloads.
+    { key: 'K',    action: '切换 HUD 全屏自动隐藏 (document.fullscreenElement 时收起)' },
 ];
 
 /**
@@ -1355,6 +1377,20 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'y':
         case 'Y':
             return { kind: 'toggle-hud-click-through' };
+        // Round 159 — K key toggles
+        // the auto-hide-on-fullscreen
+        // HUD mode. K is the next
+        // free letter after Y (which
+        // round 156 bound to
+        // click-through). K reads as
+        // "sKip" — skip the HUD when
+        // the scene is fullscreen.
+        // Same pattern as the other
+        // HUD toggles — one keystroke,
+        // no sub-menu.
+        case 'k':
+        case 'K':
+            return { kind: 'toggle-hud-auto-hide-fullscreen' };
         default:
             return null;
     }
