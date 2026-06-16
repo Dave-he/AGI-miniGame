@@ -54,6 +54,26 @@
       .hud-corner-bl { bottom: 0; left: 0; right: auto; top: auto; max-height: 80vh; }
       .hud-corner-br { bottom: 0; right: 0; left: auto; top: auto; max-height: 80vh; }
 
+      /* Round 155 — `.hud-pinned` always-on-top
+         z-index boost. The round-1 default
+         `z-index: 10` is fine when the HUD
+         sits inside the page's normal
+         stacking context, but a fullscreen
+         Three.js canvas (or any element
+         with `position: fixed` + a higher
+         z-index) can push the HUD below
+         it. The `hud-pinned` class on
+         `#hud-root` jumps the panel to
+         `z-index: 10000` (above the
+         `.kb-help` z-index 9999 — round-50
+         keyboard help overlay stays below
+         pinned HUD so the player can read
+         help without losing access to the
+         HUD). Toggled at runtime via the
+         `X` key shortcut and persisted to
+         localStorage key `agi_hud_pinned`. */
+      .hud-pinned { z-index: 10000; }
+
       /* Round 112 — settings-root: bottom-right corner
          so it sits under the HUD. Hidden by default;
          App.toggleSettings() flips the `hidden` attribute.

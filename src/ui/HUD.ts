@@ -361,6 +361,30 @@ export interface HUDState {
      * (top-right).
      */
     hudCorner?: 'tl' | 'tr' | 'br' | 'bl';
+    /**
+     * Round 155 — always-on-top pin mode for
+     * the HUD. When `true`, the
+     * `#hud-root` element gets the
+     * `hud-pinned` class which boosts
+     * its z-index above the
+     * Three.js canvas (default z-index
+     * 10 → pinned z-index 10000). Useful
+     * when the WebGL canvas claims
+     * pointer-events on fullscreen
+     * scenes and the HUD gets pushed
+     * below it.
+     *
+     * Optional; when omitted (or
+     * `false`), the HUD uses the
+     * round-1 default z-index.
+     * Persisted to localStorage key
+     * `agi_hud_pinned` so a player who
+     * enables it on a visit doesn't have
+     * to re-enable it on the next page
+     * load. The `X` key in main.ts
+     * toggles this.
+     */
+    hudPinned?: boolean;
 }
 
 export class HUD {
@@ -976,6 +1000,82 @@ export class HUD {
         // don't accumulate stale variants on
         // repeated toggles.
         this.root.className = `${baseClass} hud-corner-${corner}`;
+        // Round 155 — apply the
+        // `hud-pinned` class on the same
+        // pass so toggling the corner
+        // doesn't strip the pin state.
+        this.applyPinnedClass();
+    }
+
+    /**
+     * Round 155 — set the always-on-top
+     * pin flag. When `pinned === true`,
+     * the `#hud-root` element gets the
+     * `hud-pinned` class which boosts its
+     * z-index above the WebGL canvas so
+     * the HUD stays clickable even when
+     * a fullscreen Three.js scene
+     * claims pointer-events.
+     *
+     * Defaults to `false` (round-1
+     * z-index 10, HUD may be pushed
+     * below a fullscreen canvas).
+     * Persisting the player's
+     * preference is the call-site's
+     * responsibility (mirrors the
+     * round-152 `setCompact` pattern)
+     * so a non-browser test env can
+     * call `setPinned(true)` without
+     * crashing on `typeof localStorage`.
+     */
+    setPinned(pinned: boolean): void {
+        this.state = { ...this.state, hudPinned: pinned };
+        this.applyPinnedClass();
+        this.render();
+    }
+
+    /**
+     * Read-only accessor mirroring the
+     * `isCompact()` / `isFadeEnabled()`
+     * pattern. Returns the current
+     * pin flag (default `false` when
+     * never set).
+     */
+    isPinned(): boolean {
+        return this.state.hudPinned === true;
+    }
+
+    /**
+     * Round 155 — toggle the pin flag.
+     * Returns the new value so the
+     * host can persist it. Designed to
+     * be wired directly to the `X` key
+     * shortcut — one keystroke to
+     * flip pin on / off.
+     */
+    togglePinned(): boolean {
+        const next = !this.isPinned();
+        this.setPinned(next);
+        return next;
+    }
+
+    /**
+     * Round 155 — apply the
+     * `hud-pinned` CSS class on the
+     * root element. Internal helper
+     * for `setPinned` and the
+     * `applyCornerClass` post-pass
+     * (toggling the corner must NOT
+     * strip the pin class).
+     */
+    private applyPinnedClass(): void {
+        if (this.isPinned()) {
+            if (!this.root.classList.contains('hud-pinned')) {
+                this.root.classList.add('hud-pinned');
+            }
+        } else {
+            this.root.classList.remove('hud-pinned');
+        }
     }
 
     /**

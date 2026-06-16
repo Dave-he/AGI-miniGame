@@ -705,6 +705,7 @@ class App {
         this.hud.setCompact(loadHudCompactFromStorage());
         this.hud.setFadeEnabled(loadHudFadeFromStorage());
         this.hud.setCorner(loadHudCornerFromStorage());
+        this.hud.setPinned(loadHudPinnedFromStorage());
         this.worldState = new WorldState('local-player', '次元旅者');
         this.progression = new Progression();
         this.epoch = new EpochSystem(Date.now());
@@ -1282,6 +1283,24 @@ class App {
             // already taken by the
             // round-130 DSL codex toggle.
             { key: 'C', action: '角落',    group: '系统' },
+            // Round 155 — X key toggles the
+            // always-on-top pin flag. When
+            // enabled, the HUD z-index
+            // jumps from 10 to 10000 so the
+            // panel stays clickable above
+            // fullscreen Three.js canvases
+            // (操控性好 — the player can
+            // keep an eye on stats even
+            // when a fullscreen scene
+            // claims pointer-events). The
+            // preference persists in
+            // localStorage (`agi_hud_pinned`)
+            // so it survives page reloads.
+            // X reads as "eXtra on top";
+            // it's the next free letter
+            // after C (which round 154
+            // bound to corner cycling).
+            { key: 'X', action: '置顶',    group: '系统' },
         ]);
         // Round 150 — push an
         // initial biome
@@ -2287,6 +2306,28 @@ class App {
     cycleHudCorner(): void {
         const next = this.hud.cycleCorner();
         saveHudCornerToStorage(next);
+    }
+
+    /**
+     * Round 155 — toggle the HUD always-on-top
+     * pin flag. When enabled, the HUD
+     * z-index jumps from 10 to 10000 so
+     * the panel stays clickable above
+     * fullscreen Three.js canvases (a real
+     * problem on some browser configurations
+     * where a `position: fixed` canvas can
+     * push the HUD below it).
+     *
+     * Mirrors `toggleHudCompact` /
+     * `toggleHudFade`: one call + one
+     * localStorage write. The X key
+     * shortcut calls this via the
+     * round-155 `toggle-hud-pinned`
+     * KeyboardAction.
+     */
+    toggleHudPinned(): void {
+        const next = this.hud.togglePinned();
+        saveHudPinnedToStorage(next);
     }
 
     /**
@@ -3918,6 +3959,7 @@ async function bootstrap(): Promise<void> {
         if (!action) return;
         switch (action.kind) {
             case 'cycle-hud-corner': app.cycleHudCorner(); break;
+            case 'toggle-hud-pinned': app.toggleHudPinned(); break;
             case 'enter-atom': void app.enterAtom(action.atomId); break;
             // Round 152 — H key toggles the HUD
             // compact mode (the round-51 memories
@@ -4151,6 +4193,45 @@ function saveHudCornerToStorage(corner: HudCorner): void {
         // mode / quota errors. Swallow —
         // the in-memory state is already
         // updated.
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Round 155 — `agi_hud_pinned` localStorage key for the
+// HUD always-on-top pin toggle. Same
+// `loadXxxFromStorage` / `saveXxxToStorage`
+// shape as the round-152 compact / round-153
+// fade / round-154 corner helpers. Stores the
+// literal string `'1'` (pinned ON) or `'0'`
+// (pinned OFF, default). On a missing /
+// malformed / unavailable storage, the load
+// returns `false` so the in-memory state
+// falls back to the round-1 default (z-index
+// 10, HUD may be pushed below a fullscreen
+// canvas).
+// ---------------------------------------------------------------------------
+
+const HUD_PINNED_STORAGE_KEY = 'agi_hud_pinned';
+
+function loadHudPinnedFromStorage(): boolean {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+        const raw = localStorage.getItem(HUD_PINNED_STORAGE_KEY);
+        return raw === '1';
+    } catch {
+        return false;
+    }
+}
+
+function saveHudPinnedToStorage(pinned: boolean): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(HUD_PINNED_STORAGE_KEY, pinned ? '1' : '0');
+    } catch {
+        // localStorage can throw in
+        // private mode / quota errors.
+        // Swallow — the in-memory state
+        // is already updated.
     }
 }
 

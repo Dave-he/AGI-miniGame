@@ -152,6 +152,17 @@ describe('KeyboardShortcuts', () => {
             expect(routeKey('c')).toEqual({ kind: 'cycle-hud-corner' });
         });
 
+        it('Round 155 — X key routes to toggle-hud-pinned', () => {
+            // Round 155 added the X key for the HUD
+            // always-on-top pin toggle (next free
+            // letter after C — round 154 bound C to
+            // corner cycling). X reads as "eXtra
+            // on top". Case-insensitive like the
+            // rest of the letter bindings.
+            expect(routeKey('X')).toEqual({ kind: 'toggle-hud-pinned' });
+            expect(routeKey('x')).toEqual({ kind: 'toggle-hud-pinned' });
+        });
+
         it.each(['0', '9', 'a', 'F1', 'Tab', 'Enter', 'ArrowUp'])(
             'returns null for unbound key "%s"',
             (key) => {

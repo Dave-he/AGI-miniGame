@@ -2223,4 +2223,138 @@ describe('HUD — round 152 compact mode', () => {
         );
         expect(cornerRows.length).toBeGreaterThanOrEqual(1);
     });
+
+    // Round 155 — HUD always-on-top pin tests.
+    //
+    // Round 155 adds an opt-in "pin" mode
+    // (X key + `agi_hud_pinned` localStorage
+    // flag): the #hud-root element gets the
+    // `hud-pinned` CSS class which boosts its
+    // z-index from the round-1 default of 10 to
+    // 10000 so the panel stays clickable above
+    // fullscreen Three.js canvases. The pin
+    // state must SURVIVE toggling the corner
+    // class (round-154 regression defense).
+    //
+    // These tests pin the HUD-side state
+    // machine so a future refactor can't
+    // silently break the pin contract.
+
+    test('default_state_is_not_pinned_round_155', () => {
+        // Fresh HUD: pin is OFF by
+        // default (mirrors the round-1
+        // z-index of 10, where the HUD
+        // can be pushed below a
+        // fullscreen canvas).
+        const { hud } = makeHud();
+        expect(hud.isPinned()).toBe(false);
+    });
+
+    test('setPinned_true_applies_hud_pinned_class_round_155', () => {
+        // setPinned(true) must add the
+        // `hud-pinned` class to the
+        // root element so the CSS
+        // z-index boost applies.
+        const { hud, root } = makeHud();
+        hud.setPinned(true);
+        expect(hud.isPinned()).toBe(true);
+        expect(root.classList.contains('hud-pinned')).toBe(true);
+    });
+
+    test('setPinned_false_strips_hud_pinned_class_round_155', () => {
+        // setPinned(false) must remove
+        // the `hud-pinned` class.
+        const { hud, root } = makeHud();
+        hud.setPinned(true);
+        hud.setPinned(false);
+        expect(hud.isPinned()).toBe(false);
+        expect(root.classList.contains('hud-pinned')).toBe(false);
+    });
+
+    test('togglePinned_flips_pin_state_round_155', () => {
+        // togglePinned() must flip the
+        // pin state and return the new
+        // value so the host can persist
+        // it.
+        const { hud } = makeHud();
+        expect(hud.isPinned()).toBe(false);
+        const next1 = hud.togglePinned();
+        expect(next1).toBe(true);
+        expect(hud.isPinned()).toBe(true);
+        const next2 = hud.togglePinned();
+        expect(next2).toBe(false);
+        expect(hud.isPinned()).toBe(false);
+    });
+
+    test('setCorner_preserves_pinned_class_round_155', () => {
+        // Critical interaction test:
+        // round-154 setCorner() rebuilds
+        // root.className via
+        // `applyCornerClass()`, which
+        // would silently strip the
+        // `hud-pinned` class added by
+        // round-155 if the two helpers
+        // didn't coordinate. The
+        // contract: setCorner MUST
+        // preserve the pin state.
+        const { hud, root } = makeHud();
+        hud.setPinned(true);
+        expect(root.classList.contains('hud-pinned')).toBe(true);
+        // Toggling the corner must NOT
+        // drop the pin class.
+        hud.setCorner('bl');
+        expect(root.classList.contains('hud-pinned')).toBe(true);
+        expect(hud.isPinned()).toBe(true);
+        expect(root.classList.contains('hud-corner-bl')).toBe(true);
+    });
+
+    test('applyPinnedClass_is_idempotent_round_155', () => {
+        // Calling setPinned(true)
+        // twice must NOT add the
+        // `hud-pinned` class twice or
+        // otherwise mutate the root
+        // differently. Regression: a
+        // future refactor that appended
+        // without checking would
+        // duplicate the class.
+        const { hud, root } = makeHud();
+        hud.setPinned(true);
+        hud.setPinned(true);
+        expect(root.classList.contains('hud-pinned')).toBe(true);
+        // Count via DOMTokenList
+        // (matches returns the
+        // matching substrings; class
+        // names are space-separated so
+        // we use a regex-anchored match
+        // via split().filter()).
+        const tokens = root.className.split(/\s+/).filter(Boolean);
+        const pinCount = tokens.filter((t) => t === 'hud-pinned').length;
+        expect(pinCount).toBe(1);
+    });
+
+    test('state_round_trips_pinned_through_getState_round_155', () => {
+        // getState() must surface the
+        // `hudPinned` field so test-utils
+        // and the SettingsPanel
+        // (future) can read it.
+        const { hud } = makeHud();
+        hud.setPinned(true);
+        expect(hud.getState().hudPinned).toBe(true);
+        hud.setPinned(false);
+        expect(hud.getState().hudPinned).toBe(false);
+    });
+
+    test('BINDING_DESCRIPTIONS_includes_hud_pinned_hotkey_round_155', () => {
+        // The X key shortcut for the
+        // HUD pin toggle is mirrored in
+        // BINDING_DESCRIPTIONS so the
+        // help overlay auto-iterates it
+        // (same pattern as round-152's
+        // H key + round-153's J key +
+        // round-154's C key).
+        const pinnedRows = BINDING_DESCRIPTIONS.filter(
+            (d) => d.key === 'X' && d.action.includes('置顶')
+        );
+        expect(pinnedRows.length).toBeGreaterThanOrEqual(1);
+    });
 });

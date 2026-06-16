@@ -206,7 +206,17 @@ export type KeyboardAction =
     // codex toggle. C reads as "Corner".
     // One keystroke picks a new corner —
     // no sub-menu needed.
-    | { kind: 'cycle-hud-corner' };
+    | { kind: 'cycle-hud-corner' }
+    // Round 155 — toggle the always-on-top
+    // pin flag. When enabled, the
+    // `#hud-root` z-index jumps from
+    // 10 → 10000 so the HUD stays
+    // clickable above fullscreen
+    // Three.js canvases. X reads as
+    // "eXtra on top" / "X-ray" (see
+    // through the scene). One keystroke
+    // — no sub-menu needed.
+    | { kind: 'toggle-hud-pinned' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -561,6 +571,19 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // round-130 DSL codex toggle; C reads
     // as "Corner".)
     { key: 'C',    action: '切换 HUD 角落 (左上 → 右上 → 右下 → 左下)' },
+    // Round 155 — X key toggles the
+    // always-on-top pin flag. When
+    // enabled, the HUD z-index jumps
+    // from 10 to 10000 so the panel
+    // stays clickable above fullscreen
+    // Three.js canvases (操控性好 — the
+    // player can keep an eye on stats
+    // even when a fullscreen scene
+    // claims pointer-events). The
+    // preference persists in
+    // localStorage (`agi_hud_pinned`)
+    // so it survives page reloads.
+    { key: 'X',    action: '切换 HUD 置顶 (z-index 跳到 10000 防被覆盖)' },
 ];
 
 /**
@@ -1279,6 +1302,17 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'c':
         case 'C':
             return { kind: 'cycle-hud-corner' };
+        // Round 155 — X key toggles the
+        // always-on-top pin flag. X is
+        // the next free letter after C
+        // (which round 154 bound to
+        // corner cycling). X reads as
+        // "eXtra on top". Same pattern
+        // as the other HUD toggles —
+        // one keystroke, no sub-menu.
+        case 'x':
+        case 'X':
+            return { kind: 'toggle-hud-pinned' };
         default:
             return null;
     }
