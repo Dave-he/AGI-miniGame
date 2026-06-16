@@ -402,6 +402,68 @@ export type DslHistoryColumnSort = {
 } | null;
 
 /**
+ * Round 149 — module-
+ * level persistent
+ * state for the column
+ * sort + hidden columns.
+ * The render function
+ * reads from this state
+ * at the start of each
+ * call (so re-renders
+ * after a dimension
+ * change / atom entry
+ * preserve the player's
+ * choices) and writes
+ * back on every
+ * `doRender()` (so the
+ * state survives the
+ * next call). The
+ * reset button (round
+ * 142) clears BOTH the
+ * local `current*`
+ * variables AND this
+ * persistent state.
+ *
+ * Lives at module scope
+ * (NOT in the closure)
+ * because the closure is
+ * re-created on every
+ * `renderDslCodexPanel`
+ * call — without this,
+ * a player who sorted
+ * by actions-desc then
+ * entered a new atom
+ * would see the sort
+ * silently revert to
+ * dropdown default.
+ *
+ * Exposed via
+ * `clearPersistentPanelState`
+ * so tests can reset
+ * between runs.
+ */
+let persistentColumnSort: DslHistoryColumnSort = null;
+const persistentHiddenColumns: Set<DslHistoryColumn> = new Set();
+
+/**
+ * Round 149 — clear the
+ * module-level
+ * persistent panel state
+ * (column sort + hidden
+ * columns). Exported so
+ * tests can reset
+ * between runs. The
+ * reset button also
+ * calls this internally
+ * (mirrors the test
+ * escape hatch).
+ */
+export function clearPersistentPanelState(): void {
+    persistentColumnSort = null;
+    persistentHiddenColumns.clear();
+}
+
+/**
  * Render a `DslRule` back
  * to its source DSL form
  * (the inverse of
@@ -1864,7 +1926,7 @@ export function renderDslCodexPanel(
      * fresh
      * closure).
      */
-    let currentColumnSort: DslHistoryColumnSort = null;
+    let currentColumnSort: DslHistoryColumnSort = persistentColumnSort;
 
     /**
      * Round 148 — Set of
@@ -1888,7 +1950,15 @@ export function renderDslCodexPanel(
      * about, say, the
      * source column.
      */
-    let currentHiddenColumns: Set<DslHistoryColumn> = new Set();
+    // Round 149 — clone
+    // the persistent set
+    // so per-call
+    // mutations don't
+    // leak across calls
+    // before the next
+    // doRender() writes
+    // back.
+    let currentHiddenColumns: Set<DslHistoryColumn> = new Set(persistentHiddenColumns);
 
     /**
      * Round 135 —
@@ -2249,6 +2319,25 @@ export function renderDslCodexPanel(
         currentSearch = '';
         currentSort = 'chrono-oldest';
         currentColumnSort = null;
+        // Round 149 — also
+        // clear the
+        // column-visibility
+        // toggles (round
+        // 148). The reset
+        // button is the
+        // single "back to
+        // default" path;
+        // it must clear
+        // EVERY panel
+        // knob including
+        // the visibility
+        // state. The
+        // `doRender()`
+        // write-back will
+        // mirror this
+        // into the
+        // persistent state.
+        currentHiddenColumns.clear();
         doRender();
     };
 
@@ -2524,6 +2613,32 @@ export function renderDslCodexPanel(
         const outcome = getLastOutcome();
         const hasHistory = !!getRuleHistory;
         const clickable = hasHistory && !!onApplyHistory;
+        // Round 149 —
+        // snapshot the
+        // current sort +
+        // hidden columns to
+        // module-level
+        // persistent state
+        // BEFORE the
+        // render. This
+        // way the next
+        // `renderDslCodexPanel`
+        // call (after a
+        // dimension change,
+        // atom entry, etc.)
+        // restores the
+        // player's choices.
+        // The clone-on-read
+        // pattern in the
+        // closure init
+        // means we're
+        // writing back a
+        // snapshot of the
+        // current visible
+        // state.
+        persistentColumnSort = currentColumnSort;
+        persistentHiddenColumns.clear();
+        currentHiddenColumns.forEach((c) => persistentHiddenColumns.add(c));
         // Round 143 —
         // independent
         // of
