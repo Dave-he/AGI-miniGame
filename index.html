@@ -768,6 +768,22 @@
          the round-131 data-driven
          `PANEL_TOGGLE_BINDINGS` table. -->
     <div class="panel" id="dsl-codex-root" hidden></div>
+    <!-- Round 137 — inventory-root: home for the
+         pre-existing InventoryUI module
+         (`src/ui/InventoryUI.ts`). The UI
+         class was already implemented (use/drop
+         actions, kind icon, detail pane) but never
+         wired into the App — round 137 finally
+         mounts it on a panel-toggle. Hidden by
+         default; the I key + the new
+         `btn-inventory` mouse button toggle the
+         `hidden` attribute via App.toggleInventory().
+         The 15th entry in the round-131 data-driven
+         `PANEL_TOGGLE_BINDINGS` table. I is
+         mnemonic-friendly for "Inventory" + was
+         free in the panel-toggle group (no pre-
+         existing I mapping in routeKey). -->
+    <div class="panel" id="inventory-root" hidden></div>
 
     <!-- Round 57 — keyboard help overlay. Hidden by default;
          toggle with the ? key. The body is populated at runtime
@@ -879,6 +895,14 @@
            the K shortcut from the `(K)`
            label inside the button. -->
       <button class="ctl toggle-btn" id="btn-dsl-codex" data-key="K">📖 DSL 法典 (K)</button>
+      <!-- Round 137 — the 15th panel-toggle
+           (I key). Mouse-only players learn
+           the I shortcut from the `(I)` label
+           inside the button. Wires the pre-
+           existing `InventoryUI` module so
+           the player can see and use their
+           collected items. -->
+      <button class="ctl toggle-btn" id="btn-inventory" data-key="I">🎒 背包 (I)</button>
       <button class="ctl" id="btn-complete">完成试炼</button>
       <button class="ctl" id="btn-save">存档</button>
       <button class="ctl" id="btn-load">读档</button>

@@ -323,8 +323,8 @@ describe('KeyboardShortcuts', () => {
     // widened to 14 (K-DslCodex).
     // ---------------------------------------------------------------
 
-    describe('PANEL_TOGGLE_BINDINGS table (round 131/132/133)', () => {
-        it('has exactly 14 rows', () => {
+    describe('PANEL_TOGGLE_BINDINGS table (round 131/132/133/137)', () => {
+        it('has exactly 15 rows', () => {
             // Round 132 widened
             // the table from 12
             // → 13 rows (added
@@ -335,23 +335,32 @@ describe('KeyboardShortcuts', () => {
             // → 14 rows (added
             // the K-key
             // DslCodex panel).
-            expect(PANEL_TOGGLE_BINDINGS.length).toBe(14);
+            // Round 137 widened
+            // the table from 14
+            // → 15 rows (added
+            // the I-key
+            // Inventory panel —
+            // the pre-existing
+            // `InventoryUI` module
+            // finally wired into
+            // the App).
+            expect(PANEL_TOGGLE_BINDINGS.length).toBe(15);
         });
 
-        it('lists the 14 expected keys in QWERTY order', () => {
+        it('lists the 15 expected keys in QWERTY order', () => {
             const keys = PANEL_TOGGLE_BINDINGS.map((b) => b.key);
-            expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z', 'K']);
+            expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z', 'K', 'I']);
         });
 
-        it('has unique key / methodName / panelId / buttonId across all 14 rows', () => {
+        it('has unique key / methodName / panelId / buttonId across all 15 rows', () => {
             const keys = PANEL_TOGGLE_BINDINGS.map((b) => b.key);
             const methods = PANEL_TOGGLE_BINDINGS.map((b) => b.methodName);
             const panels = PANEL_TOGGLE_BINDINGS.map((b) => b.panelId);
             const buttons = PANEL_TOGGLE_BINDINGS.map((b) => b.buttonId);
-            expect(new Set(keys).size).toBe(14);
-            expect(new Set(methods).size).toBe(14);
-            expect(new Set(panels).size).toBe(14);
-            expect(new Set(buttons).size).toBe(14);
+            expect(new Set(keys).size).toBe(15);
+            expect(new Set(methods).size).toBe(15);
+            expect(new Set(panels).size).toBe(15);
+            expect(new Set(buttons).size).toBe(15);
         });
 
         it('every row has a non-empty Chinese label and action', () => {
@@ -447,12 +456,12 @@ describe('KeyboardShortcuts', () => {
         });
 
         it('PANEL_TOGGLE_DESCRIPTIONS is now a projection of PANEL_TOGGLE_BINDINGS', () => {
-            // The 14 help-overlay
+            // The 15 help-overlay
             // rows are
             // `{key, action}`
             // projections of the
             // table.
-            expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(14);
+            expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(15);
             for (let i = 0; i < PANEL_TOGGLE_BINDINGS.length; i++) {
                 const b = PANEL_TOGGLE_BINDINGS[i];
                 const d = PANEL_TOGGLE_DESCRIPTIONS[i];

@@ -111,6 +111,24 @@ import { renderEventLogPanel, EventLogPanelHandle } from './ui/EventLogPanel';
 // a small codex. 14th
 // panel-toggle.
 import { renderDslCodexPanel, DslCodexPanelHandle } from './ui/DslCodexPanel';
+// Round 137 — wire the
+// pre-existing
+// `InventoryUI` module
+// (use/drop actions,
+// kind icon, detail
+// pane — already
+// implemented in
+// `src/ui/InventoryUI.ts`
+// with its own test
+// suite, but never
+// instantiated by the
+// App). The 15th panel-
+// toggle (I key +
+// `btn-inventory` mouse
+// button) finally
+// mounts it on
+// `#inventory-root`.
+import { InventoryUI } from './ui/InventoryUI';
 // Round 48 — `themeToScene` itself is no longer called from main.ts;
 // the WASM bridge below wraps it. The `ThemeInput` type alias is
 // still needed to type the input to the bridge.
@@ -196,6 +214,31 @@ interface AppRefs {
      * way to open the panel.
      */
     dslCodexRoot?: HTMLElement;
+    /**
+     * Round 137 — optional root
+     * for the pre-existing
+     * `InventoryUI` module
+     * (use/drop actions,
+     * kind icon, detail
+     * pane). The 15th
+     * panel-toggle (I key +
+     * `btn-inventory` mouse
+     * button) wires the
+     * UI to this mount
+     * point. The UI class
+     * is constructed only
+     * if the host page
+     * provides a DOM node
+     * with id
+     * `inventory-root` —
+     * pre-round-137 pages
+     * that don't include
+     * the mount point
+     * still boot cleanly
+     * (the toggle is a
+     * no-op for them).
+     */
+    inventoryRoot?: HTMLElement;
     /**
      * Round 111 — optional root for the
      * SettingsPanel (audio / difficulty /
@@ -418,6 +461,21 @@ class App {
      * not provided.
      */
     private dslCodexHandle: DslCodexPanelHandle | null = null;
+    /**
+     * Round 137 — the pre-existing
+     * `InventoryUI` instance
+     * (use/drop actions, kind
+     * icon, detail pane). Null
+     * when the mount point is
+     * not provided. The
+     * `refresh()` re-renders
+     * the inventory list
+     * (called from the same
+     * `onHotEvent` listener
+     * that drives the
+     * dslCodexHandle).
+     */
+    private inventoryUI: InventoryUI | null = null;
     /**
      * Round 133 — the most
      * recently accepted
@@ -1212,6 +1270,55 @@ class App {
                         this.analytics.track('dsl.rejected', {
                             reason: 'history-replay-rate-limit-or-compile-in-flight',
                             event: rule.event.kind,
+                        });
+                    }
+                },
+            );
+        }
+        // Round 137 — wire
+        // the pre-existing
+        // `InventoryUI`
+        // module (use/drop
+        // actions, kind
+        // icon, detail
+        // pane — already
+        // implemented in
+        // `src/ui/InventoryUI.ts`
+        // with its own test
+        // suite, but never
+        // instantiated by
+        // the App). The 15th
+        // panel-toggle (I
+        // key + `btn-inventory`
+        // mouse button)
+        // finally mounts it
+        // on `#inventory-root`.
+        // The `onAction`
+        // callback logs the
+        // use/drop result to
+        // the HUD (so the
+        // player sees "使用
+        // 生命药剂，恢复 20
+        // 体力" or "丢弃 X")
+        // + emits an
+        // analytics event for
+        // replay analysis.
+        if (refs.inventoryRoot) {
+            this.inventoryUI = new InventoryUI(
+                refs.inventoryRoot,
+                this.worldState,
+                (action) => {
+                    if (action.type === 'used' && action.result) {
+                        this.hud.log(`[背包] ${action.result}`);
+                        this.analytics.track('item.used', {
+                            itemId: action.itemId,
+                            name: action.name,
+                        });
+                    } else if (action.type === 'dropped') {
+                        this.hud.log(`[背包] 丢弃 ${action.name}`);
+                        this.analytics.track('item.dropped', {
+                            itemId: action.itemId,
+                            name: action.name,
                         });
                     }
                 },
@@ -2180,6 +2287,30 @@ class App {
      * pattern).
      */
     toggleDslCodex(): void { this.toggleByMethod('toggleDslCodex'); }
+
+    /**
+     * Round 137 — I key toggles
+     * the Inventory panel
+     * (`#inventory-root`,
+     * populated by the pre-
+     * existing `InventoryUI`
+     * module that round 137
+     * finally wires into the
+     * App). The 15th panel-
+     * toggle in the
+     * round-131 data-driven
+     * `PANEL_TOGGLE_BINDINGS`
+     * table. Delegates to the
+     * round-117 `togglePanel`
+     * helper via the
+     * `toggleByMethod` indirection
+     * (so the panelId / label /
+     * key all come from the
+     * `PANEL_TOGGLE_BINDINGS`
+     * row, not from inline
+     * strings).
+     */
+    toggleInventory(): void { this.toggleByMethod('toggleInventory'); }
 
     /**
      * Round 117 — shared panel-toggle
@@ -3328,6 +3459,11 @@ async function bootstrap(): Promise<void> {
     const debugOverlayRoot = document.getElementById('debug-overlay-root') as HTMLElement | null;
     const eventLogRoot = document.getElementById('event-log-root') as HTMLElement | null;
     const dslCodexRoot = document.getElementById('dsl-codex-root') as HTMLElement | null;
+    // Round 137 — 15th panel-toggle
+    // (I key) wires the pre-
+    // existing `InventoryUI`
+    // module to `#inventory-root`.
+    const inventoryRoot = document.getElementById('inventory-root') as HTMLElement | null;
     if (!canvas || !hudRoot || !progRoot || !econRoot || !epochRoot) {
         console.error('Missing required DOM roots');
         return;
@@ -3349,6 +3485,7 @@ async function bootstrap(): Promise<void> {
         debugOverlayRoot: debugOverlayRoot ?? undefined,
         eventLogRoot: eventLogRoot ?? undefined,
         dslCodexRoot: dslCodexRoot ?? undefined,
+        inventoryRoot: inventoryRoot ?? undefined,
     });
     (window as any).__AGI__ = app;
     await app.start();
@@ -3479,9 +3616,10 @@ async function bootstrap(): Promise<void> {
             // border.
             // Round 132 — Z (13th).
             // Round 133 — K (14th).
+            // Round 137 — I (15th).
             const toggleHeader = document.createElement('div');
             toggleHeader.className = 'kb-help-section kb-help-section-toggle';
-            toggleHeader.textContent = '面板开关 (14 键)';
+            toggleHeader.textContent = '面板开关 (15 键)';
             body.appendChild(toggleHeader);
             for (const d of PANEL_TOGGLE_DESCRIPTIONS) {
                 const keyEl = document.createElement('div');

@@ -136,7 +136,45 @@ export type KeyboardAction =
     // driven
     // `PANEL_TOGGLE_BINDINGS`
     // table.
-    | { kind: 'toggle-dsl-codex' };
+    | { kind: 'toggle-dsl-codex' }
+    // Round 137 — I key toggles
+    // the Inventory panel
+    // (`#inventory-root`,
+    // populated by the pre-
+    // existing `InventoryUI`
+    // module that round 137
+    // finally wires into the
+    // App). The panel renders
+    // the player's current
+    // inventory (the round-20
+    // Vault's on-hand items)
+    // as a list with kind
+    // icons + a detail pane
+    // with "使用" / "丢弃"
+    // action buttons. I is
+    // mnemonic for "Inventory"
+    // + was free in the panel-
+    // toggle group (no pre-
+    // existing I mapping in
+    // routeKey). The 15th
+    // entry in the round-131
+    // data-driven
+    // `PANEL_TOGGLE_BINDINGS`
+    // table. Adding it
+    // required exactly 1 row
+    // here + 1 entry in the
+    // `routeKey` switch + 1
+    // entry in the
+    // `KeyboardAction` union.
+    // Everything else
+    // (wrapper method body +
+    // bind() entry +
+    // BINDING_DESCRIPTIONS
+    // row + help-overlay
+    // 15th row + mount point
+    // + button) follows
+    // automatically.
+    | { kind: 'toggle-inventory' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -440,6 +478,23 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // `PANEL_TOGGLE_BINDINGS`
     // table.
     { key: 'K',    action: '切换 DSL 法典面板 (最近生成的规则)' },
+    // Round 137 — I key toggles
+    // the Inventory panel
+    // (`#inventory-root`,
+    // populated by the pre-
+    // existing `InventoryUI`
+    // module that round 137
+    // finally wires into the
+    // App). The 15th panel-
+    // toggle in the
+    // round-131 data-driven
+    // `PANEL_TOGGLE_BINDINGS`
+    // table. I is mnemonic
+    // for "Inventory" + was
+    // free in the panel-toggle
+    // group (no pre-existing
+    // I mapping in routeKey).
+    { key: 'I',    action: '切换背包面板 (使用/丢弃物品)' },
 ];
 
 /**
@@ -696,6 +751,57 @@ export const PANEL_TOGGLE_BINDINGS: ReadonlyArray<PanelToggleBinding> = [
     // point + button)
     // follows automatically.
     { key: 'K', kind: 'toggle-dsl-codex',        panelId: 'dsl-codex-root',     label: 'DSL 法典',         action: 'DSL 法典面板 (最近生成的规则)', methodName: 'toggleDslCodex',         buttonId: 'btn-dsl-codex' },
+    // Round 137 — I key toggles
+    // the Inventory panel
+    // (`#inventory-root`,
+    // populated by the pre-
+    // existing `InventoryUI`
+    // module that round 137
+    // finally wires into the
+    // App). The panel renders
+    // the player's on-hand
+    // items with kind icons
+    // (🧪 consumable /
+    // ⚔️ equipment /
+    // 🔑 key /
+    // 📜 lore /
+    // 💰 currency) +
+    // a detail pane with
+    // "使用" / "丢弃"
+    // action buttons. The
+    // pre-existing
+    // `InventoryUI.use()`
+    // method handles the
+    // "use" semantics for
+    // each kind (consumable
+    // → heal, key → place-
+    // specific, currency
+    // → not directly
+    // usable, etc). I is
+    // mnemonic for
+    // "Inventory" + was
+    // free in the panel-
+    // toggle group (no
+    // pre-existing I
+    // mapping in routeKey).
+    // This is the 15th
+    // entry in the
+    // round-131 data-
+    // driven
+    // `PANEL_TOGGLE_BINDINGS`
+    // table — the data-
+    // driven pattern has
+    // now been triple-
+    // validated (rounds
+    // 132 + 133 + 137 all
+    // added their panel-
+    // toggles with exactly
+    // 1 row here + 1
+    // routeKey case + 1
+    // KeyboardAction union
+    // member, no other
+    // wiring).
+    { key: 'I', kind: 'toggle-inventory',        panelId: 'inventory-root',     label: '背包面板',         action: '背包面板 (使用/丢弃物品)',  methodName: 'toggleInventory',        buttonId: 'btn-inventory' },
 ];
 
 /**
@@ -1057,6 +1163,25 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'k':
         case 'K':
             return { kind: 'toggle-dsl-codex' };
+        // Round 137 — I key toggles
+        // the Inventory panel
+        // (`#inventory-root`,
+        // populated by the pre-
+        // existing `InventoryUI`
+        // module that round 137
+        // finally wires into the
+        // App). The case-
+        // insensitive mirror
+        // matches the round-85
+        // R / round-91 ` /
+        // round-112 P /
+        // round-128 D /
+        // round-132 Z /
+        // round-133 K
+        // conventions.
+        case 'i':
+        case 'I':
+            return { kind: 'toggle-inventory' };
         default:
             return null;
     }

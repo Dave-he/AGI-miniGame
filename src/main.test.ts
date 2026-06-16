@@ -57,7 +57,7 @@ import { makeWasmStub } from './test-utils/sceneGenWasmStub';
 // it). TypeScript dedupes the import
 // so there's no runtime or type
 // conflict.
-import { routeKey, BINDING_DESCRIPTIONS, PANEL_TOGGLE_DESCRIPTIONS } from './input/KeyboardShortcuts';
+import { routeKey, BINDING_DESCRIPTIONS, PANEL_TOGGLE_DESCRIPTIONS, PANEL_TOGGLE_BINDINGS } from './input/KeyboardShortcuts';
 import {
     enterDimensionWithStub,
     enterDimensionWithFailingWasm,
@@ -6729,11 +6729,11 @@ describe('App — round 120: concentrated help-overlay section for 8 panel-toggl
     // 12-key QWERTY order (round 128 added D).
     // -----------------------------------------------------------------
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_14_keys (round 120/121/128/132/133)', () => {
-        // The 14 panel-toggle
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_15_keys (round 120/121/128/132/133/137)', () => {
+        // The 15 panel-toggle
         // keys: P / Q / W / T /
         // F / M / V / B / G / N
-        // / O / D / Z / K
+        // / O / D / Z / K / I
         // (round-128 D extension
         // for the DebugOverlay
         // panel; round-132 Z
@@ -6741,13 +6741,15 @@ describe('App — round 120: concentrated help-overlay section for 8 panel-toggl
         // EventLog panel;
         // round-133 K extension
         // for the DslCodex
-        // panel).
-        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(14);
+        // panel; round-137 I
+        // extension for the
+        // Inventory panel).
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(15);
     });
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_lists_14_expected_keys (round 120/121/128/132/133)', () => {
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_15_expected_keys (round 120/121/128/132/133/137)', () => {
         const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
-        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z', 'K']);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z', 'K', 'I']);
     });
 
     test('PANEL_TOGGLE_DESCRIPTIONS_every_key_has_a_chinese_action (round 120)', () => {
@@ -6912,7 +6914,7 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
     // row order.
     // -----------------------------------------------------------------
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_14_keys (round 121/128/132/133)', () => {
+    test('PANEL_TOGGLE_DESCRIPTIONS_exactly_15_keys (round 121/128/132/133/137)', () => {
         // Extends round-120
         // 8 rows by 3 new
         // panel-toggle rows
@@ -6920,21 +6922,26 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         // 12th row (D) + round-132
         // 13th row (Z) +
         // round-133 14th row
-        // (K).
-        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(14);
+        // (K) + round-137 15th
+        // row (I — Inventory
+        // panel that wires the
+        // pre-existing
+        // `InventoryUI`).
+        expect(PANEL_TOGGLE_DESCRIPTIONS.length).toBe(15);
     });
 
-    test('PANEL_TOGGLE_DESCRIPTIONS_lists_14_expected_keys (round 121/128/132/133)', () => {
-        // 14 panel-toggle keys
+    test('PANEL_TOGGLE_DESCRIPTIONS_lists_15_expected_keys (round 121/128/132/133/137)', () => {
+        // 15 panel-toggle keys
         // in QWERTY order. The
         // round-120 8 keys are
         // preserved + 3 new
         // keys (G / N / O) +
         // round-128 D key +
         // round-132 Z key +
-        // round-133 K key.
+        // round-133 K key +
+        // round-137 I key.
         const keys = PANEL_TOGGLE_DESCRIPTIONS.map((d) => d.key);
-        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z', 'K']);
+        expect(keys).toEqual(['P', 'Q', 'W', 'T', 'F', 'M', 'V', 'B', 'G', 'N', 'O', 'D', 'Z', 'K', 'I']);
     });
 
     test('PANEL_TOGGLE_DESCRIPTIONS_G_N_O_rows_have_chinese_actions (round 121)', () => {
@@ -7117,7 +7124,7 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         expect(main).not.toMatch(/bind\('btn-epoch',\s*\(\)\s*=>\s*app\.toggleEpoch\(\)\)/);
     });
 
-    test('main_ts_help_overlay_header_says_14_keys (round 121/128/132/133)', () => {
+    test('main_ts_help_overlay_header_says_15_keys (round 121/128/132/133/137)', () => {
         // The 3rd section header
         // in the help overlay
         // (round-120
@@ -7129,16 +7136,18 @@ describe('App — round 121: G / N / O 3-key panel-toggle batch (操控性好 �
         // "面板开关 (12 键)"
         // post-round-128,
         // "面板开关 (13 键)"
-        // post-round-132, and
+        // post-round-132,
         // "面板开关 (14 键)"
-        // post-round-133. The
-        // round-133 update is
+        // post-round-133, and
+        // "面板开关 (15 键)"
+        // post-round-137. The
+        // round-137 update is
         // important so a player
         // scanning the section
         // knows how many keys
         // are listed.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toMatch(/面板开关 \(14 键\)/);
+        expect(main).toMatch(/面板开关 \(15 键\)/);
     });
 });
 
@@ -7964,8 +7973,108 @@ describe('App — round 133: K-key DslCodex panel (AGI most-recent DslRule codex
         // drift caught by
         // this test.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toContain('面板开关 (14 键)');
-        expect(main).not.toContain('面板开关 (13 键)');
+        expect(main).toContain('面板开关 (15 键)');
+        expect(main).not.toContain('面板开关 (14 键)');
+    });
+});
+
+describe('App — round 137: I-key Inventory panel (pre-existing InventoryUI finally wired) (操控性好 UX)', () => {
+    test('routeKey_i_returns_toggle_inventory_action (round 137)', () => {
+        // Round 137 — lowercase
+        // i routes to
+        // toggle-inventory. The
+        // I key was free in the
+        // panel-toggle group
+        // pre-round-137 (no
+        // pre-existing I mapping
+        // in routeKey), and I is
+        // mnemonic for
+        // "Inventory".
+        expect(routeKey('i')).toEqual({ kind: 'toggle-inventory' });
+        // Case-insensitive
+        // mirror (matches the
+        // round-85 R / round-91
+        // ` / round-112 P /
+        // round-128 D / round-132
+        // Z / round-133 K
+        // conventions).
+        expect(routeKey('I')).toEqual({ kind: 'toggle-inventory' });
+    });
+
+    test('PANEL_TOGGLE_BINDINGS_includes_15th_inventory_row (round 137)', () => {
+        const inventory = PANEL_TOGGLE_BINDINGS.find((b) => b.key === 'I');
+        expect(inventory).toBeDefined();
+        expect(inventory?.kind).toBe('toggle-inventory');
+        expect(inventory?.panelId).toBe('inventory-root');
+        expect(inventory?.methodName).toBe('toggleInventory');
+        expect(inventory?.buttonId).toBe('btn-inventory');
+        // The label + action
+        // are Chinese
+        // (defense against
+        // future refactors
+        // that drop the
+        // Chinese
+        // localization).
+        expect(inventory?.label).toMatch(/[一-鿿]/);
+        expect(inventory?.action).toMatch(/[一-鿿]/);
+    });
+
+    test('App_exposes_toggleInventory_method (round 137)', () => {
+        // The wrapper
+        // delegates to
+        // `toggleByMethod` so
+        // the panelId / label /
+        // key all come from
+        // the
+        // PANEL_TOGGLE_BINDINGS
+        // row, not from
+        // inline strings.
+        const fs = require('fs');
+        const path = require('path');
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/toggleInventory\(\)\s*:\s*void\s*\{\s*this\.toggleByMethod\(['"]toggleInventory['"]\)/);
+    });
+
+    test('App_wires_inventoryUI_in_constructor (round 137)', () => {
+        // The pre-existing
+        // InventoryUI class
+        // is finally
+        // instantiated by
+        // the App when the
+        // host page provides
+        // a DOM node with id
+        // `inventory-root`.
+        const fs = require('fs');
+        const path = require('path');
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/new\s+InventoryUI\s*\(\s*refs\.inventoryRoot/);
+        // The onAction
+        // callback logs
+        // use/drop
+        // results + emits
+        // item.used /
+        // item.dropped
+        // analytics.
+        expect(main).toMatch(/this\.analytics\.track\(['"]item\.used['"]/);
+        expect(main).toMatch(/this\.analytics\.track\(['"]item\.dropped['"]/);
+    });
+
+    test('index_html_has_inventory_mount_point_and_button (round 137)', () => {
+        const fs = require('fs');
+        const path = require('path');
+        const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf-8');
+        // The mount point
+        // (the div the
+        // InventoryUI panel
+        // renders into).
+        expect(html).toMatch(/id="inventory-root"/);
+        // The mouse button
+        // (counterpart to
+        // the I key for
+        // mouse-only
+        // players).
+        expect(html).toMatch(/id="btn-inventory"/);
+        expect(html).toMatch(/data-key="I"/);
     });
 });
 
