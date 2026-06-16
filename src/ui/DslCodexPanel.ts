@@ -1094,9 +1094,71 @@ function countHistoryVisible(
  * spreadsheet
  * UIs.
  */
+
+/**
+ * Round 148 — render a
+ * column-visibility
+ * toggle row. Three
+ * small `👁` /
+ * `—` buttons, one per
+ * data column (索引 /
+ * 源码 / 动作). Clicking
+ * a button toggles that
+ * column's visibility
+ * in the history list
+ * (the column header
+ * cell AND the
+ * corresponding data
+ * cell are both
+ * omitted). Mirrors
+ * Finder / Explorer's
+ * right-click "show /
+ * hide columns" pattern.
+ *
+ * The toggle row is
+ * ALWAYS rendered when
+ * the history is shown
+ * — even when all
+ * columns are visible
+ * — so the player knows
+ * the feature exists.
+ *
+ * Empty array: returns
+ * '' (no-op).
+ */
+function renderColumnVisibilityToggle(
+    hiddenColumns: Set<DslHistoryColumn>,
+): string {
+    if (hiddenColumns === null || hiddenColumns === undefined) return '';
+    // Use stable
+    // column order
+    // matching the
+    // header row: idx
+    // / source /
+    // actions.
+    const columns: ReadonlyArray<{ key: DslHistoryColumn; label: string }> = [
+        { key: 'idx',     label: '索引' },
+        { key: 'source',  label: '源码' },
+        { key: 'actions', label: '动作' },
+    ];
+    const cells = columns.map(({ key, label }) => {
+        const isHidden = hiddenColumns.has(key);
+        const cls = isHidden
+            ? 'dsl-codex-col-toggle dsl-codex-col-toggle-hidden'
+            : 'dsl-codex-col-toggle';
+        const icon = isHidden ? '—' : '👁';
+        const title = isHidden
+            ? `显示 ${label} 列`
+            : `隐藏 ${label} 列`;
+        return `<button type="button" class="${cls}" data-toggle-column="${key}" title="${title}">${icon} ${label}</button>`;
+    }).join('');
+    return `<div class="dsl-codex-col-toggle-row">${cells}</div>`;
+}
+
 function renderHistoryColumnHeader(
     columnSort: DslHistoryColumnSort,
     hasPreview: boolean,
+    hiddenColumns: Set<DslHistoryColumn>,
 ): string {
     // When rows have a
     // trailing "→"
@@ -1117,6 +1179,19 @@ function renderHistoryColumnHeader(
     // misaligned with
     // the last data
     // column).
+    //
+    // Round 148 — when a
+    // column is in
+    // `hiddenColumns`,
+    // BOTH the header
+    // cell AND the
+    // corresponding
+    // data cell are
+    // omitted, so the
+    // visual grid stays
+    // aligned (mirrors
+    // the row template's
+    // column logic).
     const previewHeader = hasPreview
         ? '<span class="dsl-codex-history-col-preview" data-column="preview"></span>'
         : '';
@@ -1124,7 +1199,8 @@ function renderHistoryColumnHeader(
         id: string,
         column: DslHistoryColumn,
         label: string,
-    ): string => {
+    ): string | null => {
+        if (hiddenColumns.has(column)) return null;
         const active = columnSort?.column === column;
         const indicator = active
             ? (columnSort?.direction === 'asc' ? ' ↑' : ' ↓')
@@ -1137,11 +1213,14 @@ function renderHistoryColumnHeader(
             : 'none';
         return `<span class="${cls}" id="${id}" data-column="${column}" aria-sort="${ariaSort}" role="button" tabindex="0" title="按${label}排序">${label}${indicator}</span>`;
     };
+    const idxHdr = renderHeader('dsl-codex-history-col-header-idx',     'idx',     '索引');
+    const srcHdr = renderHeader('dsl-codex-history-col-header-source',  'source',  '源码');
+    const actHdr = renderHeader('dsl-codex-history-col-header-actions', 'actions', '动作');
     return `
         <div class="dsl-codex-history-col-header-row">
-            ${renderHeader('dsl-codex-history-col-header-idx',     'idx',     '索引')}
-            ${renderHeader('dsl-codex-history-col-header-source',  'source',  '源码')}
-            ${renderHeader('dsl-codex-history-col-header-actions', 'actions', '动作')}
+            ${idxHdr ?? ''}
+            ${srcHdr ?? ''}
+            ${actHdr ?? ''}
             ${previewHeader}
         </div>
     `;
@@ -1204,6 +1283,30 @@ function renderHistoryList(
     // the
     // dropdown.
     columnSort: DslHistoryColumnSort,
+    // Round 148 —
+    // Set of
+    // columns the
+    // player has
+    // toggled off
+    // via the
+    // column-
+    // visibility
+    // toggle row.
+    // Header cells
+    // AND data
+    // cells for
+    // these columns
+    // are omitted
+    // from the
+    // rendered list.
+    // The preview
+    // button cell
+    // is unaffected
+    // (it's a
+    // separate
+    // concern from
+    // data columns).
+    hiddenColumns: Set<DslHistoryColumn>,
 ): string {
     // Round 136 —
     // apply the
@@ -1396,11 +1499,34 @@ function renderHistoryList(
         // apply-only,
         // or both.
         const previewBtn = previewable ? renderHistoryPreviewButton(i) : '';
+        // Round 148 —
+        // hidden-column
+        // cells are
+        // omitted
+        // (mirrors the
+        // header-row
+        // omission
+        // logic). The
+        // preview button
+        // cell is always
+        // shown (it's a
+        // separate
+        // concern from
+        // data columns).
+        const idxCell = hiddenColumns.has('idx')
+            ? ''
+            : `<span class="dsl-codex-history-idx">#${i + 1}</span>`;
+        const srcCell = hiddenColumns.has('source')
+            ? ''
+            : `<span class="dsl-codex-history-source">${escapeHtml(preview)}</span>`;
+        const actCell = hiddenColumns.has('actions')
+            ? ''
+            : `<span class="dsl-codex-history-actions">${rule.actions.length} 动作</span>`;
         return `
             <div class="${cls}"${dataAttr}>
-                <span class="dsl-codex-history-idx">#${i + 1}</span>
-                <span class="dsl-codex-history-source">${escapeHtml(preview)}</span>
-                <span class="dsl-codex-history-actions">${rule.actions.length} 动作</span>
+                ${idxCell}
+                ${srcCell}
+                ${actCell}
                 ${previewBtn}
             </div>
         `;
@@ -1427,7 +1553,7 @@ function renderHistoryList(
     // (handled
     // via
     // `dispatchColumnSort`).
-    const headerRow = renderHistoryColumnHeader(columnSort, previewable);
+    const headerRow = renderHistoryColumnHeader(columnSort, previewable, hiddenColumns);
     return `<div class="dsl-codex-history-list">${headerRow}${rows}</div>`;
 }
 
@@ -1739,6 +1865,30 @@ export function renderDslCodexPanel(
      * closure).
      */
     let currentColumnSort: DslHistoryColumnSort = null;
+
+    /**
+     * Round 148 — Set of
+     * columns currently
+     * hidden by the player
+     * via the column-
+     * visibility toggle row.
+     * Starts empty (all
+     * columns visible). A
+     * column can be
+     * hidden even when no
+     * column sort is
+     * active; the column
+     * header and the data
+     * cell are both
+     * omitted from the
+     * rendered list. Used
+     * to declutter the
+     * panel when the
+     * player only cares
+     * about, say, the
+     * source column.
+     */
+    let currentHiddenColumns: Set<DslHistoryColumn> = new Set();
 
     /**
      * Round 135 —
@@ -2200,6 +2350,62 @@ export function renderDslCodexPanel(
     };
 
     /**
+     * Round 148 —
+     * dispatch the
+     * `click` event on
+     * a column-
+     * visibility toggle
+     * button (the
+     * `👁 X` / `— X`
+     * row above the
+     * history list).
+     * Toggles that
+     * column's
+     * membership in
+     * `currentHiddenColumns`
+     * AND — defense in
+     * depth — if the
+     * player hides the
+     * column they're
+     * currently sorting
+     * by, clear the
+     * column sort
+     * (otherwise the
+     * hidden column
+     * would still be
+     * driving the row
+     * order, which is
+     * confusing UX).
+     */
+    const dispatchToggleColumn = (target: EventTarget | null) => {
+        if (!getRuleHistory) return;
+        const btn = (target as HTMLElement | null)?.closest(
+            '.dsl-codex-col-toggle'
+        ) as HTMLElement | null;
+        if (!btn) return;
+        const column = btn.getAttribute('data-toggle-column');
+        if (column !== 'idx' && column !== 'source' && column !== 'actions') return;
+        if (currentHiddenColumns.has(column)) {
+            currentHiddenColumns.delete(column);
+        } else {
+            currentHiddenColumns.add(column);
+            // If the column being
+            // hidden is the one
+            // currently driving
+            // the sort, clear the
+            // sort so the player
+            // doesn't get
+            // "sorting by a
+            // column you can't
+            // see" UX.
+            if (currentColumnSort !== null && currentColumnSort.column === column) {
+                currentColumnSort = null;
+            }
+        }
+        doRender();
+    };
+
+    /**
      * Round 143 —
      * dispatch the
      * `click` event on
@@ -2351,8 +2557,9 @@ export function renderDslCodexPanel(
                             ${renderHistorySearch(currentSearch)}
                             ${renderHistorySort(currentSort)}
                             ${renderHistoryReset()}
+                            ${renderColumnVisibilityToggle(currentHiddenColumns)}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
-                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable, currentColumnSort)}
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable, currentColumnSort, currentHiddenColumns)}
                         `;
                     })() : ''}
                 </div>
@@ -2389,8 +2596,9 @@ export function renderDslCodexPanel(
                             ${renderHistorySearch(currentSearch)}
                             ${renderHistorySort(currentSort)}
                             ${renderHistoryReset()}
+                            ${renderColumnVisibilityToggle(currentHiddenColumns)}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
-                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable, currentColumnSort)}
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable, currentColumnSort, currentHiddenColumns)}
                         `;
                     })()}
                 ` : ''}
@@ -2603,6 +2811,35 @@ export function renderDslCodexPanel(
                 dispatchPreview(target);
             }
         });
+    }
+
+    // Round 148 — wire
+    // the `click` event
+    // on the column-
+    // visibility toggle
+    // row. The toggle
+    // row is always
+    // rendered (when
+    // history is
+    // present) regardless
+    // of `onApplyHistory`
+    // or `onPreviewHistory`
+    // — column visibility
+    // is a separate
+    // concern from
+    // click-to-apply or
+    // preview. The
+    // toggle buttons are
+    // siblings of (NOT
+    // inside) the data
+    // rows, so no
+    // `stopPropagation`
+    // is needed (a
+    // toggle click never
+    // reaches a row
+    // click handler).
+    if (getRuleHistory) {
+        root.addEventListener('click', (e) => dispatchToggleColumn(e.target));
     }
 
     // Round 136 —

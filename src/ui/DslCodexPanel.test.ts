@@ -3992,3 +3992,241 @@ test('round_144_column_sort_works_in_null_rule_branch', () => {
     expect(updated.classList.contains('dsl-codex-history-col-header-active')).toBe(true);
 });
 
+// ============================================================================
+// Round 148 — Column-level hide/show via the new visibility toggle row.
+// Each data column (索引 / 源码 / 动作) gets a `👁` button; clicking
+// it toggles the column's visibility in BOTH the header row AND the data
+// rows. Defense in depth: hiding the currently-sorted column auto-clears
+// the column sort so the player doesn't get "sorting by a column you can't
+// see" UX.
+// ============================================================================
+
+test('round_148_with_history_renders_3_column_visibility_toggles', () => {
+    // The toggle row is ALWAYS rendered when history is shown —
+    // even when all columns are visible. 3 buttons (one per
+    // data column) in the order matching the header row.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const toggles = root.querySelectorAll('.dsl-codex-col-toggle');
+    expect(toggles.length).toBe(3);
+    // Ordered: idx, source, actions.
+    expect(toggles[0].getAttribute('data-toggle-column')).toBe('idx');
+    expect(toggles[1].getAttribute('data-toggle-column')).toBe('source');
+    expect(toggles[2].getAttribute('data-toggle-column')).toBe('actions');
+    // All start in "visible" state.
+    toggles.forEach((t) => {
+        expect(t.classList.contains('dsl-codex-col-toggle-hidden')).toBe(false);
+        expect(t.textContent).toContain('👁');
+    });
+});
+
+test('round_148_no_history_callback_means_no_toggle_row', () => {
+    // No history → no toggle row (mirrors the round-134 history
+    // opt-in contract).
+    const root = makeRoot();
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        undefined, // no getRuleHistory
+    );
+    expect(root.querySelector('.dsl-codex-col-toggle-row')).toBeNull();
+});
+
+test('round_148_clicking_idx_toggle_hides_idx_header_and_cells', () => {
+    // Click the idx toggle → idx column disappears from both the
+    // header row AND the data rows.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const idxBtn = root.querySelector('[data-toggle-column="idx"]') as HTMLElement;
+    idxBtn.click();
+    // Re-query (doRender detached the old toggle row).
+    expect(root.querySelector('#dsl-codex-history-col-header-idx')).toBeNull();
+    // Data rows: no `.dsl-codex-history-idx` cells either.
+    expect(root.querySelectorAll('.dsl-codex-history-idx').length).toBe(0);
+    // The source + actions columns are still there.
+    expect(root.querySelector('#dsl-codex-history-col-header-source')).not.toBeNull();
+    expect(root.querySelector('#dsl-codex-history-col-header-actions')).not.toBeNull();
+    // Re-queried toggle is now in hidden state.
+    const updatedBtn = root.querySelector('[data-toggle-column="idx"]') as HTMLElement;
+    expect(updatedBtn.classList.contains('dsl-codex-col-toggle-hidden')).toBe(true);
+    expect(updatedBtn.textContent).toContain('—');
+});
+
+test('round_148_clicking_hidden_toggle_shows_column_again', () => {
+    // Click → hide; click again → show. The toggle is a 2-state
+    // switch, not a 3-state cycle.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const btn = root.querySelector('[data-toggle-column="source"]') as HTMLElement;
+    btn.click();
+    expect((root.querySelector('[data-toggle-column="source"]') as HTMLElement)
+        .classList.contains('dsl-codex-col-toggle-hidden')).toBe(true);
+    (root.querySelector('[data-toggle-column="source"]') as HTMLElement).click();
+    // After re-show: source header AND data cells are back.
+    expect(root.querySelector('#dsl-codex-history-col-header-source')).not.toBeNull();
+    expect(root.querySelectorAll('.dsl-codex-history-source').length).toBe(history.length);
+    // Toggle button is back to "visible" state.
+    expect((root.querySelector('[data-toggle-column="source"]') as HTMLElement)
+        .classList.contains('dsl-codex-col-toggle-hidden')).toBe(false);
+});
+
+test('round_148_hiding_all_3_columns_still_renders_rows', () => {
+    // Hide all 3 columns → each row is just the (empty) grid
+    // container with no data cells. The panel is still useful for
+    // a player who only cares about the preview button.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    (root.querySelector('[data-toggle-column="idx"]') as HTMLElement).click();
+    (root.querySelector('[data-toggle-column="source"]') as HTMLElement).click();
+    (root.querySelector('[data-toggle-column="actions"]') as HTMLElement).click();
+    // No data cells of any kind.
+    expect(root.querySelectorAll('.dsl-codex-history-idx').length).toBe(0);
+    expect(root.querySelectorAll('.dsl-codex-history-source').length).toBe(0);
+    expect(root.querySelectorAll('.dsl-codex-history-actions').length).toBe(0);
+    // No column headers either.
+    expect(root.querySelectorAll('.dsl-codex-history-col-header').length).toBe(0);
+    // But the rows themselves are still rendered.
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(history.length);
+});
+
+test('round_148_hiding_actions_column_keeps_data_rows_in_dropdown_sort_order', () => {
+    // Hide the actions column → rows are still rendered in the
+    // current sort order (default = chrono-oldest).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' },   actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    (root.querySelector('[data-toggle-column="actions"]') as HTMLElement).click();
+    // Both rows still rendered, in chrono-oldest order (#1 then #2).
+    const rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(2);
+    expect(rows[0].textContent).toContain('#1');
+    expect(rows[1].textContent).toContain('#2');
+});
+
+test('round_148_hiding_sorted_column_clears_column_sort', () => {
+    // Defense in depth: if the player has the actions column
+    // sorted and then hides it, the column sort is auto-cleared
+    // (otherwise the row order would be driven by a column
+    // the player can't see — confusing UX).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' },   actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    // Activate actions sort (1st click: idle → asc).
+    (root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement).click();
+    expect((root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement)
+        .getAttribute('aria-sort')).toBe('ascending');
+    // Now hide the actions column.
+    (root.querySelector('[data-toggle-column="actions"]') as HTMLElement).click();
+    // The actions column is hidden.
+    expect(root.querySelector('#dsl-codex-history-col-header-actions')).toBeNull();
+    // The sort is cleared — so the dropdown sort drives row order again.
+    // Re-render the panel (doRender detaches the old header row).
+    // After clear: the next time a column is activated, it starts at asc
+    // (so we just check that hiding didn't leave a stale "ascending"
+    // marker on a re-activated column).
+    (root.querySelector('[data-toggle-column="actions"]') as HTMLElement).click();
+    // Re-show actions column.
+    expect(root.querySelector('#dsl-codex-history-col-header-actions')).not.toBeNull();
+    // It should be idle (not active) because the sort was cleared.
+    expect((root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement)
+        .classList.contains('dsl-codex-history-col-header-active')).toBe(false);
+    expect((root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement)
+        .getAttribute('aria-sort')).toBe('none');
+});
+
+test('round_148_hiding_non_sorted_column_does_not_clear_column_sort', () => {
+    // Negative test for the auto-clear: hiding a column that is
+    // NOT the sorted one must not disturb the sort.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    // Activate actions sort.
+    (root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement).click();
+    // Hide the idx column (NOT the sorted one).
+    (root.querySelector('[data-toggle-column="idx"]') as HTMLElement).click();
+    // Hmm — wait, we hid idx so the actions header is still visible
+    // somewhere? Actually the actions column is NOT hidden here so
+    // its header must still be visible and active.
+    // Re-query: actions header is still present.
+    const actionsHeader = root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement;
+    expect(actionsHeader).not.toBeNull();
+    expect(actionsHeader.getAttribute('aria-sort')).toBe('ascending');
+    expect(actionsHeader.classList.contains('dsl-codex-history-col-header-active')).toBe(true);
+});
+
+test('round_148_toggle_row_uses_stable_column_order_idx_source_actions', () => {
+    // Pin the column order so a refactor that re-orders the
+    // toggle row breaks the test.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const toggles = Array.from(root.querySelectorAll('.dsl-codex-col-toggle'));
+    const order = toggles.map((t) => t.getAttribute('data-toggle-column'));
+    expect(order).toEqual(['idx', 'source', 'actions']);
+});
+
