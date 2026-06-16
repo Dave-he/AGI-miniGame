@@ -130,7 +130,17 @@ describe('KeyboardShortcuts', () => {
             expect(routeKey('k')).toEqual({ kind: 'toggle-dsl-codex' });
         });
 
-        it.each(['0', '9', 'a', 'j', 'F1', 'Tab', 'Enter', 'ArrowUp'])(
+        it('Round 153 — J key routes to toggle-hud-fade', () => {
+            // Round 153 added the J key for the HUD
+            // fade mode toggle (next free letter
+            // after H — F is taken by the round-21
+            // vault panel). Case-insensitive like
+            // the rest of the letter bindings.
+            expect(routeKey('J')).toEqual({ kind: 'toggle-hud-fade' });
+            expect(routeKey('j')).toEqual({ kind: 'toggle-hud-fade' });
+        });
+
+        it.each(['0', '9', 'a', 'F1', 'Tab', 'Enter', 'ArrowUp'])(
             'returns null for unbound key "%s"',
             (key) => {
                 // Round 91 — backtick/tilde is now bound
@@ -142,6 +152,12 @@ describe('KeyboardShortcuts', () => {
                 // from the unbound set too. (X / x
                 // replaces it as the generic unbound
                 // letter test.)
+                //
+                // Round 153 — j / J is now bound to
+                // toggle-hud-fade (round-153 HUD fade
+                // mode), so it's removed from the
+                // unbound set too. ('a' is still the
+                // generic unbound-letter test.)
                 //
                 // Round 133 — k / K is now bound to
                 // toggle-dsl-codex, so it's removed

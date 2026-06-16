@@ -474,6 +474,48 @@ textarea:focus {
 }
 
 /* ---------------------------------------------------------------------------
+ * Round 153 — `.hud-stats.hud-stats-fading` auto-fade mode.
+ *
+ * The round-1 stats panel sits in the top-right
+ * corner and is always fully visible by default.
+ * Round 153 adds an opt-in "fade" mode (F key +
+ * `agi_hud_fade` localStorage flag): after 3s
+ * of key/click inactivity, the panel fades to
+ * 0.25 opacity so the Three.js scene is
+ * unobstructed during long playthroughs
+ * (操控性好 + 画面优美).
+ *
+ * Visual: a 0.6s opacity transition + 0.25
+ * final opacity. The pointer-events stay
+ * enabled (the panel is still hoverable /
+ * clickable, just visually faded) so the
+ * player can mouse over the dimmed panel to
+ * see the same data at full opacity (the
+ * `:hover` rule below snaps opacity back to
+ * 1.0). The 0.6s transition is longer than
+ * the 0.5s used for the round-152 debouncer
+ * compact mode because the fade is the
+ * panel's primary "look away / look back"
+ * signal — a snappier transition would feel
+ * jarring during scene exploration.
+ *
+ * Naming: `.hud-stats-fading` is on the SAME
+ * element as `.hud-panel` + `.hud-stats`,
+ * so the panel border + background colors
+ * stay intact; only the opacity is reduced.
+ * ------------------------------------------------------------------------- */
+
+.hud-stats.hud-stats-fading {
+  opacity: 0.25;
+  transition: opacity 0.6s ease-in-out;
+}
+
+.hud-stats.hud-stats-fading:hover {
+  opacity: 1.0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+/* ---------------------------------------------------------------------------
  * Round 88 — `.hud-panel.hud-dim` left border via CSS custom property.
  *
  * Round 87 wired the dim panel's left border to each biome's

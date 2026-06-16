@@ -1987,4 +1987,109 @@ describe('HUD — round 152 compact mode', () => {
         expect(desc).toBeDefined();
         expect(desc!.action).toContain('紧凑');
     });
+
+    // Round 153 — HUD fade mode tests.
+    //
+    // Round 153 adds an opt-in "fade" mode
+    // (F key + `agi_hud_fade` localStorage
+    // flag): after 3s of key/click inactivity
+    // the .hud-stats panel auto-fades to
+    // 0.25 opacity, and snaps back to fully
+    // visible on the next `notifyInput()`
+    // call. These tests pin the HUD-side
+    // state machine so a future refactor
+    // can't silently break the fade contract.
+
+    test('default_state_is_not_fade_enabled_round_153', () => {
+        // Fresh HUD: fade mode is OFF by
+        // default (mirrors the round-152
+        // compact default).
+        const { hud } = makeHud();
+        expect(hud.isFadeEnabled()).toBe(false);
+    });
+
+    test('setFadeEnabled_true_flips_isFadeEnabled_round_153', () => {
+        const { hud } = makeHud();
+        hud.setFadeEnabled(true);
+        expect(hud.isFadeEnabled()).toBe(true);
+    });
+
+    test('setFadeEnabled_false_flips_isFadeEnabled_back_round_153', () => {
+        const { hud } = makeHud();
+        hud.setFadeEnabled(true);
+        hud.setFadeEnabled(false);
+        expect(hud.isFadeEnabled()).toBe(false);
+    });
+
+    test('notifyInput_clears_idle_timestamp_round_153', () => {
+        // Simulate: fade enabled, panel has
+        // already auto-faded. notifyInput()
+        // must reset `hudFadeIdledAt` to null
+        // so the render template drops the
+        // `hud-stats-fading` class.
+        const { hud } = makeHud();
+        hud.setFadeEnabled(true);
+        // Force the panel into fading state
+        // by ticking idle past the threshold.
+        hud.tickIdle(4000, 0);  // 4s > 3s default
+        expect(hud.isFading()).toBe(true);
+        hud.notifyInput();
+        expect(hud.isFading()).toBe(false);
+    });
+
+    test('tickIdle_flips_to_fading_after_threshold_round_153', () => {
+        // With fade enabled and a 3s
+        // (default) threshold, a tickIdle
+        // call where now - lastInputAt >= 3000
+        // must flip `hudFadeIdledAt` to `now`.
+        const { hud } = makeHud();
+        hud.setFadeEnabled(true);
+        expect(hud.isFading()).toBe(false);
+        const flipped = hud.tickIdle(5000, 1000);  // diff = 4000
+        expect(flipped).toBe(true);
+        expect(hud.isFading()).toBe(true);
+    });
+
+    test('tickIdle_no_op_when_disabled_round_153', () => {
+        // With fade disabled, tickIdle must
+        // return false AND must not flip
+        // `hudFadeIdledAt`. This is the
+        // gating test that protects against
+        // a regression where the host driver
+        // would otherwise force a fade
+        // regardless of the user's opt-in.
+        const { hud } = makeHud();
+        expect(hud.isFadeEnabled()).toBe(false);
+        const flipped = hud.tickIdle(10000, 0);  // huge diff
+        expect(flipped).toBe(false);
+        expect(hud.isFading()).toBe(false);
+    });
+
+    test('render_emits_hud_stats_fading_class_when_fading_round_153', () => {
+        // The .hud-stats panel should carry
+        // the `hud-stats-fading` class when
+        // `hudFadeIdledAt` is set. CSS picks
+        // this up via `.hud-stats.hud-stats-fading`.
+        const { hud, root } = makeHud();
+        hud.setFadeEnabled(true);
+        hud.tickIdle(5000, 0);
+        const stats = root.querySelector('.hud-stats');
+        expect(stats).not.toBeNull();
+        expect(stats!.classList.contains('hud-stats-fading')).toBe(true);
+    });
+
+    test('BINDING_DESCRIPTIONS_includes_hud_fade_hotkey_round_153', () => {
+        // The J key shortcut for HUD fade
+        // mode is mirrored in BINDING_DESCRIPTIONS
+        // so the help overlay auto-iterates
+        // it (same pattern as round-152's H
+        // key). Note: F is already taken by
+        // the round-21 vault-panel toggle,
+        // so the fade row uses J (the next
+        // free letter after H).
+        const fadeRows = BINDING_DESCRIPTIONS.filter(
+            (d) => d.key === 'J' && d.action.includes('淡出')
+        );
+        expect(fadeRows.length).toBeGreaterThanOrEqual(1);
+    });
 });

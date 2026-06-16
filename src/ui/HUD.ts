@@ -283,6 +283,68 @@ export interface HUDState {
      * a strict opt-in sub-set of the memories block.
      */
     compact?: boolean;
+    /**
+     * Round 153 — HUD fade-mode master toggle. When
+     * `true`, the round-152 `.hud-stats` panel
+     * auto-fades to a low opacity (0.25, set in
+     * style.css `.hud-stats.hud-fading`) after
+     * `hudFadeIdleMs` of key/click inactivity, and
+     * instantly re-shows on any input event.
+     * Designed for players who want an unobstructed
+     * view of the Three.js scene during long
+     * playthroughs (操控性好 + 画面优美 — the
+     * round-1 stats panel is always-on by default
+     * and can occlude the scene on smaller windows).
+     *
+     * Default `false` (round-152 layout, panel
+     * always fully visible). Toggled at runtime via
+     * `setFadeEnabled(value)` and persisted to
+     * localStorage key `agi_hud_fade`. The `F` key
+     * in main.ts toggles this.
+     *
+     * When `hudFadeEnabled === false`, the
+     * `hudFadeIdledAt` field is irrelevant (the
+     * render skips the `hud-fading` class even if
+     * the idle timer has fired). The host can
+     * disable fade-mode mid-session via
+     * `setFadeEnabled(false)` and the panel snaps
+     * back to fully visible on the next render.
+     */
+    hudFadeEnabled?: boolean;
+    /**
+     * Round 153 — the timestamp (in `performance.now()`
+     * units) at which the HUD's input idle timer
+     * started. `null` means the panel is currently
+     * NOT idle (either fade-mode is disabled, or an
+     * input event recently reset the timer). The
+     * host (typically `App` in main.ts) calls
+     * `hud.notifyInput()` on every keydown / click,
+     * which sets this to `null` (clears the idle
+     * state) and triggers a re-render.
+     *
+     * The idle-detection itself is driven by
+     * `hud.tickIdle(now)`: the host calls this on
+     * every animation frame with the current
+     * `performance.now()`. If
+     * `now - lastInputAt >= hudFadeIdleMs`, the
+     * host sets `hudFadeIdledAt = now` to flip the
+     * panel into the `hud-fading` class.
+     *
+     * Optional: when omitted, the panel is treated
+     * as "not idle" (fully visible).
+     */
+    hudFadeIdledAt?: number | null;
+    /**
+     * Round 153 — the inactivity threshold (in
+     * milliseconds) before the HUD panel fades.
+     * Default `3000` ms (3 seconds). Configurable
+     * for tests (so they don't have to wait 3
+     * real seconds) and for future SettingsPanel
+     * integration (a slider the player can drag).
+     * Optional; when omitted, the render falls
+     * back to the round-153 default of 3000.
+     */
+    hudFadeIdleMs?: number;
 }
 
 export class HUD {
@@ -710,6 +772,121 @@ export class HUD {
     }
 
     /**
+     * Round 153 — enable / disable the HUD fade mode.
+     * When `enabled === true`, the `.hud-stats` panel
+     * auto-fades to low opacity after
+     * `state.hudFadeIdleMs` (default 3000 ms) of
+     * input inactivity, and re-shows instantly on
+     * any `notifyInput()` call. When `false`, the
+     * panel is always fully visible (round-152
+     * default).
+     *
+     * Calling this with `enabled === true` resets
+     * `state.hudFadeIdledAt` to `null` (the panel
+     * starts fully visible and the host begins
+     * counting idle time on the next animation
+     * frame). Calling with `false` clears the
+     * idle state immediately and the next render
+     * drops the `hud-fading` class.
+     *
+     * The localStorage persistence is done at the
+     * call site (mirrors the round-152
+     * setCompact pattern) so a non-browser test
+     * env can call `setFadeEnabled(true)` without
+     * crashing on `typeof localStorage` checks.
+     */
+    setFadeEnabled(enabled: boolean): void {
+        this.state = {
+            ...this.state,
+            hudFadeEnabled: enabled,
+            // Reset the idle state on every toggle.
+            // Re-enabling starts the countdown
+            // fresh; disabling clears any in-
+            // progress idle state.
+            hudFadeIdledAt: null,
+        };
+        this.render();
+    }
+
+    /**
+     * Read-only accessor mirroring the
+     * `isCompact()` pattern. Returns the current
+     * `hudFadeEnabled` flag (default `false` if
+     * never set).
+     */
+    isFadeEnabled(): boolean {
+        return this.state.hudFadeEnabled === true;
+    }
+
+    /**
+     * Round 153 — called by the host (typically
+     * `App` in main.ts) on every keydown /
+     * mouseclick. Resets the input-idle timer:
+     * the panel snaps back to fully visible on
+     * the next render (the `hud-fading` class
+     * is dropped), and `hud.tickIdle(now)` will
+     * not re-flip it until `hudFadeIdleMs` of
+     * silence elapses again.
+     *
+     * Idempotent + cheap (one assignment +
+     * conditional re-render). Safe to call on
+     * every keystroke.
+     */
+    notifyInput(): void {
+        if (this.state.hudFadeIdledAt !== null) {
+            this.state = { ...this.state, hudFadeIdledAt: null };
+            this.render();
+        }
+    }
+
+    /**
+     * Round 153 — called by the host on every
+     * animation frame. If the input idle timer
+     * has elapsed (now - lastInputAt >=
+     * hudFadeIdleMs), this flips the panel into
+     * the fading state (sets `hudFadeIdledAt =
+     * now` + re-renders).
+     *
+     * The `now` argument is in `performance.now()`
+     * units (typically the host's
+     * `requestAnimationFrame` timestamp). The
+     * host is expected to track the timestamp
+     * of the last `notifyInput()` call itself
+     * and only call `tickIdle` when the gap
+     * exceeds the threshold.
+     *
+     * Returns `true` if the panel transitioned
+     * to fading on this tick, `false` otherwise
+     * (including when fade-mode is disabled or
+     * the threshold hasn't elapsed yet).
+     */
+    tickIdle(now: number, lastInputAt: number | null): boolean {
+        if (!this.isFadeEnabled()) return false;
+        if (this.state.hudFadeIdledAt !== null) return false;
+        if (lastInputAt === null) return false;
+        const threshold = this.state.hudFadeIdleMs ?? 3000;
+        if (now - lastInputAt >= threshold) {
+            this.state = { ...this.state, hudFadeIdledAt: now };
+            this.render();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Read-only accessor mirroring the
+     * `isCompact()` / `isFadeEnabled()` pattern.
+     * Returns the current `hudFadeIdledAt`
+     * timestamp (or `null` if not currently
+     * idle). The host uses this to decide
+     * whether to re-render after a `notifyInput`.
+     */
+    isFading(): boolean {
+        return this.state.hudFadeIdledAt !== null
+            && this.state.hudFadeIdledAt !== undefined;
+    }
+
+    /**
      * Round 53 — push a non-modal recovery banner into
      * the HUD. Called by `App.recoverFromRenderFailure`
      * when loadGame's rehydrate pipeline failed and the
@@ -894,8 +1071,25 @@ export class HUD {
         const biomeHotkeysOn = Array.isArray(s.biomeHotkeys)
             && (s.biomeHotkeys as ReadonlyArray<unknown>).length > 0;
 
+        // Round 153 — compute whether the
+        // `.hud-stats` panel should be in the
+        // `hud-fading` state. Two conditions
+        // must both hold: (1) `hudFadeEnabled`
+        // is true (master toggle), and (2)
+        // `hudFadeIdledAt` is non-null (the
+        // host's `tickIdle()` has flipped the
+        // panel into idle). When either is
+        // false, the panel renders fully
+        // visible (round-152 default).
+        const fadeOn = s.hudFadeEnabled === true
+            && s.hudFadeIdledAt !== null
+            && s.hudFadeIdledAt !== undefined;
+        const statsCls = fadeOn
+            ? 'hud-panel hud-stats hud-stats-fading'
+            : 'hud-panel hud-stats';
+
         this.root.innerHTML = `
-            <div class="hud-panel hud-stats">
+            <div class="${statsCls}">
                 <div class="hud-title-row">
                     <span class="hud-title">${escapeHtml(this.i18n.t('hud.stats'))}</span>
                     <button class="hud-lang" type="button" data-locale="${otherLocale}">${langLabel}</button>

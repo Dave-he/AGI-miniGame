@@ -703,6 +703,7 @@ class App {
         // boot with no saved value defaults
         // to compact OFF (false).
         this.hud.setCompact(loadHudCompactFromStorage());
+        this.hud.setFadeEnabled(loadHudFadeFromStorage());
         this.worldState = new WorldState('local-player', '次元旅者');
         this.progression = new Progression();
         this.epoch = new EpochSystem(Date.now());
@@ -1254,6 +1255,17 @@ class App {
             // BINDING_DESCRIPTIONS so the help
             // overlay auto-picks it up.
             { key: 'H', action: '紧凑',    group: '系统' },
+            // Round 153 — J key toggles HUD fade
+            // mode (auto-fade .hud-stats to
+            // 0.25 opacity after 3s of
+            // inactivity; snap back on any
+            // input). Mirrored in
+            // BINDING_DESCRIPTIONS so the
+            // help overlay auto-picks it up.
+            // Note: F is taken by the
+            // round-21 vault toggle, so J is
+            // the next free letter after H.
+            { key: 'J', action: '淡出',    group: '系统' },
         ]);
         // Round 150 — push an
         // initial biome
@@ -2194,6 +2206,47 @@ class App {
         const next = !this.hud.isCompact();
         this.hud.setCompact(next);
         saveHudCompactToStorage(next);
+    }
+
+    /**
+     * Round 153 — toggle the HUD fade mode.
+     * When fade mode is on, the .hud-stats
+     * panel auto-fades to 0.25 opacity after
+     * 3s of key/click inactivity, and snaps
+     * back to fully visible on the next input
+     * event (the App calls `hud.notifyInput()`
+     * from the keydown handler). The player's
+     * preference is persisted to
+     * `localStorage[agi_hud_fade]` so a player
+     * who enables it on a visit doesn't have to
+     * re-enable it on the next page load.
+     *
+     * Mirrors the `toggleHudCompact` pattern:
+     * one boolean flip + one localStorage write
+     * + one re-render. The F key shortcut calls
+     * this via the round-153 `toggle-hud-fade`
+     * KeyboardAction.
+     */
+    toggleHudFade(): void {
+        const next = !this.hud.isFadeEnabled();
+        this.hud.setFadeEnabled(next);
+        saveHudFadeToStorage(next);
+    }
+
+    /**
+     * Round 153 — notify the HUD that an
+     * input event (keydown / click) just
+     * fired so the round-153 fade mode can
+     * snap the stats panel back to full
+     * opacity. Public because the keydown
+     * listener is a top-level function and
+     * `hud` is `private`. No-op when fade is
+     * disabled (so the cost on the hot path
+     * is one boolean check + one early-
+     * return).
+     */
+    notifyHudInput(): void {
+        this.hud.notifyInput();
     }
 
     /**
@@ -3811,6 +3864,16 @@ async function bootstrap(): Promise<void> {
     }
     window.addEventListener('keydown', (ev: KeyboardEvent) => {
         if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        // Round 153 — notify the HUD that an
+        // input event just fired so the round-
+        // 153 fade mode can snap the stats
+        // panel back to full opacity. This is
+        // a no-op when fade is disabled, so the
+        // cost on the hot path is one boolean
+        // check + one early-return. Routes
+        // through a public App method because
+        // `hud` is `private`.
+        app.notifyHudInput();
         const action = routeKey(ev.key);
         if (!action) return;
         switch (action.kind) {
@@ -3823,6 +3886,19 @@ async function bootstrap(): Promise<void> {
             // method body is small (one boolean
             // flip + localStorage write + re-render).
             case 'toggle-hud-compact': app.toggleHudCompact(); break;
+            // Round 153 — J key toggles the HUD
+            // fade mode. The stats panel auto-
+            // fades to 0.25 opacity after
+            // `hudFadeIdleMs` of input inactivity
+            // and snaps back to fully visible on
+            // any `notifyInput()` call. Mirrors
+            // `toggle-hud-compact`: one boolean
+            // flip + localStorage write + re-
+            // render. The J key in the hotkey
+            // strip mirrors this for discoverability.
+            // Note: F is already taken by the
+            // round-21 vault toggle.
+            case 'toggle-hud-fade': app.toggleHudFade(); break;
             case 'abandon':    app.abandonCurrentDimension(); break;
             case 'reroll':     void app.enterNewDimension(); break;
             case 'toggle-help':app.toggleHelp(); break;
@@ -3988,6 +4064,39 @@ function saveHudCompactToStorage(compact: boolean): void {
     if (typeof localStorage === 'undefined') return;
     try {
         localStorage.setItem(HUD_COMPACT_STORAGE_KEY, compact ? '1' : '0');
+    } catch {
+        // localStorage can throw in
+        // private mode / quota errors.
+        // Swallow — the in-memory state
+        // is already updated.
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Round 153 — `agi_hud_fade` localStorage key for the HUD
+// fade-mode toggle. Same `loadXxxFromStorage` /
+// `saveXxxToStorage` shape as the round-152 compact
+// helpers above, but a separate key so a player can
+// enable compact and disable fade (or vice versa)
+// independently.
+// ---------------------------------------------------------------------------
+
+const HUD_FADE_STORAGE_KEY = 'agi_hud_fade';
+
+function loadHudFadeFromStorage(): boolean {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+        const raw = localStorage.getItem(HUD_FADE_STORAGE_KEY);
+        return raw === '1';
+    } catch {
+        return false;
+    }
+}
+
+function saveHudFadeToStorage(fade: boolean): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(HUD_FADE_STORAGE_KEY, fade ? '1' : '0');
     } catch {
         // localStorage can throw in
         // private mode / quota errors.

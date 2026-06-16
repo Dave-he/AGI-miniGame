@@ -184,7 +184,19 @@ export type KeyboardAction =
     // or unmount a `<div>` — the HUD's render is
     // idempotent on `compact` so the toggle is
     // cheap (one boolean flip + re-render).
-    | { kind: 'toggle-hud-compact' };
+    | { kind: 'toggle-hud-compact' }
+    // Round 153 — toggle the round-153 HUD fade
+    // mode. The `J` key flips the `hudFadeEnabled`
+    // flag; the `.hud-stats` panel then auto-fades
+    // to 0.25 opacity after `hudFadeIdleMs` of
+    // key/click inactivity. Like round-152's
+    // `toggle-hud-compact`, this is a strict
+    // boolean flip + re-render — no DOM mount /
+    // unmount, no panel toggle. Note: `F` is
+    // already taken by the round-21 vault
+    // toggle, so we use `J` (the next free
+    // letter after H).
+    | { kind: 'toggle-hud-fade' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -516,6 +528,15 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // letters (P/Q/W/T/R/V/B/N/D/Z/K/I) are
     // already taken by panel-toggles.
     { key: 'H',    action: '切换 HUD 紧凑模式 (隐藏记忆块明细)' },
+    // Round 153 — J key toggles HUD fade mode.
+    // After 3s of key/click inactivity, the
+    // round-1 stats panel fades to 0.25
+    // opacity (and snaps back to 1.0 on any
+    // input). F reads as "Fade" and was the
+    // next free letter after H. The fade
+    // flag persists in localStorage so it
+    // survives page reloads.
+    { key: 'J',    action: '切换 HUD 淡出模式 (空闲 3s 后隐藏)' },
 ];
 
 /**
@@ -1212,6 +1233,15 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'h':
         case 'H':
             return { kind: 'toggle-hud-compact' };
+        // Round 153 — J key toggles HUD fade mode.
+        // J is the next free letter after H (F is
+        // already taken by the round-21 vault
+        // toggle). Same pattern as
+        // `toggle-hud-compact` — no panel mount /
+        // unmount, just a boolean flip.
+        case 'j':
+        case 'J':
+            return { kind: 'toggle-hud-fade' };
         default:
             return null;
     }
