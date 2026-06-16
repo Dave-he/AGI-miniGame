@@ -174,7 +174,17 @@ export type KeyboardAction =
     // 15th row + mount point
     // + button) follows
     // automatically.
-    | { kind: 'toggle-inventory' };
+    | { kind: 'toggle-inventory' }
+    // Round 152 — toggle the round-152 HUD compact
+    // mode. The `H` key flips the `compact` flag on
+    // the HUD's state (the per-row detail lists in
+    // the round-51 memories block collapse to
+    // headlines only). Unlike the panel-toggle
+    // family, `toggle-hud-compact` does NOT mount
+    // or unmount a `<div>` — the HUD's render is
+    // idempotent on `compact` so the toggle is
+    // cheap (one boolean flip + re-render).
+    | { kind: 'toggle-hud-compact' };
 
 /**
  * 8 portal atomIds in display order — the same order used by
@@ -495,6 +505,17 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // group (no pre-existing
     // I mapping in routeKey).
     { key: 'I',    action: '切换背包面板 (使用/丢弃物品)' },
+    // Round 152 — H key toggles HUD compact mode.
+    // Hides the per-row detail lists in the
+    // round-51 memories block (WASM latency
+    // per-fn lines, event-chain timeline,
+    // debouncer mini-strip countdowns). The
+    // compact flag persists in localStorage so
+    // it survives page reloads. The `H` key
+    // was chosen because all other single
+    // letters (P/Q/W/T/R/V/B/N/D/Z/K/I) are
+    // already taken by panel-toggles.
+    { key: 'H',    action: '切换 HUD 紧凑模式 (隐藏记忆块明细)' },
 ];
 
 /**
@@ -1182,6 +1203,15 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'i':
         case 'I':
             return { kind: 'toggle-inventory' };
+        // Round 152 — H key toggles HUD compact mode.
+        // We picked `H` because it's a free key
+        // (P/Q/W/T/R/V/B/N/D/Z/K/I are all panel-
+        // toggles or action keys; H is the next
+        // unclaimed letter). H also reads as
+        // "Hide" → "hide the detail rows".
+        case 'h':
+        case 'H':
+            return { kind: 'toggle-hud-compact' };
         default:
             return null;
     }

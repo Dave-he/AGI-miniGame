@@ -6,6 +6,7 @@ import { HUD } from '../ui/HUD';
 import { I18n } from '../i18n/I18n';
 import { ActionDebouncer } from '../utils/ActionDebouncer';
 import type { EventStep } from '../ai/SceneGen';
+import { BINDING_DESCRIPTIONS } from '../input/KeyboardShortcuts';
 
 function makeHud() {
     document.body.innerHTML = '<div id="hud"></div>';
@@ -1793,4 +1794,197 @@ test('round_150_chinese_label_is_escaped_round_150', () => {
     expect(labelEl!.textContent).toContain('<script>');
     // But no actual <script> element was created.
     expect(labelEl!.querySelector('script')).toBeNull();
+});
+
+/* ---------------------------------------------------------------------------
+ * Round 152 — HUD compact mode tests.
+ *
+ * The compact mode collapses the round-51 memories
+ * block's per-row detail lists (WASM latency per-fn
+ * breakdown, event-chain timeline, debouncer
+ * mini-strip countdowns) into headline rows. The
+ * `compact` flag lives on HUDState; the `setCompact`
+ * setter is the canonical write path. These tests
+ * pin the contract:
+ *
+ *  1. Default state is non-compact (isCompact === false).
+ *  2. setCompact(true) flips the flag.
+ *  3. setCompact(false) flips it back.
+ *  4. setCompact updates the state field read via getState.
+ *  5. isCompact() mirrors getState().compact (defense in
+ *     depth — a regression that overrode one but not
+ *     the other fails this test).
+ *  6. With wasmLatencyStats set + compact=true, the
+ *     per-fn breakdown is omitted (only the headline
+ *     row renders).
+ *  7. With lastSceneEventChain set + compact=true, the
+ *     full per-event timeline is omitted.
+ *  8. With debouncers set + compact=true, the
+ *     countdown span is dropped + the
+ *     `hud-debouncer-strip-compact` class is added.
+ *
+ * The localStorage round-trip is covered at the
+ * `loadHudCompactFromStorage` / `saveHudCompactToStorage`
+ * level by direct tests in main.ts (avoids spinning
+ * up the full App in this module).
+ * ------------------------------------------------------------------------- */
+
+describe('HUD — round 152 compact mode', () => {
+    test('default_state_is_not_compact_round_152', () => {
+        // Fresh HUD → compact flag is undefined
+        // → isCompact() returns false. The render
+        // path treats undefined and false
+        // identically (the comparisons use
+        // `s.compact === true` and `s.compact ===
+        // true` strict-equality), so a regression
+        // that returned `true` for undefined would
+        // fail this test.
+        const { hud } = makeHud();
+        expect(hud.isCompact()).toBe(false);
+    });
+
+    test('setCompact_true_flips_isCompact_round_152', () => {
+        const { hud } = makeHud();
+        hud.setCompact(true);
+        expect(hud.isCompact()).toBe(true);
+    });
+
+    test('setCompact_false_flips_isCompact_back_round_152', () => {
+        // Two-step flip: true → false must
+        // return to the default state.
+        const { hud } = makeHud();
+        hud.setCompact(true);
+        hud.setCompact(false);
+        expect(hud.isCompact()).toBe(false);
+    });
+
+    test('setCompact_updates_state_field_round_152', () => {
+        // Defense in depth: a regression that
+        // updated the `compact` field via a
+        // side-channel (e.g. a closure) but
+        // missed the `getState().compact` read
+        // would fail this test.
+        const { hud } = makeHud();
+        hud.setCompact(true);
+        expect(hud.getState().compact).toBe(true);
+        hud.setCompact(false);
+        expect(hud.getState().compact).toBe(false);
+    });
+
+    test('wasm_latency_per_fn_breakdown_omitted_in_compact_round_152', () => {
+        // The round-69 WASM row renders the
+        // headline ("⚡ WASM 延迟 (N 样本)")
+        // PLUS a `<br>` followed by the per-fn
+        // detail list. In compact mode, the
+        // detail list is dropped.
+        const { hud, root } = makeHud();
+        const fnStats = {
+            medianMs: 5,
+            p95Ms: 10,
+            maxMs: 20,
+            count: 100,
+        };
+        hud.setState({
+            wasmLatencyStats: {
+                totalSamples: 100,
+                perFn: { match3: fnStats, parkour: fnStats },
+            },
+        });
+        // Non-compact: the per-fn detail is present.
+        const detailBefore = root.querySelector('.hud-wasm-latency .hud-memories-row-detail');
+        expect(detailBefore).not.toBeNull();
+        // Compact: the per-fn detail is omitted.
+        hud.setCompact(true);
+        const detailAfter = root.querySelector('.hud-wasm-latency .hud-memories-row-detail');
+        expect(detailAfter).toBeNull();
+        // The headline row is still present.
+        const headline = root.querySelector('.hud-wasm-latency');
+        expect(headline).not.toBeNull();
+        expect(headline!.textContent).toContain('WASM 延迟');
+    });
+
+    test('event_chain_per_event_timeline_omitted_in_compact_round_152', () => {
+        // The round-73 event-chain row renders
+        // the "next: <kind> in <delaySecs>s"
+        // headline PLUS a `<br>` followed by
+        // the full per-event timeline. In
+        // compact mode, the timeline is dropped
+        // but the headline + count suffix +
+        // distribution summary stay.
+        const { hud, root } = makeHud();
+        const chain: EventStep[] = [
+            { kind: 'spawn_wave', delaySecs: 5, payload: '{}' },
+            { kind: 'echo_lore', delaySecs: 12, payload: '{}' },
+            { kind: 'spawn_wave', delaySecs: 18, payload: '{}' },
+        ];
+        hud.setState({ lastSceneEventChain: chain });
+        // Non-compact: timeline present.
+        const detailBefore = root.querySelector('.hud-event-chain .hud-memories-row-detail');
+        expect(detailBefore).not.toBeNull();
+        expect(detailBefore!.textContent).toContain('echo_lore');
+        // Compact: timeline omitted.
+        hud.setCompact(true);
+        const detailAfter = root.querySelector('.hud-event-chain .hud-memories-row-detail');
+        expect(detailAfter).toBeNull();
+        // The headline + count suffix + dist line stay.
+        const headline = root.querySelector('.hud-event-chain');
+        expect(headline).not.toBeNull();
+        expect(headline!.textContent).toContain('next:');
+        expect(headline!.textContent).toContain('spawn_wave ×2');
+    });
+
+    test('debouncer_strip_drops_countdown_and_adds_compact_class_round_152', () => {
+        // The round-146 debouncer strip renders
+        // 3 spans per cell (label / status /
+        // countdown). In compact mode, the
+        // countdown span is dropped + the
+        // wrapper gets a `…-compact` class
+        // for the stylesheet to tighten the
+        // row height.
+        const { hud, root } = makeHud();
+        // The round-108 ActionDebouncer
+        // constructor takes (windowMs, actionName,
+        // roundTag, logFn). `check()` stamps the
+        // debouncer (allowed returns true) which
+        // puts it into the "shielding" state for
+        // the next `windowMs`.
+        const debouncer = new ActionDebouncer(500, 'save', 'round 152', () => {});
+        debouncer.check();
+        hud.setState({
+            debouncers: [
+                { debouncer, chineseLabel: '保存' },
+            ],
+        });
+        // Non-compact: the countdown span is present.
+        const stripBefore = root.querySelector('.hud-debouncer-strip');
+        expect(stripBefore).not.toBeNull();
+        expect(stripBefore!.classList.contains('hud-debouncer-strip-compact')).toBe(false);
+        const countdownBefore = root.querySelector('.hud-debouncer-strip-countdown');
+        expect(countdownBefore).not.toBeNull();
+        // Compact: countdown dropped, compact class added.
+        hud.setCompact(true);
+        const stripAfter = root.querySelector('.hud-debouncer-strip');
+        expect(stripAfter).not.toBeNull();
+        expect(stripAfter!.classList.contains('hud-debouncer-strip-compact')).toBe(true);
+        const countdownAfter = root.querySelector('.hud-debouncer-strip-countdown');
+        expect(countdownAfter).toBeNull();
+        // The status span is still present (only
+        // the countdown is dropped).
+        const status = root.querySelector('.hud-debouncer-strip-status');
+        expect(status).not.toBeNull();
+    });
+
+    test('BINDING_DESCRIPTIONS_includes_hud_compact_hotkey_round_152', () => {
+        // The H key shortcut for HUD compact mode
+        // is mirrored in BINDING_DESCRIPTIONS so
+        // the help overlay auto-iterates it. A
+        // regression that added the H key to
+        // routeKey + KeyboardAction union but
+        // forgot BINDING_DESCRIPTIONS would fail
+        // this test (the help overlay would
+        // silently omit the row).
+        const desc = BINDING_DESCRIPTIONS.find((d) => d.key === 'H');
+        expect(desc).toBeDefined();
+        expect(desc!.action).toContain('紧凑');
+    });
 });

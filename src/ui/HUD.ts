@@ -254,6 +254,35 @@ export interface HUDState {
      * shown.
      */
     biomeHotkeyLabel?: string | null;
+    /**
+     * Round 152 — compact HUD mode. When `true`, the
+     * secondary strips inside the round-51 memories
+     * block collapse their per-row detail lists
+     * (e.g. the per-fn WASM latency breakdown, the
+     * full event-chain timeline, the debouncer
+     * mini-strip's countdown cells) and render only
+     * the headline row. Designed for players who
+     * want the stats panel to take up less screen
+     * real estate (操控性好 + 画面优美 — the stats
+     * panel sits in the top-right corner and a tall
+     * panel can occlude the Three.js scene).
+     *
+     * Default `false` (round-150/151 layout, all
+     * detail rows visible). Toggled at runtime via
+     * `setCompact(value)` and persisted to
+     * localStorage key `agi_hud_compact` so a player
+     * who enables it on a visit doesn't have to
+     * re-enable it on the next page load. The `H`
+     * key in main.ts toggles this.
+     *
+     * The compact mode does NOT affect: the round-87
+     * biome-accent dim-panel border, the round-147/150
+     * hotkey strips (those are already compact by
+     * design), the round-128 debug overlay, or any
+     * of the round-1..146 always-visible rows. It's
+     * a strict opt-in sub-set of the memories block.
+     */
+    compact?: boolean;
 }
 
 export class HUD {
@@ -649,6 +678,38 @@ export class HUD {
     }
 
     /**
+     * Round 152 — toggle the compact HUD mode.
+     * When `compact === true`, the round-51 memories
+     * block collapses its per-row detail lists
+     * (WASM latency per-fn lines, event-chain
+     * timeline, debouncer mini-strip countdowns)
+     * into a single headline row per item. The
+     * round-87 dim-panel border, round-147/150
+     * hotkey strips, and round-1..146 always-
+     * visible rows are unaffected.
+     *
+     * The setter is the canonical write path: the
+     * `H` key in main.ts calls this directly + the
+     * localStorage persistence is done at the call
+     * site (so a non-browser test env can call
+     * `setCompact(true)` without crashing on
+     * `typeof localStorage` checks).
+     */
+    setCompact(compact: boolean): void {
+        this.state = { ...this.state, compact };
+        this.render();
+    }
+
+    /**
+     * Read-only accessor mirroring the `getState()`
+     * pattern. Returns the current `compact` flag
+     * (default `false` if never set).
+     */
+    isCompact(): boolean {
+        return this.state.compact === true;
+    }
+
+    /**
      * Round 53 — push a non-modal recovery banner into
      * the HUD. Called by `App.recoverFromRenderFailure`
      * when loadGame's rehydrate pipeline failed and the
@@ -1022,13 +1083,19 @@ export class HUD {
         // moved from inline `style="..."` to the
         // `.hud-memories-row-count` and
         // `.hud-memories-row-detail` classes (see
-        // style.css).
+        // style.css). Round 152: when `s.compact === true`,
+        // the per-fn detail list is dropped and only the
+        // headline row renders.
         let wasmRows = '';
         if (wasmOn && s.wasmLatencyStats) {
-            const lines = Object.entries(s.wasmLatencyStats.perFn).map(
-                ([name, stat]) => `· <b>${escapeHtml(name)}</b>: median <b>${stat.medianMs}</b>ms · p95 <b>${stat.p95Ms}</b>ms · max <b>${stat.maxMs}</b>ms (×${stat.count})`,
-            );
-            wasmRows = `<div class="hud-wasm-latency">⚡ WASM 延迟 <span class="hud-memories-row-count">(${s.wasmLatencyStats.totalSamples} 样本)</span><br><span class="hud-memories-row-detail">${lines.join('<br>')}</span></div>`;
+            const detail = s.compact
+                ? ''
+                : `<br><span class="hud-memories-row-detail">${
+                    Object.entries(s.wasmLatencyStats.perFn).map(
+                        ([name, stat]) => `· <b>${escapeHtml(name)}</b>: median <b>${stat.medianMs}</b>ms · p95 <b>${stat.p95Ms}</b>ms · max <b>${stat.maxMs}</b>ms (×${stat.count})`,
+                    ).join('<br>')
+                }</span>`;
+            wasmRows = `<div class="hud-wasm-latency">⚡ WASM 延迟 <span class="hud-memories-row-count">(${s.wasmLatencyStats.totalSamples} 样本)</span>${detail}</div>`;
         }
 
         // Round 73 — build the event-chain row. The chain
@@ -1044,18 +1111,26 @@ export class HUD {
         // echo_lore ×1") so the player can see the
         // composition of their current scene's events at
         // a glance, without scanning the compact list.
+        // Round 152: when `s.compact === true`, the
+        // full per-event timeline is dropped and only
+        // the headline row + the kind-distribution
+        // summary render.
         let chainRows = '';
         if (chainOn && s.lastSceneEventChain) {
             const chain = s.lastSceneEventChain as EventStep[];
             const next = chain[0];
-            const allLines = chain.map((e) =>
-                `· t+<b>${e.delaySecs}</b>s <b>${escapeHtml(e.kind)}</b>`,
-            );
             const dist = summarizeEventKinds(chain);
             const distLine = dist
                 ? ` · 分布: <b>${dist}</b>`
                 : '';
-            chainRows = `<div class="hud-event-chain">⏰ next: <b>${escapeHtml(next.kind)}</b> in <b>${next.delaySecs}</b>s <span class="hud-memories-row-count">(${chain.length} 事件${distLine})</span><br><span class="hud-memories-row-detail">${allLines.join('<br>')}</span></div>`;
+            const detail = s.compact
+                ? ''
+                : `<br><span class="hud-memories-row-detail">${
+                    chain.map((e) =>
+                        `· t+<b>${e.delaySecs}</b>s <b>${escapeHtml(e.kind)}</b>`,
+                    ).join('<br>')
+                }</span>`;
+            chainRows = `<div class="hud-event-chain">⏰ next: <b>${escapeHtml(next.kind)}</b> in <b>${next.delaySecs}</b>s <span class="hud-memories-row-count">(${chain.length} 事件${distLine})</span>${detail}</div>`;
         }
 
         return `
@@ -1085,7 +1160,7 @@ export class HUD {
                     ? `<div class="hud-rollback-count">🛟 回滚了 <b>${s.rollbackCount}</b> 次</div>`
                     : ''}
                 ${debouncersOn && s.debouncers
-                    ? renderDebouncerStrip(s.debouncers as ReadonlyArray<{ debouncer: ActionDebouncer; chineseLabel: string }>)
+                    ? renderDebouncerStrip(s.debouncers as ReadonlyArray<{ debouncer: ActionDebouncer; chineseLabel: string }>, s.compact === true)
                     : ''}
             </details>
         `;
@@ -1203,6 +1278,7 @@ function summarizeEventKinds(chain: ReadonlyArray<EventStep>): string {
  */
 function renderDebouncerStrip(
     debouncers: ReadonlyArray<{ debouncer: ActionDebouncer; chineseLabel: string }>,
+    compact: boolean = false,
 ): string {
     const cells = debouncers.map((info) => {
         const d = info.debouncer;
@@ -1217,15 +1293,23 @@ function renderDebouncerStrip(
         // "<sinceMs>/<window>ms" so the player sees the
         // exact cooldown. When open, show "5/0.5s" style
         // (the round-128 window header) so the row is
-        // visually stable.
-        const countdown = isShielding
-            ? `${Math.round(sinceMs)}/${window}ms`
-            : `${window}ms 可用`;
+        // visually stable. Round 152: when `compact`
+        // is true, the per-cell countdown span is
+        // dropped (the status label alone is enough
+        // to convey state at a glance).
+        const countdown = compact
+            ? ''
+            : (isShielding
+                ? `${Math.round(sinceMs)}/${window}ms`
+                : `${window}ms 可用`);
+        const countdownSpan = compact
+            ? ''
+            : `<span class="hud-debouncer-strip-countdown">${countdown}</span>`;
         return `
             <span class="hud-debouncer-strip-cell ${statusClass}">
                 <span class="hud-debouncer-strip-label">${escapeHtml(info.chineseLabel)}</span>
                 <span class="hud-debouncer-strip-status">${statusLabel}</span>
-                <span class="hud-debouncer-strip-countdown">${countdown}</span>
+                ${countdownSpan}
             </span>
         `;
     });
@@ -1239,7 +1323,11 @@ function renderDebouncerStrip(
             cellsWithSeps.push('<span class="hud-debouncer-strip-sep">|</span>');
         }
     });
-    return `<div class="hud-debouncer-strip">${cellsWithSeps.join('')}</div>`;
+    // Round 152: when compact, also tag the strip
+    // wrapper with `hud-debouncer-strip-compact` so
+    // a future CSS rule can tighten the row height.
+    const cls = compact ? 'hud-debouncer-strip hud-debouncer-strip-compact' : 'hud-debouncer-strip';
+    return `<div class="${cls}">${cellsWithSeps.join('')}</div>`;
 }
 
 /**

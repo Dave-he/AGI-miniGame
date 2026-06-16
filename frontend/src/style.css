@@ -439,6 +439,41 @@ textarea:focus {
 }
 
 /* ---------------------------------------------------------------------------
+ * Round 152 — `.hud-debouncer-strip-compact` variant.
+ *
+ * The round-146 debouncer strip renders 3 spans per cell
+ * (label / status / countdown). When the player enables
+ * compact HUD mode (round 152, `H` key), the countdown
+ * span is dropped, leaving just label + status. Without
+ * this rule, the cells would still occupy the original
+ * height because the grid still allocates space for the
+ * missing span. The compact variant tightens the row
+ * height + spacing so the strip visually shrinks along
+ * with the rest of the round-51 memories block.
+ *
+ * Visual: 1.2em line-height (down from the default 1.55em
+ * of the base strip), 2px row padding (down from 4px),
+ * and a 0.06 opacity boost on the status label so the
+ * single-line layout still reads cleanly.
+ * ------------------------------------------------------------------------- */
+
+.hud-debouncer-strip-compact {
+  font-size: 0.88em;
+  line-height: 1.2;
+  margin-top: 2px;
+  padding: 2px 4px;
+}
+
+.hud-debouncer-strip-compact .hud-debouncer-strip-cell {
+  margin: 0 2px;
+  padding: 0 2px;
+}
+
+.hud-debouncer-strip-compact .hud-debouncer-strip-status {
+  opacity: 0.92;
+}
+
+/* ---------------------------------------------------------------------------
  * Round 88 — `.hud-panel.hud-dim` left border via CSS custom property.
  *
  * Round 87 wired the dim panel's left border to each biome's

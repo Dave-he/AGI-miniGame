@@ -695,6 +695,14 @@ class App {
         this.scene = new SceneManager(refs.canvas);
         this.i18n = new I18n();
         this.hud = new HUD(refs.hudRoot, this.i18n);
+        // Round 152 — restore the HUD compact
+        // mode from localStorage on boot so a
+        // player who enabled it on a previous
+        // visit doesn't have to re-enable it.
+        // The setter is idempotent: a fresh
+        // boot with no saved value defaults
+        // to compact OFF (false).
+        this.hud.setCompact(loadHudCompactFromStorage());
         this.worldState = new WorldState('local-player', '次元旅者');
         this.progression = new Progression();
         this.epoch = new EpochSystem(Date.now());
@@ -1239,6 +1247,13 @@ class App {
             { key: 'Q', action: '代码',    group: '面板' },
             { key: 'T', action: '状态',    group: '面板' },
             { key: 'R', action: '回滚',    group: '系统' },
+            // Round 152 — H key toggles the HUD
+            // compact mode (collapses the
+            // round-51 memories block's per-row
+            // detail lists). Mirrored in
+            // BINDING_DESCRIPTIONS so the help
+            // overlay auto-picks it up.
+            { key: 'H', action: '紧凑',    group: '系统' },
         ]);
         // Round 150 — push an
         // initial biome
@@ -2152,6 +2167,34 @@ class App {
      * Round 117 — body folded into `togglePanel` helper.
      */
     toggleStatsPanel(): void { this.toggleByMethod('toggleStatsPanel'); }
+
+    /**
+     * Round 152 — toggle the HUD compact mode.
+     * The HUD's `setCompact(compact)` setter flips
+     * the `compact` flag in the HUD state; the
+     * per-row detail lists in the round-51 memories
+     * block (WASM latency per-fn lines, the
+     * event-chain timeline, the debouncer
+     * mini-strip countdowns) collapse to headlines
+     * only when `compact === true`. The state is
+     * persisted to `localStorage[agi_hud_compact]`
+     * so a player who enables it on a visit
+     * doesn't have to re-enable it on the next
+     * page load.
+     *
+     * Unlike the panel-toggle family, this does
+     * NOT mount/unmount a `<div>` — the HUD's
+     * render is idempotent on `compact`, so the
+     * toggle is cheap (one boolean flip + one
+     * render). The `H` key shortcut calls this
+     * via the round-152 `toggle-hud-compact`
+     * KeyboardAction.
+     */
+    toggleHudCompact(): void {
+        const next = !this.hud.isCompact();
+        this.hud.setCompact(next);
+        saveHudCompactToStorage(next);
+    }
 
     /**
      * Round 113 — toggle the progression panel
@@ -3772,6 +3815,14 @@ async function bootstrap(): Promise<void> {
         if (!action) return;
         switch (action.kind) {
             case 'enter-atom': void app.enterAtom(action.atomId); break;
+            // Round 152 — H key toggles the HUD
+            // compact mode (the round-51 memories
+            // block collapses its per-row detail
+            // lists). Routed through the same
+            // handler the panel-toggles use; the
+            // method body is small (one boolean
+            // flip + localStorage write + re-render).
+            case 'toggle-hud-compact': app.toggleHudCompact(); break;
             case 'abandon':    app.abandonCurrentDimension(); break;
             case 'reroll':     void app.enterNewDimension(); break;
             case 'toggle-help':app.toggleHelp(); break;
@@ -3898,6 +3949,45 @@ function writeDifficultyToStorage(d: Difficulty): void {
     if (typeof localStorage === 'undefined') return;
     try {
         localStorage.setItem(DIFFICULTY_STORAGE_KEY, d);
+    } catch {
+        // localStorage can throw in
+        // private mode / quota errors.
+        // Swallow — the in-memory state
+        // is already updated.
+    }
+}
+
+// Round 152 — localStorage persistence
+// for the HUD compact mode (the H key
+// toggles it). Mirrors the round-127
+// pattern: a `load…FromStorage` /
+// `save…ToStorage` pair with the same
+// `typeof localStorage === 'undefined'`
+// guard (the non-browser test env has
+// no `localStorage` global). The key
+// `agi_hud_compact` stores the literal
+// string `'1'` (compact ON) or
+// `'0'` (compact OFF, default). On a
+// missing / malformed / unavailable
+// storage, the load returns `false` so
+// the in-memory state falls back to the
+// default (compact OFF).
+const HUD_COMPACT_STORAGE_KEY = 'agi_hud_compact';
+
+function loadHudCompactFromStorage(): boolean {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+        const raw = localStorage.getItem(HUD_COMPACT_STORAGE_KEY);
+        return raw === '1';
+    } catch {
+        return false;
+    }
+}
+
+function saveHudCompactToStorage(compact: boolean): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(HUD_COMPACT_STORAGE_KEY, compact ? '1' : '0');
     } catch {
         // localStorage can throw in
         // private mode / quota errors.
