@@ -273,6 +273,7 @@
  */
 
 import type { DslRule, DslEventKind, DslActionKind } from '../dsl/MemeCompiler';
+import { mutationCost } from '../dsl/MemeCompiler';
 
 export interface DslCodexPanelHandle {
     refresh(): void;
@@ -438,6 +439,44 @@ export type DslHistoryColumnSort = {
      * `secondary: false`.
      */
     secondary?: boolean;
+    /**
+     * Round 165 — the 5th state in the
+     * column-header click cycle. When
+     * `true`, the sort is driven by the
+     * rule's `mutation_cost()` (the
+     * round-132 heuristic — `Damage`
+     * +1, `Heal` +1, `Spawn` +2,
+     * `SpawnEntity` +3, plus a base of
+     * 1). The `column` field still
+     * determines the *direction* (the
+     * `costKey` only sets the sort key
+     * — the column header the player
+     * clicked still controls asc / desc).
+     *
+     * **Why a 5th state at all**:
+     * the 4-state cycle
+     * `null → asc → desc → asc+secondary → null`
+     * sorts by the clicked column's
+     * *displayed value* (idx / source
+     * / actions count). A `costKey`
+     * sort by `mutation_cost` is a
+     * different axis entirely — it
+     * surfaces the round-162
+     * auto-generated complex rules at
+     * the top of the history list, so
+     * the player can see "what does
+     * the codegen produce that's the
+     * most expensive?" at a glance.
+     *
+     * The field is optional so the
+     * existing 4-state round-158 callers
+     * (and the localStorage-persisted
+     * `persistentColumnSort`) keep
+     * working without migration — a
+     * missing `costKey` is treated
+     * identically to `costKey: false`.
+     */
+    costKey?: boolean;
 } | null;
 
 /**
@@ -1317,8 +1356,9 @@ function renderHistoryColumnHeader(
         // unchanged.
         const indicator = active
             ? (columnSort?.direction === 'asc'
-                ? (columnSort?.secondary ? ' ↑+' : ' ↑')
-                : ' ↓')
+                ? (columnSort?.costKey ? ' ↑$'
+                    : columnSort?.secondary ? ' ↑+' : ' ↑')
+                : (columnSort?.costKey ? ' ↓$' : ' ↓'))
             : ' <span class="dsl-codex-history-col-hint">↕</span>';
         const cls = active
             ? 'dsl-codex-history-col-header dsl-codex-history-col-header-active'
@@ -1326,18 +1366,26 @@ function renderHistoryColumnHeader(
         const ariaSort = active
             ? (columnSort?.direction === 'asc' ? 'ascending' : 'descending')
             : 'none';
-        // Round 158 — title hint
-        // also reflects the 4th
+        // Round 165 — title hint
+        // also reflects the 5th
         // state. The player who
         // hovers the header sees
-        // "按X升序(次要)" instead
+        // "按X升序(cost)" instead
         // of just "按X升序" so
-        // they understand why the
-        // secondary indicator is
-        // showing.
-        const titleSuffix = active && columnSort?.secondary
-            ? '(次要)'
-            : '';
+        // they understand the `$`
+        // cost-key indicator is
+        // showing (the same `$`
+        // is used in the indicator
+        // itself as a single-glyph
+        // mnemonic — `$` ≈ "cost
+        // of mutation"). The 4th-
+        // state `(次要)` title
+        // suffix is preserved.
+        const titleSuffix = active && columnSort?.costKey
+            ? '(cost)'
+            : active && columnSort?.secondary
+                ? '(次要)'
+                : '';
         const title = `按${label}排序${titleSuffix}`;
         return `<span class="${cls}" id="${id}" data-column="${column}" aria-sort="${ariaSort}" role="button" tabindex="0" title="${title}">${label}${indicator}</span>`;
     };
@@ -1587,6 +1635,26 @@ function renderHistoryList(
         const secondaryTiebreaker = columnSort.secondary
             ? (b.origIndex - a.origIndex)  // idx desc
             : (a.origIndex - b.origIndex); // idx asc (default)
+        // Round 165 — `costKey` takes
+        // precedence over the column
+        // key. When the 5th state is
+        // active, the sort is driven by
+        // `mutation_cost()` (the
+        // round-132 heuristic), not by
+        // the column's *displayed
+        // value*. The `column` field
+        // still controls direction (so
+        // the player can flip between
+        // cheapest-first and
+        // costliest-first), and the
+        // `secondary` flag controls
+        // ties.
+        if (columnSort.costKey) {
+            const aCost = mutationCost(a.rule);
+            const bCost = mutationCost(b.rule);
+            if (aCost !== bCost) return (aCost - bCost) * dir;
+            return secondaryTiebreaker;
+        }
         switch (columnSort.column) {
             case 'idx':
                 // Sort by the
@@ -2668,54 +2736,92 @@ export function renderDslCodexPanel(
         if (!header) return;
         const column = header.getAttribute('data-column');
         if (column !== 'idx' && column !== 'source' && column !== 'actions') return;
-        // Round 158 — 4-state click
+        // Round 165 — 5-state click
         // cycle (extending the
-        // round-144 3-state machine
-        // with a secondary-sort
-        // tiebreaker state).
+        // round-158 4-state machine
+        // with a `costKey` state that
+        // sorts by the rule's
+        // `mutation_cost()` instead
+        // of the column's *displayed
+        // value*).
         //
         // Cycle:
         //   null
         //     → asc                (1st click)
         //     → desc               (2nd click)
         //     → asc+secondary      (3rd click, with idx-desc tiebreaker)
-        //     → null               (4th click, clear back to dropdown)
+        //     → costKey (asc)      (4th click, sort by mutation_cost asc)
+        //     → null               (5th click, clear back to dropdown)
         //
-        // The `secondary: true` flag
-        // changes the tiebreaker from
-        // "idx asc" (the round-144
-        // default) to "idx desc" so
-        // ties in the primary column
-        // show the most recent rules
-        // first. This is the most
-        // common multi-column sort
-        // pattern in table UIs (Excel,
-        // Google Sheets, etc.) and is
-        // a 1-click extension of the
-        // existing 3-state cycle.
+        // The 4th state (`costKey:
+        // true`) uses the column to
+        // determine direction: clicking
+        // the *same* column that was
+        // already at `asc+secondary`
+        // takes the player to a
+        // mutation_cost sort in the
+        // *column's* direction (so the
+        // player can still tell at a
+        // glance which direction the
+        // sort is running). The default
+        // is 'asc' (cheapest first) so
+        // the 4th-click goes to "cheapest
+        // first" and the 5th-click clears
+        // (the 5th state, like the
+        // previous "asc+secondary", is
+        // also terminal until the player
+        // clicks a different column).
         if (currentColumnSort === null) {
             currentColumnSort = { column, direction: 'asc' };
         } else if (currentColumnSort.column === column) {
-            if (currentColumnSort.direction === 'asc' && !currentColumnSort.secondary) {
+            if (currentColumnSort.direction === 'asc' && !currentColumnSort.secondary && !currentColumnSort.costKey) {
                 // asc (default) → desc.
                 currentColumnSort = { column, direction: 'desc' };
-            } else if (currentColumnSort.direction === 'desc') {
+            } else if (currentColumnSort.direction === 'desc' && !currentColumnSort.secondary && !currentColumnSort.costKey) {
                 // desc → asc+secondary
                 // (4th state — round 158).
+                // The `!costKey` guard is
+                // round-165: a `costKey desc`
+                // state must NOT regress to
+                // `asc+secondary` on the next
+                // click — it should fall through
+                // to the final `else` branch and
+                // clear (the 6th click is the
+                // clear for costKey users, just
+                // like the 4th click was the clear
+                // for round-158 4-state users).
                 currentColumnSort = { column, direction: 'asc', secondary: true };
+            } else if (currentColumnSort.direction === 'asc' && currentColumnSort.secondary) {
+                // asc+secondary → costKey
+                // (5th state — round 165).
+                // We carry the *current*
+                // direction (typically 'asc')
+                // so the player can flip
+                // between cheapest-first and
+                // costliest-first by clicking
+                // the column twice in a row.
+                currentColumnSort = { column, direction: 'asc', costKey: true };
+            } else if (currentColumnSort.costKey && currentColumnSort.direction === 'asc') {
+                // costKey asc → costKey desc
+                // (6th click — surfaces
+                // expensive rules first,
+                // which is the "show me the
+                // round-162 codegen output"
+                // workflow).
+                currentColumnSort = { column, direction: 'desc', costKey: true };
             } else {
-                // asc+secondary → null
+                // costKey desc → null
                 // (clear, back to dropdown
-                // sort). This is the 5th
+                // sort). This is the 7th
                 // click in the cycle.
                 currentColumnSort = null;
             }
         } else {
             // Different column → start
             // that column at 'asc'
-            // (no secondary — secondary
-            // is only reachable from
-            // the active column).
+            // (no secondary, no costKey
+            // — both are only reachable
+            // from the active column).
             currentColumnSort = { column, direction: 'asc' };
         }
         doRender();

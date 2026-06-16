@@ -170,6 +170,38 @@ function splitTopLevel(src: string, sep: string): string[] {
     return out;
 }
 
+/**
+ * Round 165 — heuristic cost for a parsed
+ * `DslRule`. Mirrors the Rust
+ * `cocos4-rust::agi_minigame::dsl::ast::Rule::mutation_cost`
+ * (round-132). The cost starts at 1 and
+ * accumulates the per-action weight:
+ *
+ *   Damage       +1
+ *   Heal         +1
+ *   Spawn        +2
+ *   SpawnEntity  +3
+ *
+ * A 0-action rule has cost 1 (the base); a
+ * 2-action rule with [Spawn, SpawnEntity]
+ * has cost 6. The DslCodex panel uses this
+ * for the round-165 5th sort state (sort by
+ * cost descending — surfaces the
+ * round-162 auto-generated complex rules
+ * at the top of the history list).
+ */
+export function mutationCost(rule: DslRule): number {
+    let cost = 1;
+    for (const action of rule.actions) {
+        cost +=
+            action.kind === 'Damage' ? 1 :
+            action.kind === 'Heal' ? 1 :
+            action.kind === 'Spawn' ? 2 :
+            3; // SpawnEntity
+    }
+    return cost;
+}
+
 /** Step 3: convert the rule into a JSON value-map the Rust engine can ingest. */
 export function toEngineJSON(rule: DslRule): Record<string, unknown> {
     return {

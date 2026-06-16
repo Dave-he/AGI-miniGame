@@ -15,6 +15,7 @@
 
 import { renderDslCodexPanel, clearPersistentPanelState } from './DslCodexPanel';
 import type { DslRule } from '../dsl/MemeCompiler';
+import { mutationCost } from '../dsl/MemeCompiler';
 
 function makeRoot(): HTMLElement {
     const el = document.createElement('div');
@@ -3860,6 +3861,21 @@ test('round_158_clicking_active_asc_secondary_column_clears_sort_round158', () =
     //   null → asc → desc → asc+secondary → null
     // (was 3-state in round-144:
     // null → asc → desc → null).
+    //
+    // Round 165 — extended the cycle
+    // to 5 states (with the
+    // `costKey asc` / `costKey desc`
+    // states inserted between
+    // `asc+secondary` and `null`),
+    // so the clear now happens on
+    // the 7th click (not the 4th).
+    // We preserve the round-158
+    // test name (so a regression on
+    // the 4-state machine still
+    // shows up) but exercise the
+    // 7-click path so the
+    // round-165 costKey insert is
+    // pinned here too.
     const root = makeRoot();
     const history: DslRule[] = [
         { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
@@ -3873,12 +3889,22 @@ test('round_158_clicking_active_asc_secondary_column_clears_sort_round158', () =
     );
     const headerSel = '#dsl-codex-history-col-header-actions';
     const header = () => root.querySelector(headerSel) as HTMLElement;
-    // 4 clicks total: null → asc → desc → asc+secondary → null
+    // 6 clicks total: null → asc → desc → asc+secondary → costKey asc → costKey desc → null
+    // (round-165: the 4th click now
+    // lands at costKey asc, the
+    // 5th at costKey desc, the
+    // 6th click clears — same
+    // terminal-clear semantics as
+    // round-158, just with two
+    // extra costKey states inserted
+    // in between).
     header().click();
     header().click();
     header().click();
     header().click();
-    // 4th click clears the sort.
+    header().click();
+    header().click();
+    // 6th click clears the sort.
     expect(header().classList.contains('dsl-codex-history-col-header-active')).toBe(false);
     expect(header().getAttribute('aria-sort')).toBe('none');
 });
@@ -5014,5 +5040,290 @@ test('round_163_enter_on_panel_root_with_selection_invokes_onApplyHistory_round_
     expect(applied.length).toBe(1);
     expect(applied[0].event.kind).toBe('Timer');
     expect(applied[0].actions[0].kind).toBe('Heal');
+});
+
+// =====================================================================
+// Round 165 — 5-state column sort
+// cycle (costKey asc / desc).
+//
+// Cycle:
+//   null → asc → desc → asc+secondary → costKey asc → costKey desc → null
+//
+// The 4th state (`costKey: true`)
+// sorts by `mutation_cost()`
+// (round-132 heuristic) instead of
+// the column's *displayed value*.
+// The column header still
+// determines direction (asc / desc)
+// and the `secondary` flag still
+// controls ties. The `$` glyph is
+// the single-character mnemonic
+// for "cost of mutation".
+// =====================================================================
+
+test('round_165_costKey_state_renders_dollar_indicator_round165', () => {
+    // The 5th state (costKey asc)
+    // must render the ` ↑$`
+    // indicator on the active
+    // header — the `$` suffix
+    // signals the costKey
+    // tiebreaker is engaged. The
+    // round-158 `↑+` indicator
+    // is still used for the 4th
+    // state (asc+secondary).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const header = () => root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement;
+    header().click(); // → asc, indicator ` ↑`
+    expect(header().textContent).toContain('↑');
+    expect(header().textContent).not.toContain('↑+');
+    expect(header().textContent).not.toContain('↑$');
+    header().click(); // → desc, indicator ` ↓`
+    expect(header().textContent).toContain('↓');
+    expect(header().textContent).not.toContain('↓$');
+    header().click(); // → asc+secondary, indicator ` ↑+`
+    expect(header().textContent).toContain('↑+');
+    expect(header().textContent).not.toContain('↑$');
+    header().click(); // → costKey asc, indicator ` ↑$` (round-165)
+    expect(header().textContent).toContain('↑$');
+    expect(header().textContent).not.toContain('↑+');
+    header().click(); // → costKey desc, indicator ` ↓$` (round-165)
+    expect(header().textContent).toContain('↓$');
+    header().click(); // → null (clears)
+    expect(header().classList.contains('dsl-codex-history-col-header-active')).toBe(false);
+});
+
+test('round_165_costKey_state_title_hint_includes_cost_round165', () => {
+    // The 5th state's title
+    // hint must include
+    // "cost" (so the player who
+    // hovers the header sees
+    // the costKey state
+    // clearly).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const header = () => root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement;
+    // 4 clicks: null → asc → desc → asc+secondary → costKey asc
+    header().click();
+    header().click();
+    header().click();
+    header().click();
+    expect(header().getAttribute('title')).toContain('cost');
+});
+
+test('round_165_costKey_asc_sorts_cheapest_rules_first_round165', () => {
+    // Round 165 — the costKey
+    // asc sort places the
+    // cheapest rules at the
+    // top. The round-132
+    // heuristic gives
+    //   1-action Damage/Heal: cost 2
+    //   1-action Spawn: cost 3
+    //   1-action SpawnEntity: cost 4
+    //   2-action [Spawn, SpawnEntity]: cost 6
+    // We assemble 4 rules with
+    // strictly increasing cost
+    // so the sort has a single
+    // stable order — easier to
+    // assert than a partial sort.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        // origIndex 0: 1-action Spawn (cost 3)
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['a'] }] },
+        // origIndex 1: 2-action [Spawn, SpawnEntity] (cost 6)
+        {
+            event: { kind: 'Spawn' },
+            actions: [
+                { kind: 'Spawn', args: ['b'] },
+                { kind: 'SpawnEntity', args: ['c'] },
+            ],
+        },
+        // origIndex 2: 1-action Damage (cost 2)
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        // origIndex 3: 1-action SpawnEntity (cost 4)
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'SpawnEntity', args: ['d'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        () => { /* onApplyHistory noop — makes rows clickable */ },
+    );
+    const header = () => root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement;
+    // 4 clicks: null → asc → desc → asc+secondary → costKey asc
+    header().click();
+    header().click();
+    header().click();
+    header().click();
+    // Confirm we landed at
+    // costKey asc.
+    expect(header().textContent).toContain('↑$');
+    // Verify the row order
+    // reflects the costKey asc
+    // sort (cheapest first).
+    // Cost order:
+    //   row 0 = origIndex 2 (cost 2: Damage)
+    //   row 1 = origIndex 0 (cost 3: Spawn)
+    //   row 2 = origIndex 3 (cost 4: SpawnEntity)
+    //   row 3 = origIndex 1 (cost 6: Spawn+SpawnEntity)
+    const rows = root.querySelectorAll<HTMLElement>('.dsl-codex-history-row-clickable');
+    expect(rows.length).toBe(4);
+    // Each row contains its
+    // action kind in the
+    // rendered text — the
+    // cheapest first order
+    // means the Damage rule
+    // (origIndex 2) is at the
+    // top.
+    expect((rows[0] as HTMLElement).textContent).toContain('Damage');
+    expect((rows[1] as HTMLElement).textContent).toContain('Spawn');
+    expect((rows[2] as HTMLElement).textContent).toContain('SpawnEntity');
+});
+
+test('round_165_costKey_desc_sorts_costliest_rules_first_round165', () => {
+    // Round 165 — the costKey
+    // desc sort places the
+    // most expensive rules at
+    // the top (the "show me
+    // the round-162 codegen
+    // output" workflow).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        // origIndex 0: 1-action Damage (cost 2)
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        // origIndex 1: 2-action [Spawn, SpawnEntity] (cost 6)
+        {
+            event: { kind: 'Spawn' },
+            actions: [
+                { kind: 'Spawn', args: ['b'] },
+                { kind: 'SpawnEntity', args: ['c'] },
+            ],
+        },
+        // origIndex 2: 1-action Spawn (cost 3)
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['a'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        () => { /* onApplyHistory noop */ },
+    );
+    const header = () => root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement;
+    // 5 clicks: null → asc → desc → asc+secondary → costKey asc → costKey desc
+    header().click();
+    header().click();
+    header().click();
+    header().click();
+    header().click();
+    // Confirm we landed at
+    // costKey desc.
+    expect(header().textContent).toContain('↓$');
+    const rows = root.querySelectorAll<HTMLElement>('.dsl-codex-history-row-clickable');
+    expect(rows.length).toBe(3);
+    // Cost order desc:
+    //   row 0 = origIndex 1 (cost 6: Spawn+SpawnEntity)
+    //   row 1 = origIndex 2 (cost 3: Spawn)
+    //   row 2 = origIndex 0 (cost 2: Damage)
+    expect((rows[0] as HTMLElement).textContent).toContain('SpawnEntity');
+    expect((rows[1] as HTMLElement).textContent).toContain('Spawn');
+    expect((rows[2] as HTMLElement).textContent).toContain('Damage');
+});
+
+test('round_165_costKey_state_only_reachable_from_active_column_round165', () => {
+    // Round 165 — switching to a
+    // different column starts
+    // that column at 'asc' with
+    // NO costKey (the costKey
+    // is only reachable by
+    // cycling the SAME column 4
+    // times). Mirrors the
+    // round-158 secondary-state-
+    // only-reachable-from-active-
+    // column test.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const actionsHeader = () => root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement;
+    const sourceHeader = () => root.querySelector('#dsl-codex-history-col-header-source') as HTMLElement;
+    // Cycle actions column to
+    // costKey asc.
+    actionsHeader().click();
+    actionsHeader().click();
+    actionsHeader().click();
+    actionsHeader().click();
+    expect(actionsHeader().textContent).toContain('↑$');
+    // Now click the source
+    // column — it should start
+    // at plain 'asc' (no
+    // costKey, no secondary).
+    sourceHeader().click();
+    expect(sourceHeader().textContent).toContain('↑');
+    expect(sourceHeader().textContent).not.toContain('↑$');
+    expect(sourceHeader().textContent).not.toContain('↑+');
+});
+
+test('round_165_mutationCost_helper_mirrors_rust_round132_round165', () => {
+    // The TS `mutationCost`
+    // helper (MemeCompiler.ts)
+    // is the round-165 mirror
+    // of the Rust
+    // `ast::Rule::mutation_cost`
+    // (round-132). It must give
+    // the same cost for the
+    // same rule shape so the
+    // sort is consistent across
+    // the TS / Rust boundary.
+    //   empty actions: cost 1
+    //   1-action Damage/Heal: cost 2
+    //   1-action Spawn: cost 3
+    //   1-action SpawnEntity: cost 4
+    //   2-action [Spawn, SpawnEntity]: cost 6
+    //   2-action [Damage, Heal]: cost 3
+    expect(mutationCost({ event: { kind: 'Collide' }, actions: [] })).toBe(1);
+    expect(mutationCost({ event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] })).toBe(2);
+    expect(mutationCost({ event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] })).toBe(2);
+    expect(mutationCost({ event: { kind: 'Collide' }, actions: [{ kind: 'Spawn', args: ['x'] }] })).toBe(3);
+    expect(mutationCost({ event: { kind: 'Collide' }, actions: [{ kind: 'SpawnEntity', args: ['x'] }] })).toBe(4);
+    expect(mutationCost({
+        event: { kind: 'Collide' },
+        actions: [
+            { kind: 'Spawn', args: ['x'] },
+            { kind: 'SpawnEntity', args: ['y'] },
+        ],
+    })).toBe(6);
+    expect(mutationCost({
+        event: { kind: 'Collide' },
+        actions: [
+            { kind: 'Damage', args: [1] },
+            { kind: 'Heal', args: [1] },
+        ],
+    })).toBe(3);
 });
 
