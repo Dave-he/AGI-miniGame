@@ -2931,3 +2931,234 @@ test('round_140_action_filter_works_even_when_current_rule_is_null', () => {
     expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
 });
 
+// ---------------------------------------------------------------------------
+// Round 141 — history count badge.
+//   1. no_history_callback → no badge
+//   2. with_history_no_filter → no badge (visible==total)
+//   3. event_filter_active_shows_visible_over_total_badge
+//   4. action_filter_active_shows_badge
+//   5. search_active_shows_badge
+//   6. zero_matches_with_filter_shows_0_over_N_badge
+//   7. badge_hides_when_filter_cleared
+//   8. badge_works_in_null_rule_branch
+//   9. badge_works_in_populated_rule_branch
+//  10. badge_agrees_with_actual_row_count
+// ---------------------------------------------------------------------------
+
+test('round_141_no_history_callback_means_no_count_badge', () => {
+    // No getRuleHistory → no history section at all, so no badge.
+    const root = makeRoot();
+    renderDslCodexPanel(root, () => null, () => 'none');
+    expect(root.innerHTML).not.toContain('dsl-codex-history-count');
+});
+
+test('round_141_with_history_no_filter_hides_badge', () => {
+    // visible==total → badge hides itself (no visual noise).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    // No filter, no search → visible=2, total=2 → no badge.
+    expect(root.innerHTML).not.toContain('dsl-codex-history-count');
+});
+
+test('round_141_event_filter_active_shows_visible_over_total_badge', () => {
+    // 3 rules, 1 Collide → badge reads "(1/3)".
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['A'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    sel.value = 'Collide';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Badge element exists, reads (1/3).
+    expect(root.innerHTML).toContain('dsl-codex-history-count');
+    expect(root.innerHTML).toContain('(1/3)');
+});
+
+test('round_141_action_filter_active_shows_badge', () => {
+    // 3 rules, only 1 contains Heal → badge reads "(1/3)".
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Damage', args: [2] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['A'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-action-filter-select') as HTMLSelectElement;
+    sel.value = 'Heal';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.innerHTML).toContain('dsl-codex-history-count');
+    expect(root.innerHTML).toContain('(1/3)');
+});
+
+test('round_141_search_active_shows_badge', () => {
+    // 3 rules, only 1 contains "Spawn" in source DSL → "(1/3)".
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['Orb'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input.value = 'Orb';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(root.innerHTML).toContain('dsl-codex-history-count');
+    expect(root.innerHTML).toContain('(1/3)');
+});
+
+test('round_141_zero_matches_with_filter_shows_0_over_N_badge', () => {
+    // 3 rules, filter to PlayerHit → 0 matches → "(0/3)".
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['A'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    sel.value = 'PlayerHit';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Badge present and reads (0/3).
+    expect(root.innerHTML).toContain('dsl-codex-history-count');
+    expect(root.innerHTML).toContain('(0/3)');
+    // The "暂无匹配" empty state is still shown.
+    expect(root.innerHTML).toContain('暂无匹配');
+});
+
+test('round_141_badge_hides_when_filter_cleared', () => {
+    // Apply filter (badge shows), then clear filter (badge hides).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    sel.value = 'Collide';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.innerHTML).toContain('dsl-codex-history-count');
+    // Clear filter — re-query because the previous dispatch triggered
+    // a re-render that detached the old <select> (mirror of the
+    // round-136 `filter_change_back_to_all_restores_all_rows` test).
+    const sel2 = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    sel2.value = '';
+    sel2.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.innerHTML).not.toContain('dsl-codex-history-count');
+});
+
+test('round_141_badge_works_in_null_rule_branch', () => {
+    // The empty-state branch (currentRule===null) also renders the
+    // badge when a filter is active. Mirrors round-136/138/140
+    // "filter works even when current rule is null" tests.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    sel.value = 'Collide';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.innerHTML).toContain('dsl-codex-history-count');
+    expect(root.innerHTML).toContain('(1/2)');
+});
+
+test('round_141_badge_works_in_populated_rule_branch', () => {
+    // Same check in the populated-rule branch (currentRule !== null).
+    const root = makeRoot();
+    const currentRule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Damage', args: [1] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['A'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => currentRule,
+        () => 'accepted',
+        () => history,
+    );
+    const sel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    sel.value = 'Timer';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.innerHTML).toContain('dsl-codex-history-count');
+    expect(root.innerHTML).toContain('(1/3)');
+});
+
+test('round_141_badge_agrees_with_actual_row_count', () => {
+    // The badge number must always equal the number of rows actually
+    // rendered (a stale count would mislead the player).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }, { kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [2] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [3] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['A'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    // Filter to Collide → 2 rows visible.
+    const filterSel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    filterSel.value = 'Collide';
+    filterSel.dispatchEvent(new Event('change', { bubbles: true }));
+    const rowsAfterFilter = root.querySelectorAll('.dsl-codex-history-row').length;
+    expect(rowsAfterFilter).toBe(2);
+    expect(root.innerHTML).toContain('(2/4)');
+    // Now narrow with action filter Heal → 1 row visible.
+    const actionSel = root.querySelector('#dsl-codex-history-action-filter-select') as HTMLSelectElement;
+    actionSel.value = 'Heal';
+    actionSel.dispatchEvent(new Event('change', { bubbles: true }));
+    const rowsAfterActionFilter = root.querySelectorAll('.dsl-codex-history-row').length;
+    expect(rowsAfterActionFilter).toBe(1);
+    expect(root.innerHTML).toContain('(1/4)');
+});
+

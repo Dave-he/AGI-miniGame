@@ -1,5 +1,5 @@
 /**
- * DslCodexPanel — round-133 + round-134 + round-135 + round-136 + round-138 + round-139 + round-140.
+ * DslCodexPanel — round-133 + round-134 + round-135 + round-136 + round-138 + round-139 + round-140 + round-141.
  *
  * Renders the AGI's most recently
  * generated / hot-reloaded `DslRule`
@@ -178,6 +178,29 @@
  * action-filter index so
  * the click target is
  * still correct.
+ *
+ * Round 141 — also adds a
+ * count badge to the
+ * "历史" section label.
+ * The label becomes
+ * "历史 (3/7)" — visible
+ * /total — so the player
+ * can see at-a-glance how
+ * many rows survived the
+ * filter / search / action
+ * filter combination.
+ * When the set is
+ * unfiltered (visible ==
+ * total), the badge is
+ * hidden (the count is
+ * implied by the full
+ * list). When the count
+ * drops to 0, the existing
+ * "暂无匹配" empty state
+ * still shows; the badge
+ * reads "(0/N)" so the
+ * player knows how many
+ * are hidden.
  */
 
 import type { DslRule, DslEventKind, DslActionKind } from '../dsl/MemeCompiler';
@@ -474,6 +497,104 @@ function renderHistorySort(currentSort: DslHistorySort): string {
             </select>
         </div>
     `;
+}
+
+/**
+ * Round 141 — render
+ * the history count
+ * badge. The badge is a
+ * small "(visible/total)"
+ * tag that sits inside
+ * the "历史" section
+ * label so the player can
+ * see at-a-glance how
+ * many rows survived the
+ * current filter / search
+ * / action-filter
+ * combination.
+ *
+ *   - `visible == total`
+ *     (no filter active,
+ *     or filter matches
+ *     everything): the
+ *     badge hides itself
+ *     (the count is
+ *     implied by the
+ *     full list — no
+ *     visual noise).
+ *   - `visible < total`:
+ *     renders the badge
+ *     so the player
+ *     knows how many
+ *     rows are hidden
+ *     by the active
+ *     filter / search /
+ *     action filter.
+ *   - `visible == 0`:
+ *     still renders the
+ *     "(0/N)" badge so
+ *     the player knows
+ *     how many are
+ *     hidden behind the
+ *     filter (the
+ *     "暂无匹配" empty
+ *     state appears
+ *     below).
+ *
+ * Returns `''` when no
+ * badge should render
+ * (caller concatenates
+ * directly into the
+ * section label).
+ */
+function renderHistoryCountBadge(visible: number, total: number): string {
+    if (visible === total) return '';
+    return `<span class="dsl-codex-history-count">(${visible}/${total})</span>`;
+}
+
+/**
+ * Round 141 — compute
+ * the number of history
+ * rows that survive the
+ * current filter +
+ * search + action-filter
+ * combination. Mirrors
+ * the same predicates
+ * used by
+ * `renderHistoryList` so
+ * the visible count in
+ * the badge always agrees
+ * with the number of
+ * rows actually rendered.
+ *
+ * Lives outside
+ * `renderHistoryList`
+ * because the badge sits
+ * in the section label,
+ * which is rendered as a
+ * sibling of the list —
+ * we don't want to call
+ * `renderHistoryList`
+ * twice (once for the
+ * count, once for the
+ * actual HTML).
+ */
+function countHistoryVisible(
+    history: ReadonlyArray<DslRule>,
+    filter: DslEventKind | null,
+    actionFilter: DslActionKind | null,
+    search: string,
+): number {
+    const searchLower = search.toLowerCase();
+    return history.filter((r) => {
+        if (filter !== null && r.event.kind !== filter) return false;
+        if (actionFilter !== null && !r.actions.some((a) => a.kind === actionFilter)) return false;
+        if (searchLower !== '') {
+            const source = ruleToSource(r).toLowerCase();
+            if (!source.includes(searchLower)) return false;
+        }
+        return true;
+    }).length;
 }
 
 /**
@@ -1189,14 +1310,19 @@ export function renderDslCodexPanel(
                 <div class="dsl-codex-panel">
                     <div class="dsl-codex-title">${escapeHtml(t('dslCodex.title'))}</div>
                     <div class="dsl-codex-empty">暂无 DSL — 按 1-8 进入 atom 后由 AGI 自动生成</div>
-                    ${hasHistory ? `
-                        ${renderHistoryFilter(currentFilter)}
-                        ${renderHistoryActionFilter(currentActionFilter)}
-                        ${renderHistorySearch(currentSearch)}
-                        ${renderHistorySort(currentSort)}
-                        <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))}</div>
-                        ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentActionFilter, currentSearch, currentSort)}
-                    ` : ''}
+                    ${hasHistory ? (() => {
+                        const hist = getRuleHistory!();
+                        const visible = countHistoryVisible(hist, currentFilter, currentActionFilter, currentSearch);
+                        const badge = renderHistoryCountBadge(visible, hist.length);
+                        return `
+                            ${renderHistoryFilter(currentFilter)}
+                            ${renderHistoryActionFilter(currentActionFilter)}
+                            ${renderHistorySearch(currentSearch)}
+                            ${renderHistorySort(currentSort)}
+                            <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort)}
+                        `;
+                    })() : ''}
                 </div>
             `;
             return;
@@ -1221,12 +1347,19 @@ export function renderDslCodexPanel(
                 ${renderEventRow(rule)}
                 ${renderActionRows(rule)}
                 ${hasHistory ? `
-                    ${renderHistoryFilter(currentFilter)}
-                    ${renderHistoryActionFilter(currentActionFilter)}
-                    ${renderHistorySearch(currentSearch)}
-                    ${renderHistorySort(currentSort)}
-                    <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))}</div>
-                    ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentActionFilter, currentSearch, currentSort)}
+                    ${(() => {
+                        const hist = getRuleHistory!();
+                        const visible = countHistoryVisible(hist, currentFilter, currentActionFilter, currentSearch);
+                        const badge = renderHistoryCountBadge(visible, hist.length);
+                        return `
+                            ${renderHistoryFilter(currentFilter)}
+                            ${renderHistoryActionFilter(currentActionFilter)}
+                            ${renderHistorySearch(currentSearch)}
+                            ${renderHistorySort(currentSort)}
+                            <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort)}
+                        `;
+                    })()}
                 ` : ''}
             </div>
         `;
