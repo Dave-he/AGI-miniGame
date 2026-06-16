@@ -202,6 +202,44 @@
  * player knows how many
  * are hidden.
  *
+ * Round 143 — also adds
+ * a "→" / "在代码中查看"
+ * (view in codex)
+ * button on each
+ * history row that
+ * fires an
+ * `onPreviewHistory`
+ * callback (8th arg,
+ * optional). This is
+ * the "jump-to-source"
+ * gesture: clicking
+ * the button swaps the
+ * main codex to that
+ * rule's source DSL
+ * + event breakdown,
+ * without re-applying
+ * the rule to the
+ * game (that's still
+ * `onApplyHistory`).
+ * Useful when the
+ * player wants to
+ * inspect a past rule
+ * in detail without
+ * disrupting the live
+ * session. The button
+ * is orthogonal to
+ * `onApplyHistory`:
+ * a row can be
+ * preview-only (no
+ * `onApplyHistory`
+ * callback provided)
+ * or both (the
+ * `→` button doesn't
+ * conflict with the
+ * row's click-to-apply
+ * handler — they're
+ * separate elements).
+ *
  * Round 142 — also adds
  * a "重置" / "Reset"
  * button next to the
@@ -632,6 +670,51 @@ function renderHistoryReset(): string {
 }
 
 /**
+ * Round 143 — render
+ * the "→" /
+ * "在代码中查看"
+ * (view in codex)
+ * button. The button
+ * is a small inline
+ * action that appears
+ * at the end of each
+ * history row. Clicking
+ * it fires
+ * `onPreviewHistory(rule)`
+ * — the host wires
+ * this to swap the
+ * main codex to that
+ * rule's source DSL +
+ * event breakdown.
+ *
+ * The button uses a
+ * stable `id` per row
+ * so the host's
+ * delegated `click`
+ * listener can find it
+ * via `closest()` and
+ * the post-sort index
+ * in the `data-` attr.
+ * The button is always
+ * rendered (we don't
+ * gate on
+ * `onApplyHistory`) —
+ * it's an independent
+ * affordance.
+ */
+function renderHistoryPreviewButton(i: number): string {
+    return `
+        <button
+            id="dsl-codex-history-preview-button-${i}"
+            class="dsl-codex-history-preview-button"
+            type="button"
+            data-preview-idx="${i}"
+            title="在主代码中查看此规则"
+        >→</button>
+    `;
+}
+
+/**
  * Round 142 — predicate
  * for whether the
  * history panel is in
@@ -845,6 +928,24 @@ function renderHistoryList(
     actionFilter: DslActionKind | null,
     search: string,
     sort: DslHistorySort,
+    // Round 143 —
+    // when true,
+    // each row
+    // gets a
+    // trailing
+    // "→"
+    // preview
+    // button that
+    // fires
+    // `onPreviewHistory(rule)`.
+    // Independent
+    // of
+    // `clickable`
+    // (a panel can
+    // be preview-
+    // only, or
+    // both).
+    previewable: boolean,
 ): string {
     // Round 136 —
     // apply the
@@ -947,11 +1048,31 @@ function renderHistoryList(
         const dataAttr = clickable
             ? ` data-rule-idx="${i}" role="button" tabindex="0"`
             : '';
+        // Round 143 —
+        // the preview
+        // button is
+        // always
+        // rendered
+        // when
+        // `previewable`
+        // is true,
+        // regardless
+        // of
+        // `clickable`.
+        // The host
+        // decides
+        // whether the
+        // panel is
+        // preview-only,
+        // apply-only,
+        // or both.
+        const previewBtn = previewable ? renderHistoryPreviewButton(i) : '';
         return `
             <div class="${cls}"${dataAttr}>
                 <span class="dsl-codex-history-idx">#${i + 1}</span>
                 <span class="dsl-codex-history-source">${escapeHtml(preview)}</span>
                 <span class="dsl-codex-history-actions">${rule.actions.length} 动作</span>
+                ${previewBtn}
             </div>
         `;
     }).join('');
@@ -1003,6 +1124,53 @@ export function renderDslCodexPanel(
      * round-134).
      */
     onApplyHistory?: (rule: DslRule) => void,
+    /**
+     * Round 143 —
+     * optional
+     * "preview /
+     * jump-to-
+     * source"
+     * callback. When
+     * provided,
+     * each history
+     * row gets a
+     * trailing "→"
+     * button. Clicking
+     * the button
+     * fires this
+     * callback with
+     * the rule at
+     * that row's
+     * post-filter /
+     * post-sort
+     * index. The
+     * host wires
+     * this to swap
+     * the main
+     * codex to that
+     * rule's source
+     * DSL + event
+     * breakdown
+     * (without
+     * re-applying
+     * the rule to
+     * the game —
+     * that's still
+     * `onApplyHistory`).
+     * Independent
+     * of `onApplyHistory`:
+     * a panel can
+     * be preview-
+     * only (no
+     * `onApplyHistory`),
+     * apply-only,
+     * or both. When
+     * omitted, no
+     * preview
+     * buttons are
+     * rendered.
+     */
+    onPreviewHistory?: (rule: DslRule) => void,
 ): DslCodexPanelHandle {
     const t = (k: string, params?: any) => i18n ? i18n.t(k, params) : k;
 
@@ -1159,6 +1327,47 @@ export function renderDslCodexPanel(
      */
     const dispatchClick = (target: EventTarget | null) => {
         if (!onApplyHistory || !getRuleHistory) return;
+        // Round 143 —
+        // if the click
+        // landed on the
+        // row's
+        // "→" preview
+        // button (a
+        // nested
+        // interactive
+        // element
+        // inside the
+        // clickable
+        // row), skip
+        // the apply
+        // handler —
+        // the preview
+        // button has
+        // its own
+        // dedicated
+        // handler
+        // (`dispatchPreview`).
+        // Without
+        // this guard,
+        // a click on
+        // the "→"
+        // would
+        // BOTH preview
+        // AND apply the
+        // same rule
+        // (both
+        // handlers see
+        // the event
+        // because
+        // they're all
+        // on the same
+        // `root`).
+        const el0 = (target as HTMLElement | null)?.closest(
+            '.dsl-codex-history-row-clickable'
+        ) as HTMLElement | null;
+        if (el0 && (target as HTMLElement | null)?.closest('.dsl-codex-history-preview-button')) {
+            return;
+        }
         const el = (target as HTMLElement | null)?.closest(
             '.dsl-codex-history-row-clickable'
         ) as HTMLElement | null;
@@ -1458,11 +1667,143 @@ export function renderDslCodexPanel(
         doRender();
     };
 
+    /**
+     * Round 143 —
+     * dispatch the
+     * `click` event on
+     * a row's "→"
+     * preview button to
+     * fire
+     * `onPreviewHistory(rule)`.
+     * The button's
+     * `data-preview-idx`
+     * attribute holds
+     * the post-filter /
+     * post-sort index,
+     * so we re-apply
+     * the current
+     * filter + action-
+     * filter + search +
+     * sort pipeline
+     * before looking up
+     * the rule (same
+     * pattern as
+     * `dispatchClick`).
+     *
+     * Note: the row's
+     * outer `<div>` is
+     * also clickable
+     * (when
+     * `onApplyHistory`
+     * is provided) and
+     * keyboard-
+     * activatable. The
+     * `→` button is a
+     * NESTED element
+     * inside that row.
+     * We use
+     * `e.stopPropagation()`
+     * when the click
+     * hits the preview
+     * button so the
+     * outer row's click
+     * handler doesn't
+     * ALSO fire
+     * `onApplyHistory`
+     * (the host wired
+     * both via the
+     * same `root` click
+     * listener, so they
+     * both see the
+     * event). This
+     * mirrors how
+     * nested
+     * interactive
+     * elements normally
+     * work in HTML.
+     */
+    const dispatchPreview = (target: EventTarget | null) => {
+        if (!onPreviewHistory || !getRuleHistory) return;
+        const el = (target as HTMLElement | null)?.closest(
+            '.dsl-codex-history-preview-button'
+        ) as HTMLElement | null;
+        if (!el) return;
+        const idxAttr = el.getAttribute('data-preview-idx');
+        if (idxAttr === null) return;
+        const idx = Number.parseInt(idxAttr, 10);
+        if (!Number.isFinite(idx)) return;
+        const history = getRuleHistory();
+        // Re-apply the
+        // current
+        // filter +
+        // action-
+        // filter +
+        // search +
+        // sort pipeline
+        // so the
+        // post-sort
+        // index maps
+        // to the
+        // correct
+        // rule.
+        const searchLower = currentSearch.toLowerCase();
+        const filtered = history.filter((r) => {
+            if (currentFilter !== null && r.event.kind !== currentFilter) return false;
+            if (currentActionFilter !== null && !r.actions.some((a) => a.kind === currentActionFilter)) return false;
+            if (searchLower !== '') {
+                const source = ruleToSource(r).toLowerCase();
+                if (!source.includes(searchLower)) return false;
+            }
+            return true;
+        });
+        const indexed = filtered.map((rule, i) => ({ rule, origIndex: i }));
+        indexed.sort((a, b) => {
+            switch (currentSort) {
+                case 'chrono-oldest':
+                    return a.origIndex - b.origIndex;
+                case 'chrono-newest':
+                    return b.origIndex - a.origIndex;
+                case 'actions-desc':
+                    if (a.rule.actions.length !== b.rule.actions.length) {
+                        return b.rule.actions.length - a.rule.actions.length;
+                    }
+                    return a.origIndex - b.origIndex;
+                case 'actions-asc':
+                    if (a.rule.actions.length !== b.rule.actions.length) {
+                        return a.rule.actions.length - b.rule.actions.length;
+                    }
+                    return a.origIndex - b.origIndex;
+                case 'kind-asc':
+                    return a.rule.event.kind.localeCompare(b.rule.event.kind);
+            }
+        });
+        const rule = indexed[idx]?.rule;
+        if (rule) onPreviewHistory(rule);
+    };
+
     const doRender = () => {
         const rule = getCurrentRule();
         const outcome = getLastOutcome();
         const hasHistory = !!getRuleHistory;
         const clickable = hasHistory && !!onApplyHistory;
+        // Round 143 —
+        // independent
+        // of
+        // `clickable`:
+        // a panel can
+        // be preview-
+        // only (no
+        // `onApplyHistory`),
+        // apply-only,
+        // or both. The
+        // preview
+        // button is
+        // always
+        // available
+        // when this
+        // callback is
+        // provided.
+        const previewable = hasHistory && !!onPreviewHistory;
         if (rule === null) {
             root.innerHTML = `
                 <div class="dsl-codex-panel">
@@ -1479,7 +1820,7 @@ export function renderDslCodexPanel(
                             ${renderHistorySort(currentSort)}
                             ${renderHistoryReset()}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
-                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort)}
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable)}
                         `;
                     })() : ''}
                 </div>
@@ -1517,7 +1858,7 @@ export function renderDslCodexPanel(
                             ${renderHistorySort(currentSort)}
                             ${renderHistoryReset()}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
-                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort)}
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable)}
                         `;
                     })()}
                 ` : ''}
@@ -1576,6 +1917,67 @@ export function renderDslCodexPanel(
     // clear filters).
     if (getRuleHistory) {
         root.addEventListener('click', (e) => dispatchReset(e.target));
+    }
+
+    // Round 143 —
+    // wire the
+    // `click` event
+    // on the "→"
+    // preview
+    // button
+    // (event-
+    // delegated on
+    // the stable
+    // `root` element
+    // so it survives
+    // `doRender()`
+    // re-renders).
+    //
+    // The preview
+    // button is
+    // INSIDE the
+    // row's outer
+    // `<div>`, and
+    // the outer div
+    // is itself
+    // clickable
+    // (when
+    // `onApplyHistory`
+    // is provided).
+    // Both handlers
+    // are attached
+    // to the same
+    // `root`, so a
+    // click on the
+    // button
+    // bubbles to the
+    // row's outer
+    // handler too.
+    // We
+    // `stopPropagation`
+    // when the click
+    // lands on the
+    // preview button
+    // so the outer
+    // row's click
+    // handler does
+    // NOT also fire
+    // `onApplyHistory`
+    // (the player
+    // should be able
+    // to preview a
+    // rule without
+    // also applying
+    // it to the live
+    // game).
+    if (onPreviewHistory) {
+        root.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement | null;
+            if (target?.closest('.dsl-codex-history-preview-button')) {
+                e.stopPropagation();
+                dispatchPreview(target);
+            }
+        });
     }
 
     // Round 136 —

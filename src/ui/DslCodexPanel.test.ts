@@ -3435,3 +3435,250 @@ test('round_142_reset_button_present_in_null_rule_branch', () => {
     expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
 });
 
+// ============================================================================
+// Round 143 — "→" / "在代码中查看" preview button on each history row.
+// Optional `onPreviewHistory(rule)` callback (8th arg) is wired to a
+// trailing button on each row. The button is independent of
+// `onApplyHistory` (a panel can be preview-only, apply-only, or both).
+// ============================================================================
+
+test('round_143_no_onPreviewHistory_renders_no_preview_buttons', () => {
+    // Without onPreviewHistory, no .dsl-codex-history-preview-button
+    // elements are rendered (even when onApplyHistory is provided).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        (rule) => { void rule; }, // onApplyHistory present
+    );
+    expect(root.querySelectorAll('.dsl-codex-history-preview-button').length).toBe(0);
+});
+
+test('round_143_with_onPreviewHistory_renders_preview_buttons_per_row', () => {
+    // With onPreviewHistory, each history row gets a "→" button with
+    // dsl-codex-history-preview-button-N id and data-preview-idx attr.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: [3] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        undefined, // no onApplyHistory
+        (rule) => { void rule; }, // onPreviewHistory only
+    );
+    const btns = root.querySelectorAll('.dsl-codex-history-preview-button');
+    expect(btns.length).toBe(3);
+    // id + data-preview-idx match the row index
+    for (let i = 0; i < 3; i++) {
+        const btn = btns[i] as HTMLButtonElement;
+        expect(btn.id).toBe(`dsl-codex-history-preview-button-${i}`);
+        expect(btn.getAttribute('data-preview-idx')).toBe(String(i));
+        expect(btn.textContent?.trim()).toBe('→');
+        expect(btn.getAttribute('type')).toBe('button');
+    }
+});
+
+test('round_143_clicking_preview_button_invokes_onPreviewHistory_with_correct_rule', () => {
+    // Clicking the "→" button fires onPreviewHistory with the rule at
+    // that row's post-sort index.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    let received: DslRule | null = null;
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        undefined,
+        (rule) => { received = rule; },
+    );
+    // Click the second row's preview button.
+    const btn = root.querySelector('#dsl-codex-history-preview-button-1') as HTMLButtonElement;
+    btn.click();
+    expect(received).not.toBeNull();
+    expect(received?.event.kind).toBe('Timer');
+    expect((received?.actions[0] as any).kind).toBe('Heal');
+});
+
+test('round_143_preview_button_does_not_invoke_onApplyHistory', () => {
+    // The "→" button is INSIDE the row's outer div. Both handlers
+    // are attached to the same root via event delegation, so we
+    // stopPropagation on the preview click to prevent the outer
+    // row's click-to-apply from also firing. This is the headline
+    // behavior: preview ≠ apply.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    let applyCount = 0;
+    let previewCount = 0;
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        () => { applyCount++; }, // onApplyHistory
+        () => { previewCount++; }, // onPreviewHistory
+    );
+    const btn = root.querySelector('#dsl-codex-history-preview-button-0') as HTMLButtonElement;
+    btn.click();
+    expect(previewCount).toBe(1);
+    expect(applyCount).toBe(0);
+});
+
+test('round_143_preview_button_works_with_post_sort_index', () => {
+    // The preview button's data-preview-idx is the post-sort index.
+    // When the user sorts 'actions-desc', row 0 is the rule with
+    // the MOST actions. Clicking its preview button should fire
+    // onPreviewHistory with the rule at the sorted position 0.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] }, // 1 action
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }, { kind: 'Spawn', args: [3] }] }, // 2 actions
+    ];
+    let received: DslRule | null = null;
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        undefined,
+        (rule) => { received = rule; },
+    );
+    // Apply sort = actions-desc
+    const sortSel = root.querySelector('#dsl-codex-history-sort-select') as HTMLSelectElement;
+    sortSel.value = 'actions-desc';
+    sortSel.dispatchEvent(new Event('change', { bubbles: true }));
+    // Re-query the preview button (doRender detached the old one).
+    const btn = root.querySelector('#dsl-codex-history-preview-button-0') as HTMLButtonElement;
+    btn.click();
+    expect(received).not.toBeNull();
+    expect(received?.event.kind).toBe('Timer'); // the 2-action rule
+    expect(received?.actions.length).toBe(2);
+});
+
+test('round_143_preview_button_respects_event_filter', () => {
+    // When the event filter is active, only the matching rows render
+    // a preview button. The data-preview-idx is the post-filter index.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [3] }] },
+    ];
+    let received: DslRule | null = null;
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        undefined,
+        (rule) => { received = rule; },
+    );
+    // Filter to Collide only → 2 rows, indexed 0 and 1.
+    const filterSel = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    filterSel.value = 'Collide';
+    filterSel.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(root.querySelectorAll('.dsl-codex-history-preview-button').length).toBe(2);
+    // Click preview button at index 1 → should be the SECOND Collide rule.
+    const btn = root.querySelector('#dsl-codex-history-preview-button-1') as HTMLButtonElement;
+    btn.click();
+    expect(received).not.toBeNull();
+    expect(received?.event.kind).toBe('Collide');
+    expect((received?.actions[0] as any).args?.[0]).toBe(3); // args=[3]
+});
+
+test('round_143_preview_button_present_in_null_rule_branch', () => {
+    // The "→" button is also rendered in the empty-state branch
+    // (currentRule === null), mirrors the round-136/138/140/141/142
+    // "X works even when current rule is null" tests.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+        undefined,
+        undefined,
+        (rule) => { void rule; },
+    );
+    expect(root.querySelector('#dsl-codex-history-preview-button-0')).not.toBeNull();
+});
+
+test('round_143_preview_button_coexists_with_clickable_rows', () => {
+    // Both onApplyHistory AND onPreviewHistory provided → rows are
+    // clickable AND have a "→" button. The button doesn't suppress
+    // the row's clickability; it just stops propagation on the
+    // button click so the row's click handler doesn't also fire.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    let applyCount = 0;
+    let previewCount = 0;
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        () => { applyCount++; },
+        () => { previewCount++; },
+    );
+    // Row is clickable.
+    const row = root.querySelector('.dsl-codex-history-row-clickable');
+    expect(row).not.toBeNull();
+    expect(row?.getAttribute('data-rule-idx')).toBe('0');
+    // Preview button is also there.
+    const btn = root.querySelector('.dsl-codex-history-preview-button');
+    expect(btn).not.toBeNull();
+    // Clicking the row (not the button) → applyCount goes up.
+    (row as HTMLElement).click();
+    expect(applyCount).toBe(1);
+    expect(previewCount).toBe(0);
+    // Clicking the button → previewCount goes up, applyCount stays.
+    (btn as HTMLElement).click();
+    expect(previewCount).toBe(1);
+    expect(applyCount).toBe(1);
+});
+
+test('round_143_no_history_callback_means_no_preview_buttons', () => {
+    // Even with onPreviewHistory, the button requires getRuleHistory
+    // (no history = no list = no button). Mirrors the round-134
+    // "history is opt-in via getRuleHistory" contract.
+    const root = makeRoot();
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        undefined, // no getRuleHistory
+        undefined,
+        undefined,
+        (rule) => { void rule; },
+    );
+    expect(root.querySelector('.dsl-codex-history-preview-button')).toBeNull();
+});
+
