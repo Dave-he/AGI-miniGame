@@ -3779,9 +3779,18 @@ test('round_144_clicking_active_asc_column_flips_to_desc', () => {
     expect(updated.textContent).toContain('↓');
 });
 
-test('round_144_clicking_active_desc_column_clears_sort', () => {
-    // Third click on the same column clears the sort (back to
-    // dropdown sort driving). The 3-state cycle: null → asc → desc → null.
+test('round_144_clicking_active_desc_column_flips_to_asc_with_secondary_round158', () => {
+    // Round 158 — extended the
+    // round-144 3-state cycle to
+    // 4 states: null → asc → desc
+    // → asc+secondary → null.
+    // The 3rd click (which was
+    // "clear" in round-144) now
+    // flips to asc+secondary. The
+    // actual clear happens on the
+    // 4th click (covered by
+    // `round_158_clicking_active_asc_secondary_column_clears_sort_round158`
+    // below).
     const root = makeRoot();
     const history: DslRule[] = [
         { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
@@ -3796,10 +3805,22 @@ test('round_144_clicking_active_desc_column_clears_sort', () => {
     const headerSel = '#dsl-codex-history-col-header-actions';
     (root.querySelector(headerSel) as HTMLElement).click();
     (root.querySelector(headerSel) as HTMLElement).click();
+    // 3rd click: was round-144
+    // "clear" → now round-158
+    // "asc + secondary" (the
+    // 4th state).
     (root.querySelector(headerSel) as HTMLElement).click();
     const updated = root.querySelector(headerSel) as HTMLElement;
-    expect(updated.classList.contains('dsl-codex-history-col-header-active')).toBe(false);
-    expect(updated.getAttribute('aria-sort')).toBe('none');
+    // Still active (just with
+    // a different direction +
+    // secondary flag).
+    expect(updated.classList.contains('dsl-codex-history-col-header-active')).toBe(true);
+    expect(updated.getAttribute('aria-sort')).toBe('ascending');
+    // The text contains the
+    // " ↑+" indicator (the `+`
+    // suffix is the round-158
+    // secondary signal).
+    expect(updated.textContent).toContain('↑+');
 });
 
 test('round_144_clicking_different_column_starts_at_asc', () => {
@@ -3824,6 +3845,189 @@ test('round_144_clicking_different_column_starts_at_asc', () => {
     expect(actions.classList.contains('dsl-codex-history-col-header-active')).toBe(false);
     expect(source.classList.contains('dsl-codex-history-col-header-active')).toBe(true);
     expect(source.getAttribute('aria-sort')).toBe('ascending');
+});
+
+test('round_158_clicking_active_asc_secondary_column_clears_sort_round158', () => {
+    // Round 158 — 4th click on the
+    // same column clears the sort
+    // (back to dropdown sort
+    // driving). The 4-state cycle:
+    //   null → asc → desc → asc+secondary → null
+    // (was 3-state in round-144:
+    // null → asc → desc → null).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const headerSel = '#dsl-codex-history-col-header-actions';
+    const header = () => root.querySelector(headerSel) as HTMLElement;
+    // 4 clicks total: null → asc → desc → asc+secondary → null
+    header().click();
+    header().click();
+    header().click();
+    header().click();
+    // 4th click clears the sort.
+    expect(header().classList.contains('dsl-codex-history-col-header-active')).toBe(false);
+    expect(header().getAttribute('aria-sort')).toBe('none');
+});
+
+test('round_158_secondary_state_renders_arrow_plus_indicator_round158', () => {
+    // The 4th state (asc+secondary)
+    // must render the special
+    // ` ↑+` indicator on the
+    // active header (the `+`
+    // suffix signals the
+    // secondary tiebreaker is
+    // engaged). The round-144
+    // indicators are ` ↑` /
+    // ` ↓` (no suffix).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const header = () => root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement;
+    header().click(); // → asc, indicator ` ↑`
+    expect(header().textContent).toContain('↑');
+    expect(header().textContent).not.toContain('↑+');
+    header().click(); // → desc, indicator ` ↓`
+    expect(header().textContent).toContain('↓');
+    header().click(); // → asc+secondary, indicator ` ↑+`
+    expect(header().textContent).toContain('↑+');
+});
+
+test('round_158_secondary_state_title_hint_includes_次要_round158', () => {
+    // The 4th state's title
+    // hint must include
+    // "次要" (the player who
+    // hovers the header sees
+    // the secondary state
+    // clearly).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const header = () => root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement;
+    header().click(); // asc
+    expect(header().getAttribute('title')).not.toContain('次要');
+    header().click(); // desc
+    expect(header().getAttribute('title')).not.toContain('次要');
+    header().click(); // asc+secondary
+    expect(header().getAttribute('title')).toContain('次要');
+});
+
+test('round_158_actions_asc_secondary_reverses_tiebreaker_round158', () => {
+    // Round 158 — when the
+    // actions column is in
+    // the asc+secondary
+    // state, ties in action
+    // count break by idx
+    // DESC (most recent
+    // first), not the
+    // round-144 default of
+    // idx asc.
+    //
+    // The test sorts 3 rules
+    // all with 1 action. With
+    // asc-only, they appear
+    // in idx-asc order
+    // (rule 0, rule 1, rule
+    // 2). With asc+secondary,
+    // they appear in idx-desc
+    // order (rule 2, rule 1,
+    // rule 0).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        // All 3 rules have 1 action each.
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' },   actions: [{ kind: 'Heal',   args: [2] }] },
+        { event: { kind: 'Spawn' },   actions: [{ kind: 'Spawn',  args: [3] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        () => { /* onApplyHistory noop — makes rows clickable so data-rule-idx is rendered */ },
+    );
+    const header = () => root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement;
+    // Cycle to asc+secondary.
+    header().click();
+    header().click();
+    header().click();
+    // Debug: confirm the state machine reached asc+secondary.
+    expect(header().getAttribute('title')).toContain('次要');
+    // Verify the row order reflects the
+    // asc+secondary sort (idx desc
+    // tiebreaker). Since all 3 rules
+    // have 1 action each, the primary
+    // sort is a tie — the secondary
+    // tiebreaker decides the order.
+    // With idx desc, the order is:
+    //   row 0 = origIndex 2 (Spawn)
+    //   row 1 = origIndex 1 (Timer)
+    //   row 2 = origIndex 0 (Collide)
+    // The event kinds appear in the
+    // rendered row text in that order.
+    const rows = root.querySelectorAll<HTMLElement>('.dsl-codex-history-row-clickable');
+    expect(rows.length).toBe(3);
+    expect((rows[0] as HTMLElement).textContent).toContain('Spawn');
+    expect((rows[1] as HTMLElement).textContent).toContain('Timer');
+    expect((rows[2] as HTMLElement).textContent).toContain('Collide');
+});
+
+test('round_158_secondary_state_only_reachable_from_active_column_round158', () => {
+    // Round 158 — switching to a
+    // different column starts
+    // that column at 'asc' with
+    // NO secondary (the secondary
+    // is only reachable by
+    // cycling the SAME column 3
+    // times). A regression that
+    // carried the secondary flag
+    // over to a new column would
+    // break this contract.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    // Click actions 3 times → asc+secondary.
+    const actions = () => root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement;
+    actions().click();
+    actions().click();
+    actions().click();
+    expect(actions().textContent).toContain('↑+');
+    // Click source → source becomes
+    // active (asc, no secondary).
+    const source = () => root.querySelector('#dsl-codex-history-col-header-source') as HTMLElement;
+    source().click();
+    expect(source().textContent).toContain('↑');
+    expect(source().textContent).not.toContain('↑+');
 });
 
 test('round_144_actions_column_desc_sorts_rules_by_action_count', () => {

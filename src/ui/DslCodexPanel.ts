@@ -399,6 +399,45 @@ export type DslHistoryColumn =
 export type DslHistoryColumnSort = {
     column: DslHistoryColumn;
     direction: 'asc' | 'desc';
+    /**
+     * Round 158 — the 4th state in
+     * the column-header click cycle.
+     * When `true`, an explicit
+     * "idx desc" (reverse-chrono)
+     * secondary tiebreaker is
+     * applied for ties in the
+     * primary sort. The default
+     * tiebreaker (when this flag is
+     * absent or `false`) is "idx
+     * asc" (chronological /
+     * insertion-order), which is
+     * what the round-144 3-state
+     * cycle used.
+     *
+     * **Why a separate flag**:
+     * the 4-state cycle
+     * `null → asc → desc → asc+secondary → null`
+     * is the most common
+     * multi-column sort pattern in
+     * table UIs (Excel, Google
+     * Sheets, etc.). A 4th click
+     * flips to "asc with secondary
+     * column" — the player who
+     * wants to see e.g. "all 1-action
+     * rules grouped, then most
+     * recent first" can reach that
+     * with one extra click. The
+     * `secondary` field is optional
+     * so the existing 3-state
+     * round-144 callers (and the
+     * localStorage-persisted
+     * `persistentColumnSort`) keep
+     * working without migration —
+     * a missing `secondary` is
+     * treated identically to
+     * `secondary: false`.
+     */
+    secondary?: boolean;
 } | null;
 
 /**
@@ -1264,8 +1303,22 @@ function renderHistoryColumnHeader(
     ): string | null => {
         if (hiddenColumns.has(column)) return null;
         const active = columnSort?.column === column;
+        // Round 158 — 4th-state
+        // indicator. When the
+        // column is active with
+        // `secondary: true`, show
+        // ` ↑+` (the `+` suffix
+        // signals the secondary
+        // tiebreaker is engaged).
+        // Otherwise the round-144
+        // 3-state indicator (` ↑` /
+        // ` ↓`) applies. The
+        // `↕` inactive hint is
+        // unchanged.
         const indicator = active
-            ? (columnSort?.direction === 'asc' ? ' ↑' : ' ↓')
+            ? (columnSort?.direction === 'asc'
+                ? (columnSort?.secondary ? ' ↑+' : ' ↑')
+                : ' ↓')
             : ' <span class="dsl-codex-history-col-hint">↕</span>';
         const cls = active
             ? 'dsl-codex-history-col-header dsl-codex-history-col-header-active'
@@ -1273,7 +1326,20 @@ function renderHistoryColumnHeader(
         const ariaSort = active
             ? (columnSort?.direction === 'asc' ? 'ascending' : 'descending')
             : 'none';
-        return `<span class="${cls}" id="${id}" data-column="${column}" aria-sort="${ariaSort}" role="button" tabindex="0" title="按${label}排序">${label}${indicator}</span>`;
+        // Round 158 — title hint
+        // also reflects the 4th
+        // state. The player who
+        // hovers the header sees
+        // "按X升序(次要)" instead
+        // of just "按X升序" so
+        // they understand why the
+        // secondary indicator is
+        // showing.
+        const titleSuffix = active && columnSort?.secondary
+            ? '(次要)'
+            : '';
+        const title = `按${label}排序${titleSuffix}`;
+        return `<span class="${cls}" id="${id}" data-column="${column}" aria-sort="${ariaSort}" role="button" tabindex="0" title="${title}">${label}${indicator}</span>`;
     };
     const idxHdr = renderHeader('dsl-codex-history-col-header-idx',     'idx',     '索引');
     const srcHdr = renderHeader('dsl-codex-history-col-header-source',  'source',  '源码');
@@ -1471,6 +1537,21 @@ function renderHistoryList(
     ): number => {
         if (columnSort === null) return 0; // unreachable; caller checks
         const dir = columnSort.direction === 'asc' ? 1 : -1;
+        // Round 158 — secondary
+        // tiebreaker: when
+        // `columnSort.secondary ===
+        // true`, ties in the primary
+        // column break by `idx desc`
+        // (most recent first) instead
+        // of the round-144 default
+        // `idx asc` (chronological).
+        // The sign is +1 for asc
+        // (matches the round-144
+        // behavior) and -1 for the
+        // desc tiebreaker.
+        const secondaryTiebreaker = columnSort.secondary
+            ? (b.origIndex - a.origIndex)  // idx desc
+            : (a.origIndex - b.origIndex); // idx asc (default)
         switch (columnSort.column) {
             case 'idx':
                 // Sort by the
@@ -1481,20 +1562,31 @@ function renderHistoryList(
                 // order in
                 // `history`,
                 // before
-                // filter).
+                // filter). The
+                // secondary
+                // flag doesn't
+                // apply when
+                // sorting by
+                // idx itself —
+                // it would be
+                // circular —
+                // so we always
+                // return the
+                // raw index
+                // delta.
                 return (a.origIndex - b.origIndex) * dir;
             case 'source': {
                 const aSrc = ruleToSource(a.rule);
                 const bSrc = ruleToSource(b.rule);
                 const cmp = aSrc.localeCompare(bSrc);
                 if (cmp !== 0) return cmp * dir;
-                return a.origIndex - b.origIndex;
+                return secondaryTiebreaker;
             }
             case 'actions': {
                 const aLen = a.rule.actions.length;
                 const bLen = b.rule.actions.length;
                 if (aLen !== bLen) return (aLen - bLen) * dir;
-                return a.origIndex - b.origIndex;
+                return secondaryTiebreaker;
             }
         }
     };
@@ -2420,19 +2512,54 @@ export function renderDslCodexPanel(
         if (!header) return;
         const column = header.getAttribute('data-column');
         if (column !== 'idx' && column !== 'source' && column !== 'actions') return;
-        // 3-state state
-        // machine.
+        // Round 158 — 4-state click
+        // cycle (extending the
+        // round-144 3-state machine
+        // with a secondary-sort
+        // tiebreaker state).
+        //
+        // Cycle:
+        //   null
+        //     → asc                (1st click)
+        //     → desc               (2nd click)
+        //     → asc+secondary      (3rd click, with idx-desc tiebreaker)
+        //     → null               (4th click, clear back to dropdown)
+        //
+        // The `secondary: true` flag
+        // changes the tiebreaker from
+        // "idx asc" (the round-144
+        // default) to "idx desc" so
+        // ties in the primary column
+        // show the most recent rules
+        // first. This is the most
+        // common multi-column sort
+        // pattern in table UIs (Excel,
+        // Google Sheets, etc.) and is
+        // a 1-click extension of the
+        // existing 3-state cycle.
         if (currentColumnSort === null) {
             currentColumnSort = { column, direction: 'asc' };
         } else if (currentColumnSort.column === column) {
-            if (currentColumnSort.direction === 'asc') {
+            if (currentColumnSort.direction === 'asc' && !currentColumnSort.secondary) {
+                // asc (default) → desc.
                 currentColumnSort = { column, direction: 'desc' };
+            } else if (currentColumnSort.direction === 'desc') {
+                // desc → asc+secondary
+                // (4th state — round 158).
+                currentColumnSort = { column, direction: 'asc', secondary: true };
             } else {
-                // direction === 'desc' → clear (back to dropdown sort).
+                // asc+secondary → null
+                // (clear, back to dropdown
+                // sort). This is the 5th
+                // click in the cycle.
                 currentColumnSort = null;
             }
         } else {
-            // Different column → start that column at 'asc'.
+            // Different column → start
+            // that column at 'asc'
+            // (no secondary — secondary
+            // is only reachable from
+            // the active column).
             currentColumnSort = { column, direction: 'asc' };
         }
         doRender();
