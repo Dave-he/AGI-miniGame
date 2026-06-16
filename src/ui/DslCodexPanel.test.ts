@@ -1262,3 +1262,546 @@ test('round_136_filtered_click_to_apply_passes_correct_rule', () => {
     expect(applied[0].actions[0].args[0]).toBe(1);
 });
 
+// ---------------------------------------------------------------------------
+// Round 138 — search box tests
+// (extends the round-136 filter
+// dropdown with a case-
+// insensitive substring search
+// on the source DSL).
+//
+// The search input is a free-text
+// `<input type="text">` placed
+// next to the filter dropdown.
+// It fires an `input` event that
+// updates `currentSearch` and
+// re-renders the history list.
+// Filter + search are combined
+// with AND semantics.
+//
+// Pattern matches round-136:
+// re-query the input element
+// after each dispatch (the
+// `doRender()` rebuilds the DOM
+// and detaches the old input).
+// ---------------------------------------------------------------------------
+
+test('round_138_no_history_callback_means_no_search_input', () => {
+    // When the host
+    // doesn't pass
+    // a
+    // `getRuleHistory`
+    // callback, the
+    // search input
+    // shouldn't
+    // appear (no
+    // history to
+    // search).
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+    );
+    const input = root.querySelector('#dsl-codex-history-search-input');
+    expect(input).toBeNull();
+});
+
+test('round_138_with_history_renders_search_input', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    // Initial
+    // value
+    // is
+    // empty.
+    expect(input!.value).toBe('');
+    // Placeholder
+    // hint
+    // shows
+    // the
+    // intent.
+    expect(input!.placeholder).toContain('DSL');
+});
+
+test('round_138_search_filters_to_matching_substring', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [5] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Spawn', args: ['orc'] }] },
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [3] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['dragon'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // All 4
+    // rows
+    // visible
+    // initially.
+    let rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(4);
+    // Type
+    // "Spawn"
+    // into
+    // the
+    // search
+    // input.
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input.value = 'Spawn';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    // Only 2
+    // rows
+    // visible
+    // (the 2
+    // rules
+    // whose
+    // source
+    // DSL
+    // contains
+    // "Spawn").
+    rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(2);
+    const historyListHtml = root.querySelector('.dsl-codex-history-list')?.innerHTML ?? '';
+    expect(historyListHtml).toContain('Spawn("orc")');
+    expect(historyListHtml).toContain('Spawn("dragon")');
+    expect(historyListHtml).not.toContain('Heal(5)');
+    expect(historyListHtml).not.toContain('Damage(3)');
+});
+
+test('round_138_search_is_case_insensitive', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['orc'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Lowercase
+    // "spawn"
+    // matches
+    // the
+    // PascalCase
+    // "Spawn"
+    // action
+    // in the
+    // rendered
+    // source DSL
+    // (case-
+    // insensitive
+    // substring
+    // match).
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input.value = 'spawn';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(1);
+    const historyListHtml = root.querySelector('.dsl-codex-history-list')?.innerHTML ?? '';
+    expect(historyListHtml).toContain('Spawn');
+});
+
+test('round_138_search_with_no_matches_shows_暂无_match_empty_state', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input.value = 'NoSuchSubstringAnywhere';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    // 0 rows
+    // visible
+    // (the
+    // "暂无匹配"
+    // empty
+    // state).
+    const rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(0);
+    const empty = root.querySelector('.dsl-codex-history-empty');
+    expect(empty?.textContent).toContain('暂无匹配');
+});
+
+test('round_138_clearing_search_restores_all_rows', () => {
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['orc'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Type
+    // "Spawn"
+    // → 1
+    // row.
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input.value = 'Spawn';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    let rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(1);
+    // Clear
+    // the
+    // search
+    // → 2
+    // rows
+    // restored.
+    // (Re-query
+    // the
+    // input
+    // because
+    // doRender
+    // detached
+    // the
+    // old
+    // one.)
+    const input2 = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input2.value = '';
+    input2.dispatchEvent(new Event('input', { bubbles: true }));
+    rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(2);
+});
+
+test('round_138_search_combines_with_filter_and_semantics', () => {
+    // Filter
+    // = "Collide",
+    // search
+    // = "Heal"
+    // → only
+    // the
+    // Collide
+    // rules
+    // whose
+    // source
+    // DSL
+    // contains
+    // "Heal".
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [2] }] },
+        { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'Heal', args: [3] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Apply
+    // the
+    // filter
+    // first.
+    const select = root.querySelector('#dsl-codex-history-filter-select') as HTMLSelectElement;
+    select.value = 'Collide';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    // 2 rows
+    // (the 2
+    // Collide
+    // entries
+    // —
+    // the
+    // Timer
+    // is
+    // hidden
+    // by
+    // the
+    // filter).
+    let rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(2);
+    // Now
+    // type
+    // "Heal"
+    // into
+    // the
+    // search
+    // →
+    // only
+    // 1 row
+    // (the
+    // Collide
+    // +
+    // Heal
+    // entry;
+    // the
+    // Timer
+    // +
+    // Heal
+    // is
+    // already
+    // hidden
+    // by
+    // the
+    // filter).
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input.value = 'Heal';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    rows = root.querySelectorAll('.dsl-codex-history-row');
+    expect(rows.length).toBe(1);
+    const historyListHtml = root.querySelector('.dsl-codex-history-list')?.innerHTML ?? '';
+    expect(historyListHtml).toContain('Heal(1)');
+    expect(historyListHtml).not.toContain('Damage(2)');
+    expect(historyListHtml).not.toContain('Heal(3)');
+});
+
+test('round_138_search_persists_across_refresh', () => {
+    // The
+    // search
+    // value
+    // should
+    // survive
+    // a
+    // doRender
+    // re-render
+    // (the
+    // host
+    // may
+    // call
+    // `handle.refresh()`
+    // after
+    // a
+    // hot-reload).
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['orc'] }] },
+    ];
+    const handle = renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+    );
+    // Type
+    // "Spawn"
+    // into
+    // the
+    // search.
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input.value = 'Spawn';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+    // Refresh
+    // the
+    // panel.
+    handle.refresh();
+    // The
+    // search
+    // should
+    // still
+    // be
+    // active
+    // —
+    // only
+    // 1 row
+    // visible.
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+    // The
+    // new
+    // input
+    // element
+    // should
+    // also
+    // carry
+    // the
+    // value
+    // (so
+    // the
+    // player's
+    // typed
+    // text
+    // is
+    // visible).
+    const newInput = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    expect(newInput.value).toBe('Spawn');
+});
+
+test('round_138_search_works_even_when_current_rule_is_null', () => {
+    // The
+    // empty-
+    // state
+    // branch
+    // of
+    // doRender
+    // also
+    // renders
+    // the
+    // search
+    // box
+    // (when
+    // getRuleHistory
+    // is
+    // provided).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['orc'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => null,
+        () => 'none',
+        () => history,
+    );
+    // Search
+    // input
+    // should
+    // exist
+    // in
+    // the
+    // empty-
+    // state
+    // branch
+    // too.
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    // Type
+    // "Spawn"
+    // → 1
+    // row.
+    input!.value = 'Spawn';
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(root.querySelectorAll('.dsl-codex-history-row').length).toBe(1);
+});
+
+test('round_138_searched_click_to_apply_passes_correct_rule', () => {
+    // When the
+    // player
+    // has
+    // a
+    // search
+    // substring
+    // active
+    // and
+    // clicks
+    // a
+    // history
+    // row,
+    // the
+    // callback
+    // should
+    // be
+    // invoked
+    // with
+    // the
+    // post-
+    // search
+    // rule
+    // (not
+    // the
+    // raw
+    // history[idx]
+    // rule).
+    const root = makeRoot();
+    const rule: DslRule = {
+        event: { kind: 'Collide' },
+        actions: [{ kind: 'Heal', args: [] }],
+    };
+    const history: DslRule[] = [
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Heal', args: [1] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['orc'] }] },
+    ];
+    const applied: DslRule[] = [];
+    renderDslCodexPanel(
+        root,
+        () => rule,
+        () => 'accepted',
+        () => history,
+        undefined,
+        (r) => { applied.push(r); },
+    );
+    // Search
+    // for
+    // "Spawn"
+    // →
+    // 2
+    // rows
+    // visible.
+    const input = root.querySelector('#dsl-codex-history-search-input') as HTMLInputElement;
+    input.value = 'Spawn';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const rows = root.querySelectorAll('.dsl-codex-history-row-clickable');
+    expect(rows.length).toBe(2);
+    // Click
+    // the
+    // 2nd
+    // visible
+    // row
+    // (post-
+    // search
+    // idx=1
+    // =
+    // the
+    // 2nd
+    // Spawn
+    // rule).
+    (rows[1] as HTMLElement).click();
+    expect(applied.length).toBe(1);
+    // The
+    // callback
+    // got
+    // the
+    // 2nd
+    // Spawn
+    // rule
+    // (with
+    // "orc"
+    // arg).
+    expect(applied[0].actions[0].kind).toBe('Spawn');
+    expect(applied[0].actions[0].args[0]).toBe('orc');
+});
+

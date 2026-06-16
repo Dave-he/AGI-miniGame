@@ -1,5 +1,5 @@
 /**
- * DslCodexPanel — round-133 + round-134 + round-135 + round-136.
+ * DslCodexPanel — round-133 + round-134 + round-135 + round-136 + round-138.
  *
  * Renders the AGI's most recently
  * generated / hot-reloaded `DslRule`
@@ -107,6 +107,29 @@
  * change (the K key is still
  * the single entry point —
  * the filter lives inside).
+ *
+ * Round 138 — also adds a
+ * "search by source DSL"
+ * text input next to the
+ * filter dropdown. The
+ * player can type a
+ * case-insensitive
+ * substring and the
+ * history list narrows to
+ * rules whose source DSL
+ * contains that substring.
+ * Works in combination with
+ * the filter dropdown
+ * (both AND). Resets on
+ * panel close + re-open
+ * (local state). Useful
+ * for quickly finding all
+ * rules that reference a
+ * specific event/action
+ * keyword in long-running
+ * sessions where the
+ * history ring buffer is
+ * saturated.
  */
 
 import type { DslRule, DslEventKind } from '../dsl/MemeCompiler';
@@ -216,6 +239,54 @@ function renderHistoryFilter(currentFilter: DslEventKind | null): string {
 }
 
 /**
+ * Round 138 — render
+ * the "search by
+ * source DSL"
+ * text input. Placed
+ * next to the filter
+ * dropdown so the
+ * player can combine
+ * event-kind filter
+ * + free-text
+ * substring search.
+ * The input fires an
+ * `input` event that
+ * the host's
+ * delegated `input`
+ * listener catches
+ * and dispatches to
+ * the search-state
+ * updater. The value
+ * is preserved
+ * across
+ * `doRender()`
+ * re-renders (so
+ * the player's
+ * typed text
+ * survives
+ * hot-reload
+ * updates). When
+ * empty, no search
+ * filter is
+ * applied.
+ */
+function renderHistorySearch(currentSearch: string): string {
+    const safe = escapeHtml(currentSearch);
+    return `
+        <div class="dsl-codex-history-search">
+            <label for="dsl-codex-history-search-input">搜索:</label>
+            <input
+                id="dsl-codex-history-search-input"
+                class="dsl-codex-history-search-input"
+                type="text"
+                placeholder="按源 DSL 关键字..."
+                value="${safe}"
+            />
+        </div>
+    `;
+}
+
+/**
  * Round 134 — render
  * the rule history
  * list. The list is
@@ -275,20 +346,56 @@ function renderHistoryFilter(currentFilter: DslEventKind | null): string {
  * the
  * "暂无匹配" empty
  * state is shown.
+ *
+ * Round 138 — when
+ * a non-empty search
+ * substring is
+ * supplied, the
+ * list is further
+ * filtered to only
+ * rules whose
+ * source DSL
+ * contains the
+ * substring
+ * (case-insensitive).
+ * Search + filter
+ * are combined with
+ * AND semantics.
+ * The "暂无匹配"
+ * empty state is
+ * shared between
+ * filter and search
+ * misses.
  */
 function renderHistoryList(
     history: ReadonlyArray<DslRule>,
     clickable: boolean,
     filter: DslEventKind | null,
+    search: string,
 ): string {
     // Round 136 —
     // apply the
     // filter
     // before
     // rendering.
-    const filtered = filter === null
-        ? history
-        : history.filter((r) => r.event.kind === filter);
+    // Round 138 —
+    // also apply
+    // the search
+    // substring
+    // (case-
+    // insensitive
+    // match on
+    // the source
+    // DSL form).
+    const searchLower = search.toLowerCase();
+    const filtered = history.filter((r) => {
+        if (filter !== null && r.event.kind !== filter) return false;
+        if (searchLower !== '') {
+            const source = ruleToSource(r).toLowerCase();
+            if (!source.includes(searchLower)) return false;
+        }
+        return true;
+    });
     if (filtered.length === 0) {
         if (history.length === 0) {
             return `<div class="dsl-codex-history-empty">暂无历史</div>`;
@@ -298,6 +405,7 @@ function renderHistoryList(
         // but
         // the
         // filter
+        // / search
         // matches
         // 0
         // rows.
@@ -407,6 +515,36 @@ export function renderDslCodexPanel(
     let currentFilter: DslEventKind | null = null;
 
     /**
+     * Round 138 —
+     * local search
+     * substring
+     * state. Defaults
+     * to `''` (no
+     * search). When
+     * non-empty, the
+     * history list is
+     * further filtered
+     * to rules whose
+     * source DSL
+     * contains this
+     * substring
+     * (case-
+     * insensitive).
+     * Persists across
+     * `doRender()`
+     * re-renders so
+     * the player's
+     * typed text
+     * survives
+     * hot-reload
+     * updates. Resets
+     * when the panel
+     * is closed and
+     * re-opened.
+     */
+    let currentSearch: string = '';
+
+    /**
      * Round 135 —
      * delegate click
      * + keyboard
@@ -456,9 +594,25 @@ export function renderDslCodexPanel(
         // up
         // the
         // rule.
-        const filtered = currentFilter === null
-            ? history
-            : history.filter((r) => r.event.kind === currentFilter);
+        // Round 138 —
+        // also
+        // re-apply
+        // the
+        // search
+        // substring
+        // (AND
+        // semantics
+        // with the
+        // filter).
+        const searchLower = currentSearch.toLowerCase();
+        const filtered = history.filter((r) => {
+            if (currentFilter !== null && r.event.kind !== currentFilter) return false;
+            if (searchLower !== '') {
+                const source = ruleToSource(r).toLowerCase();
+                if (!source.includes(searchLower)) return false;
+            }
+            return true;
+        });
         const rule = filtered[idx];
         if (rule) onApplyHistory(rule);
     };
@@ -499,6 +653,50 @@ export function renderDslCodexPanel(
         doRender();
     };
 
+    /**
+     * Round 138 —
+     * dispatch the
+     * `input` event
+     * on the search
+     * text field to
+     * update
+     * `currentSearch`
+     * and re-render
+     * the history
+     * list. We pull
+     * the value from
+     * the `<input>`
+     * element (rather
+     * than from a
+     * closure) so the
+     * delegation works
+     * with the
+     * standard DOM
+     * `input` event.
+     * The value is
+     * stored as-typed
+     * (so the player's
+     * original case is
+     * preserved in the
+     * input after
+     * re-render); the
+     * filter check
+     * itself
+     * lowercases both
+     * sides for case-
+     * insensitive
+     * matching.
+     */
+    const dispatchSearch = (target: EventTarget | null) => {
+        if (!getRuleHistory) return;
+        const input = (target as HTMLElement | null)?.closest(
+            '#dsl-codex-history-search-input'
+        ) as HTMLInputElement | null;
+        if (!input) return;
+        currentSearch = input.value;
+        doRender();
+    };
+
     const doRender = () => {
         const rule = getCurrentRule();
         const outcome = getLastOutcome();
@@ -511,8 +709,9 @@ export function renderDslCodexPanel(
                     <div class="dsl-codex-empty">暂无 DSL — 按 1-8 进入 atom 后由 AGI 自动生成</div>
                     ${hasHistory ? `
                         ${renderHistoryFilter(currentFilter)}
+                        ${renderHistorySearch(currentSearch)}
                         <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))}</div>
-                        ${renderHistoryList(getRuleHistory!(), clickable, currentFilter)}
+                        ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentSearch)}
                     ` : ''}
                 </div>
             `;
@@ -539,8 +738,9 @@ export function renderDslCodexPanel(
                 ${renderActionRows(rule)}
                 ${hasHistory ? `
                     ${renderHistoryFilter(currentFilter)}
+                    ${renderHistorySearch(currentSearch)}
                     <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))}</div>
-                    ${renderHistoryList(getRuleHistory!(), clickable, currentFilter)}
+                    ${renderHistoryList(getRuleHistory!(), clickable, currentFilter, currentSearch)}
                 ` : ''}
             </div>
         `;
@@ -583,6 +783,34 @@ export function renderDslCodexPanel(
     // element).
     if (getRuleHistory) {
         root.addEventListener('change', (e) => dispatchFilter(e.target));
+    }
+
+    // Round 138 —
+    // wire the
+    // `input` event
+    // on the search
+    // text field
+    // (event-delegated
+    // on the
+    // stable `root`
+    // element so it
+    // survives
+    // `doRender()`
+    // re-renders).
+    // We re-query
+    // the input
+    // element each
+    // time inside
+    // the handler
+    // (rather than
+    // capturing a
+    // ref at wire
+    // time) because
+    // `doRender()`
+    // detaches the
+    // old element.
+    if (getRuleHistory) {
+        root.addEventListener('input', (e) => dispatchSearch(e.target));
     }
 
     doRender();
