@@ -591,7 +591,12 @@ test('round_135_no_onApplyHistory_renders_non_clickable_rows', () => {
     // was
     // omitted.
     expect(root.innerHTML).not.toContain('dsl-codex-history-row-clickable');
-    expect(root.innerHTML).not.toContain('data-rule-idx');
+    // Round 163 — `data-rule-idx` is ALWAYS emitted on
+    // rows (not just when clickable) so test-utils and
+    // keyboard-nav styles can read the selection state.
+    // The clickable contract is the *additional* class
+    // + `role` / `tabindex`, not the `data-rule-idx`.
+    expect(root.innerHTML).toContain('data-rule-idx="0"');
 });
 
 test('round_135_with_onApplyHistory_marks_rows_clickable', () => {
@@ -4706,5 +4711,308 @@ test('round_149_persistent_state_does_not_leak_to_no_history_render', () => {
     expect((root3.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement)
         .classList.contains('dsl-codex-history-col-header-active')).toBe(true);
     expect(root3.querySelector('#dsl-codex-history-col-header-source')).toBeNull();
+});
+
+// ============================================================================
+// Round 163 — keyboard navigation for the history list.
+//
+// The round-135 Enter-on-row path remains the
+// primary click-to-apply entry. Round 163 adds a
+// SECOND path: the player presses Up / Down while
+// the panel root is focused to move a "selection
+// cursor" through the visible rows (highlighted via
+// the `dsl-codex-history-row-is-selected` class +
+// a `data-selected="1"` attribute), then presses
+// Enter to apply the row under the cursor.
+//
+// This is the standard listbox / listbox-like
+// keyboard pattern (file pickers, IDE outlines, the
+// OS X Finder list view). Big UX win for 操控性好:
+// the player can navigate the rule history without
+// reaching for the mouse.
+//
+// Pins (10 tests):
+//   1. no_row_is_selected_by_default_round_163
+//   2. arrow_down_marks_first_row_as_selected_round_163
+//   3. arrow_down_advances_through_visible_rows_round_163
+//   4. arrow_up_clamps_at_first_row_round_163
+//   5. arrow_down_clamps_at_last_row_round_163
+//   6. data_selected_attribute_appears_on_selected_row_round_163
+//   7. only_one_row_is_selected_at_a_time_round_163
+//   8. arrow_keys_ignored_when_focus_is_in_filter_input_round_163
+//   9. arrow_keys_ignored_when_focus_is_on_clickable_row_round_163
+//  10. enter_on_panel_root_with_selection_invokes_onApplyHistory_round_163
+// ============================================================================
+
+function dispatchKeydown(target: EventTarget, key: string): void {
+    target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+}
+
+test('round_163_no_row_is_selected_by_default_round_163', () => {
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    // No row has the
+    // `data-selected`
+    // attribute until the
+    // player presses
+    // Up / Down.
+    expect(root.querySelector('[data-selected="1"]')).toBeNull();
+    expect(root.querySelector('.dsl-codex-history-row-is-selected')).toBeNull();
+});
+
+test('round_163_arrow_down_marks_first_row_as_selected_round_163', () => {
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    // Focus is on the
+    // panel root; press
+    // ArrowDown to move
+    // the cursor to the
+    // first row.
+    dispatchKeydown(root, 'ArrowDown');
+    const selected = root.querySelectorAll('[data-selected="1"]');
+    expect(selected.length).toBe(1);
+    expect(selected[0].getAttribute('data-rule-idx')).toBe('0');
+});
+
+test('round_163_arrow_down_advances_through_visible_rows_round_163', () => {
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['a'] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    dispatchKeydown(root, 'ArrowDown');
+    expect(root.querySelector('[data-selected="1"]')!.getAttribute('data-rule-idx')).toBe('0');
+    dispatchKeydown(root, 'ArrowDown');
+    expect(root.querySelector('[data-selected="1"]')!.getAttribute('data-rule-idx')).toBe('1');
+    dispatchKeydown(root, 'ArrowDown');
+    expect(root.querySelector('[data-selected="1"]')!.getAttribute('data-rule-idx')).toBe('2');
+});
+
+test('round_163_arrow_up_clamps_at_first_row_round_163', () => {
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    // Down once, then Up
+    // twice — should
+    // clamp at row 0
+    // (not go to -1).
+    dispatchKeydown(root, 'ArrowDown');
+    dispatchKeydown(root, 'ArrowUp');
+    expect(root.querySelector('[data-selected="1"]')!.getAttribute('data-rule-idx')).toBe('0');
+    dispatchKeydown(root, 'ArrowUp');
+    expect(root.querySelector('[data-selected="1"]')!.getAttribute('data-rule-idx')).toBe('0');
+});
+
+test('round_163_arrow_down_clamps_at_last_row_round_163', () => {
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    dispatchKeydown(root, 'ArrowDown');
+    dispatchKeydown(root, 'ArrowDown');
+    expect(root.querySelector('[data-selected="1"]')!.getAttribute('data-rule-idx')).toBe('1');
+    // Press Down again —
+    // should stay at the
+    // last row (no -1
+    // wraparound, no
+    // overflow).
+    dispatchKeydown(root, 'ArrowDown');
+    expect(root.querySelector('[data-selected="1"]')!.getAttribute('data-rule-idx')).toBe('1');
+});
+
+test('round_163_data_selected_attribute_appears_on_selected_row_round_163', () => {
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    dispatchKeydown(root, 'ArrowDown');
+    const selected = root.querySelector('[data-selected="1"]') as HTMLElement;
+    expect(selected).not.toBeNull();
+    expect(selected.classList.contains('dsl-codex-history-row-is-selected')).toBe(true);
+});
+
+test('round_163_only_one_row_is_selected_at_a_time_round_163', () => {
+    // Even with 5 rows in
+    // the list, only 1
+    // row carries the
+    // selection class at
+    // any time.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+        { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['a'] }] },
+        { event: { kind: 'PlayerHit' }, actions: [{ kind: 'Damage', args: [3] }] },
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [4] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    dispatchKeydown(root, 'ArrowDown');
+    dispatchKeydown(root, 'ArrowDown');
+    expect(root.querySelectorAll('[data-selected="1"]').length).toBe(1);
+    dispatchKeydown(root, 'ArrowDown');
+    expect(root.querySelectorAll('[data-selected="1"]').length).toBe(1);
+});
+
+test('round_163_arrow_keys_ignored_when_focus_is_in_filter_input_round_163', () => {
+    // The search input is
+    // a sibling of the
+    // list (not inside
+    // it). Pressing Up
+    // while the focus is
+    // there should NOT
+    // move the row
+    // cursor — it should
+    // just be a no-op
+    // (the browser's
+    // default caret
+    // movement is also
+    // suppressed because
+    // we have no Up/Down
+    // handling in a text
+    // input).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+    );
+    const search = root.querySelector('input[type="search"], input[type="text"]') as HTMLElement;
+    expect(search).not.toBeNull();
+    dispatchKeydown(search, 'ArrowDown');
+    // No row was selected
+    // — the handler
+    // returned early.
+    expect(root.querySelector('[data-selected="1"]')).toBeNull();
+});
+
+test('round_163_arrow_keys_ignored_when_focus_is_on_clickable_row_round_163', () => {
+    // When the focus is
+    // ON a clickable row
+    // (the round-135
+    // click-to-apply
+    // surface), Up/Down
+    // should NOT move
+    // the keyboard
+    // selection cursor.
+    // Otherwise pressing
+    // Up/Down on a row
+    // would both move the
+    // cursor AND
+    // potentially
+    // double-activate
+    // (Enter) on the
+    // wrong row.
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        () => undefined,  // onApplyHistory stub
+    );
+    const row = root.querySelector('.dsl-codex-history-row-clickable') as HTMLElement;
+    expect(row).not.toBeNull();
+    dispatchKeydown(row, 'ArrowDown');
+    // No selection was
+    // made — the row's
+    // own handler is the
+    // only one that
+    // should respond to
+    // keys on a row.
+    expect(root.querySelector('[data-selected="1"]')).toBeNull();
+});
+
+test('round_163_enter_on_panel_root_with_selection_invokes_onApplyHistory_round_163', () => {
+    // The canonical
+    // keyboard-nav flow:
+    // Down to select
+    // row 1, Enter to
+    // apply it. The
+    // applied rule is
+    // the 2nd history
+    // entry, NOT the
+    // first (round-135
+    // default).
+    const root = makeRoot();
+    const history: DslRule[] = [
+        { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        { event: { kind: 'Timer' }, actions: [{ kind: 'Heal', args: [2] }] },
+    ];
+    const applied: DslRule[] = [];
+    renderDslCodexPanel(
+        root,
+        () => history[0],
+        () => 'none',
+        () => history,
+        undefined,
+        (r) => { applied.push(r); },
+    );
+    dispatchKeydown(root, 'ArrowDown');
+    dispatchKeydown(root, 'ArrowDown');
+    dispatchKeydown(root, 'Enter');
+    expect(applied.length).toBe(1);
+    expect(applied[0].event.kind).toBe('Timer');
+    expect(applied[0].actions[0].kind).toBe('Heal');
 });
 

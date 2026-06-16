@@ -171,6 +171,16 @@
       .hud-scene-speed-strip-cell.is-active { opacity: 1; background: rgba(255, 255, 255, 0.12); }
       .hud-scene-speed-strip-label { font-weight: 600; margin-right: 4px; }
       .hud-scene-speed-strip-sep { opacity: 0.3; }
+      /* Round 163 — keyboard-navigation selected row
+         in the DslCodexPanel history list. Mirrors the
+         round-160 minimize-to-icon highlight (a 2px
+         accent border + a slight background tint) so
+         the player can see which row the Up / Down
+         cursor is on. The `outline: none` on the row
+         itself suppresses the browser-default focus
+         ring (the data-selected attribute is the source
+         of truth, not the focus state). */
+      .dsl-codex-history-row-is-selected { outline: 2px solid #ffcc66; background: rgba(255, 204, 102, 0.08); }
 
       /* Round 112 — settings-root: bottom-right corner
          so it sits under the HUD. Hidden by default;

@@ -1361,6 +1361,41 @@ function renderHistoryList(
     actionFilter: DslActionKind | null,
     search: string,
     sort: DslHistorySort,
+    // Round 163 —
+    // selected
+    // row index
+    // for
+    // keyboard
+    // navigation.
+    // -1 means
+    // "no row
+    // selected";
+    // any
+    // non-
+    // negative
+    // value
+    // marks
+    // that row
+    // with the
+    // `is-
+    // selected`
+    // class +
+    // a
+    // `data-
+    // selected`
+    // attribute
+    // so the
+    // host
+    // driver
+    // (or a
+    // test) can
+    // read the
+    // selection
+    // back
+    // without
+    // parsing
+    // the DOM.
+    selectedIndex: number,
     // Round 143 —
     // when true,
     // each row
@@ -1628,12 +1663,30 @@ function renderHistoryList(
         // stretch the
         // panel).
         const preview = source.length > 80 ? source.slice(0, 77) + '…' : source;
-        const cls = clickable
+        // Round 163 — when this row's index matches
+        // `selectedIndex`, append the `is-selected`
+        // class + `data-selected="1"` attribute so the
+        // player can see which row the keyboard cursor
+        // is on. The `data-selected` attribute also
+        // gives test-utils a programmatic read of the
+        // selection state (mirrors the round-144/158
+        // `data-rule-idx` contract).
+        const isSelected = selectedIndex === i;
+        const baseCls = clickable
             ? 'dsl-codex-history-row dsl-codex-history-row-clickable'
             : 'dsl-codex-history-row';
-        const dataAttr = clickable
-            ? ` data-rule-idx="${i}" role="button" tabindex="0"`
-            : '';
+        const cls = isSelected
+            ? `${baseCls} dsl-codex-history-row-is-selected`
+            : baseCls;
+        // Round 163 — `data-rule-idx` + `data-selected` are
+        // ALWAYS emitted (not just when the row is
+        // clickable) so test-utils and the keyboard-cursor
+        // styles can read the selection state on any
+        // non-empty panel. The `role` / `tabindex` part is
+        // still gated on `clickable` (a read-only panel
+        // shouldn't pretend the row is focusable for
+        // click-to-apply).
+        const dataAttr = ` data-rule-idx="${i}"${isSelected ? ' data-selected="1"' : ''}${clickable ? ' role="button" tabindex="0"' : ''}`;
         // Round 143 —
         // the preview
         // button is
@@ -2051,6 +2104,109 @@ export function renderDslCodexPanel(
     // doRender() writes
     // back.
     let currentHiddenColumns: Set<DslHistoryColumn> = new Set(persistentHiddenColumns);
+
+    /**
+     * Round 163 — selected
+     * row index for keyboard
+     * navigation. -1 means
+     * "no row selected"
+     * (the player hasn't
+     * pressed Up/Down yet).
+     * Clamped to the visible
+     * row count on every
+     * change so the index
+     * never goes out of
+     * bounds when the player
+     * changes the filter.
+     */
+    let selectedIndex = -1;
+
+    /**
+     * Round 163 — compute
+     * the visible row count
+     * (post-filter, post-
+     * sort) by re-applying
+     * the same pipeline
+     * `dispatchClick` uses.
+     * Cheap because the
+     * history is bounded
+     * (the ring buffer caps
+     * it).
+     */
+    const computeVisibleCount = (): number => {
+        if (!getRuleHistory) return 0;
+        const history = getRuleHistory();
+        if (history.length === 0) return 0;
+        const searchLower = currentSearch.toLowerCase();
+        let count = 0;
+        for (const r of history) {
+            if (currentFilter !== null && r.event.kind !== currentFilter) continue;
+            if (currentActionFilter !== null && !r.actions.some((a) => a.kind === currentActionFilter)) continue;
+            if (searchLower !== '') {
+                const source = ruleToSource(r).toLowerCase();
+                if (!source.includes(searchLower)) continue;
+            }
+            count++;
+        }
+        return count;
+    };
+
+    /**
+     * Round 163 — clamp
+     * the selected index
+     * to the visible row
+     * range. Called after
+     * every filter / search
+     * / sort change that
+     * might re-shape the
+     * row count. If the
+     * visible count is 0,
+     * the index is reset
+     * to -1 (no row
+     * selected). A -1
+     * selection stays -1
+     * (preserved across
+     * renders) — the
+     * player hasn't
+     * pressed Up / Down
+     * yet, so we don't
+     * want to pre-select
+     * a row before the
+     * first key press.
+     */
+    const clampSelectedIndex = () => {
+        const visible = computeVisibleCount();
+        if (visible === 0) {
+            selectedIndex = -1;
+        } else if (selectedIndex >= visible) {
+            selectedIndex = visible - 1;
+        }
+    };
+
+    /**
+     * Round 163 — scroll
+     * the newly selected
+     * row into view. The
+     * `scrollIntoView`
+     * call is guarded for
+     * jsdom (the jsdom
+     * DOM API doesn't
+     * implement it, so
+     * calling it directly
+     * would throw in
+     * tests). Real
+     * browsers always have
+     * the method on
+     * `Element.prototype`,
+     * so the cast is safe
+     * in production.
+     */
+    const scrollSelectedIntoView = (rootEl: HTMLElement) => {
+        const selected = rootEl.querySelector('.dsl-codex-history-row-is-selected') as (HTMLElement & { scrollIntoView?: (opts?: { block?: string }) => void }) | null;
+        if (selected && typeof selected.scrollIntoView === 'function') {
+            selected.scrollIntoView({ block: 'nearest' });
+        }
+    };
 
     /**
      * Round 135 —
@@ -2740,6 +2896,24 @@ export function renderDslCodexPanel(
         const outcome = getLastOutcome();
         const hasHistory = !!getRuleHistory;
         const clickable = hasHistory && !!onApplyHistory;
+        // Round 163 — clamp
+        // the keyboard-
+        // navigation
+        // selectedIndex to
+        // the new visible
+        // row range BEFORE
+        // the render. If
+        // the filter / search
+        // shrunk the list,
+        // the index follows;
+        // if the filter
+        // expanded the list
+        // (cleared), the
+        // index stays where
+        // the player left it
+        // (clamped to the
+        // new maximum).
+        clampSelectedIndex();
         // Round 149 —
         // snapshot the
         // current sort +
@@ -2801,7 +2975,7 @@ export function renderDslCodexPanel(
                             ${renderHistoryReset()}
                             ${renderColumnVisibilityToggle(currentHiddenColumns)}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
-                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable, currentColumnSort, currentHiddenColumns)}
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, selectedIndex, previewable, currentColumnSort, currentHiddenColumns)}
                         `;
                     })() : ''}
                 </div>
@@ -2840,7 +3014,7 @@ export function renderDslCodexPanel(
                             ${renderHistoryReset()}
                             ${renderColumnVisibilityToggle(currentHiddenColumns)}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
-                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, previewable, currentColumnSort, currentHiddenColumns)}
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, selectedIndex, previewable, currentColumnSort, currentHiddenColumns)}
                         `;
                     })()}
                 ` : ''}
@@ -2919,6 +3093,163 @@ export function renderDslCodexPanel(
             if (!target?.closest('.dsl-codex-history-col-header')) return;
             e.preventDefault();
             dispatchColumnSort(target);
+        });
+    }
+
+    // Round 163 — wire
+    // Up / Down / Enter
+    // keyboard navigation
+    // for the history row
+    // list. The keys are
+    // event-delegated on
+    // the stable `root`
+    // element so they
+    // survive `doRender()`
+    // re-renders. The
+    // listener is attached
+    // REGARDLESS of
+    // `onApplyHistory`
+    // (selecting a row with
+    // Up / Down is a
+    // separate concern from
+    // applying it). The
+    // Enter handler DOES
+    // require
+    // `onApplyHistory` (a
+    // panel without apply
+    // has no use for the
+    // Enter key). The
+    // `selectNext` /
+    // `selectPrev` helpers
+    // clamp the index to
+    // the visible row count
+    // so the cursor never
+    // falls off the end of
+    // the list.
+    if (getRuleHistory) {
+        root.addEventListener('keydown', (e) => {
+            const target = e.target as HTMLElement | null;
+            // Only navigate when
+            // the focus is on
+            // something that
+            // could plausibly
+            // belong to the
+            // history list. The
+            // column headers
+            // and the filter /
+            // search inputs are
+            // siblings of the
+            // list (not inside
+            // it), so we skip
+            // the handler when
+            // the focus is on
+            // those — otherwise
+            // pressing Up while
+            // typing in the
+            // search box would
+            // move the row
+            // cursor. We also
+            // skip when the
+            // focus is on a
+            // clickable history
+            // row itself: the
+            // round-135
+            // `dispatchClick`
+            // handler is
+            // already wired
+            // for Enter / Space
+            // on the row, and
+            // running BOTH
+            // handlers would
+            // double-apply
+            // (the round-135
+            // contract is
+            // "Enter on row
+            // applies that
+            // row exactly
+            // once").
+            if (target?.closest('.dsl-codex-history-col-header')) return;
+            if (target?.closest('.dsl-codex-filter-row')) return;
+            if (target?.closest('.dsl-codex-search-row')) return;
+            if (target?.closest('.dsl-codex-action-filter-row')) return;
+            if (target?.closest('.dsl-codex-col-toggle-row')) return;
+            if (target?.closest('input, select, textarea, button')) return;
+            if (target?.closest('.dsl-codex-history-row-clickable')) return;
+
+            const visible = computeVisibleCount();
+            if (visible === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                clampSelectedIndex();
+                if (selectedIndex < 0) {
+                    selectedIndex = 0;
+                } else if (selectedIndex < visible - 1) {
+                    selectedIndex++;
+                }
+                doRender();
+                // After re-render, scroll the newly
+                // selected row into view so the player
+                // can see the cursor move. Guarded for
+                // jsdom (no scrollIntoView in test env)
+                // — the production browser still calls
+                // it via the optional chain.
+                scrollSelectedIntoView(root);
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                clampSelectedIndex();
+                if (selectedIndex > 0) {
+                    selectedIndex--;
+                }
+                doRender();
+                scrollSelectedIntoView(root);
+                return;
+            }
+            if (e.key === 'Enter' || e.key === ' ') {
+                if (!onApplyHistory) return;
+                if (selectedIndex < 0) return;
+                e.preventDefault();
+                // Re-derive the
+                // post-filter rule
+                // the same way
+                // `dispatchClick`
+                // does — we can't
+                // just call
+                // `dispatchClick`
+                // because the focus
+                // is on the panel
+                // root, not on the
+                // selected row.
+                const history = getRuleHistory();
+                const searchLower = currentSearch.toLowerCase();
+                const filtered = history.filter((r) => {
+                    if (currentFilter !== null && r.event.kind !== currentFilter) return false;
+                    if (currentActionFilter !== null && !r.actions.some((a) => a.kind === currentActionFilter)) return false;
+                    if (searchLower !== '') {
+                        const source = ruleToSource(r).toLowerCase();
+                        if (!source.includes(searchLower)) return false;
+                    }
+                    return true;
+                });
+                // Apply the current
+                // sort so the index
+                // maps to the same
+                // row the user sees.
+                const sorted = [...filtered].sort((a, b) => {
+                    switch (currentSort) {
+                        case 'chrono-oldest': return history.indexOf(a) - history.indexOf(b);
+                        case 'chrono-newest': return history.indexOf(b) - history.indexOf(a);
+                        case 'actions-desc': return b.actions.length - a.actions.length || history.indexOf(a) - history.indexOf(b);
+                        case 'actions-asc': return a.actions.length - b.actions.length || history.indexOf(a) - history.indexOf(b);
+                        case 'kind-asc': return a.event.kind.localeCompare(b.event.kind) || history.indexOf(a) - history.indexOf(b);
+                    }
+                });
+                if (selectedIndex >= 0 && selectedIndex < sorted.length) {
+                    onApplyHistory(sorted[selectedIndex]!);
+                }
+            }
         });
     }
 
