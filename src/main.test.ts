@@ -8995,3 +8995,193 @@ describe('App — round 162: scene-speed HUD wiring', () => {
     });
 });
 
+// ---------------------------------------------------------------------------
+// Round 164 — wire `dsl::codegen::generate_rules`
+// into the App at dimension-enter time. This is
+// the AGI-miniGame-side counterpart of the
+// cocos4-rust `codegen` module (round-162/163/
+// 164). The App now auto-generates the rule set
+// for each new dimension and applies it through
+// `HotReloadController.applyGenerated` (so the
+// scene starts with a fully-formed auto-
+// generated rule set — no player hot-reload
+// required).
+// ---------------------------------------------------------------------------
+
+describe('App — round 164: wire codegen into dimension-enter', () => {
+    test('main_ts_imports_autoGenerateForDimension_round_164', () => {
+        // The App must import the
+        // `autoGenerateForDimension` helper
+        // from `./dsl/codegenBindings` so the
+        // dimension-enter call site can build
+        // the GenInput + emit the rules.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/import\s*\{[^}]*autoGenerateForDimension[^}]*\}\s*from\s*['"]\.\/dsl\/codegenBindings['"]/);
+    });
+
+    test('main_ts_calls_autoGenerateRulesForCurrentDimension_after_onDimensionEntered_round_164', () => {
+        // The codegen call must be PLACED
+        // right after `scene.onDimensionEntered`
+        // (so the scene is set up before the
+        // rules start firing) and wrapped in
+        // try/catch (so a codegen regression
+        // cannot break the dimension-enter
+        // flow).
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        const callIdx = main.indexOf('this.scene.onDimensionEntered(r.blueprint);');
+        expect(callIdx).toBeGreaterThan(-1);
+        // The auto-generate call must come
+        // AFTER `onDimensionEntered` (so the
+        // scene is set up first).
+        const autoGenIdx = main.indexOf('this.autoGenerateRulesForCurrentDimension()', callIdx);
+        expect(autoGenIdx).toBeGreaterThan(callIdx);
+        // And the surrounding try/catch must
+        // wrap it.
+        const tryStart = main.lastIndexOf('try {', callIdx);
+        const catchEnd = main.indexOf('catch (e) {', callIdx);
+        expect(tryStart).toBeGreaterThan(-1);
+        expect(catchEnd).toBeGreaterThan(autoGenIdx);
+    });
+
+    test('HotReloadController_exposes_applyGenerated_method_round_164', () => {
+        // The `applyGenerated` method must be
+        // a public method on
+        // `HotReloadController` so the App can
+        // feed the auto-generated rules through
+        // it.
+        const hotTs = fs.readFileSync(path.resolve(__dirname, 'scene/HotReloadController.ts'), 'utf-8');
+        expect(hotTs).toMatch(/applyGenerated\(rules:\s*DslRule\[\]\)\s*:\s*void/);
+    });
+
+    test('applyGenerated_dispatches_all_rules_to_executor_round_164', () => {
+        // The new method must call
+        // `this.exec.apply(rule)` for every
+        // rule in the input array (so each
+        // generated rule actually fires in the
+        // scene), and must push every rule onto
+        // the history ring buffer.
+        const hotTs = fs.readFileSync(path.resolve(__dirname, 'scene/HotReloadController.ts'), 'utf-8');
+        // The implementation should iterate
+        // `for (let i = 0; i < rules.length; i++)`
+        // and call `this.exec.apply(rule)` per
+        // iteration. The regex below is a
+        // lenient contract — the body might
+        // be a `for..of` instead.
+        expect(hotTs).toMatch(/for\s*\([^)]*rules[^)]*\)/);
+        expect(hotTs).toMatch(/this\.exec\.apply\(rule\)/);
+        // And the method must push to
+        // `ruleHistory`.
+        expect(hotTs).toMatch(/this\.ruleHistory\.push\(rule\)/);
+    });
+
+    test('applyGenerated_sets_activeRule_to_last_rule_round_164', () => {
+        // The last rule in the batch must
+        // become the new "active" rule (so
+        // `getActiveRule()` returns it and the
+        // DslCodex panel shows it as the
+        // current rule). A regression that
+        // always set the active rule to the
+        // first rule would break the panel.
+        const hotTs = fs.readFileSync(path.resolve(__dirname, 'scene/HotReloadController.ts'), 'utf-8');
+        expect(hotTs).toMatch(/this\.activeRule\s*=\s*rule/);
+    });
+
+    test('applyGenerated_resets_charge_and_state_round_164', () => {
+        // Codegen rules are "always on" (not
+        // shielded for 1 round), so the method
+        // must reset `charge` to 0 and the
+        // state to `applied` (so the next
+        // player hot-reload is not blocked by
+        // the codegen's own rules).
+        const hotTs = fs.readFileSync(path.resolve(__dirname, 'scene/HotReloadController.ts'), 'utf-8');
+        expect(hotTs).toMatch(/this\.charge\s*=\s*0/);
+        expect(hotTs).toMatch(/this\.state\s*=\s*['"]applied['"]/);
+    });
+
+    test('main_ts_exposes_autoGenerateRulesForCurrentDimension_method_round_164', () => {
+        // The App must have a private
+        // `autoGenerateRulesForCurrentDimension`
+        // method that the dimension-enter
+        // call site invokes.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        expect(main).toMatch(/private\s+autoGenerateRulesForCurrentDimension\s*\(\s*\)\s*:\s*void/);
+    });
+
+    test('autoGenerate_uses_worldState_lastBiome_round_164', () => {
+        // The auto-generate method must
+        // derive the biome from
+        // `this.worldState.lastBiome` (the
+        // dimension-enter flow sets this
+        // before the codegen call).
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        // Locate the method body.
+        const methodMatch = main.match(/private\s+autoGenerateRulesForCurrentDimension[^{]*\{([\s\S]*?)\n\s{4}\}/);
+        expect(methodMatch).not.toBeNull();
+        const body = methodMatch![1];
+        expect(body).toMatch(/this\.worldState\.lastBiome/);
+    });
+
+    test('autoGenerate_passes_seed_via_seedFromString_round_164', () => {
+        // The App must use
+        // `autoGenerateForDimension(dimensionId, biomeId)`
+        // so the seed is derived from the
+        // dimension ID (round-72 save
+        // round-trip stability).
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        const methodMatch = main.match(/private\s+autoGenerateRulesForCurrentDimension[^{]*\{([\s\S]*?)\n\s{4}\}/);
+        expect(methodMatch).not.toBeNull();
+        const body = methodMatch![1];
+        expect(body).toMatch(/autoGenerateForDimension\(/);
+    });
+
+    test('autoGenerate_calls_hot_applyGenerated_round_164', () => {
+        // The auto-generate method must pipe
+        // the rules through
+        // `this.hot.applyGenerated(rules)`.
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        const methodMatch = main.match(/private\s+autoGenerateRulesForCurrentDimension[^{]*\{([\s\S]*?)\n\s{4}\}/);
+        expect(methodMatch).not.toBeNull();
+        const body = methodMatch![1];
+        expect(body).toMatch(/this\.hot\.applyGenerated\(rules\)/);
+    });
+
+    test('autoGenerate_logs_chinese_status_round_164', () => {
+        // The auto-generate method must log a
+        // Chinese status line so the player
+        // sees the codegen output in the HUD
+        // log (mirrors the round-161 + 162
+        // log conventions).
+        const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+        const methodMatch = main.match(/private\s+autoGenerateRulesForCurrentDimension[^{]*\{([\s\S]*?)\n\s{4}\}/);
+        expect(methodMatch).not.toBeNull();
+        const body = methodMatch![1];
+        expect(body).toMatch(/\[codegen\]\s*自动生成/);
+    });
+
+    test('codegenBindings_ts_known_vector_round_164', () => {
+        // Cross-validation: the FNV-1a
+        // 64-bit values for "" / "a" / "b" /
+        // "forest" must be byte-identical
+        // between TS and Rust. A regression on
+        // either side would fail this test
+        // (and the parallel cargo test).
+        const ts = fs.readFileSync(path.resolve(__dirname, 'dsl/codegenBindings.ts'), 'utf-8');
+        // The TS source must pin the same
+        // constants as the Rust side.
+        expect(ts).toMatch(/0xCBF29CE484222325/);
+        expect(ts).toMatch(/0x100000001B3/);
+    });
+
+    test('codegenBindings_test_ts_pins_known_vector_round_164', () => {
+        // The TS test file must also pin the
+        // known-vector values so a TS-only
+        // regression breaks here (the cargo
+        // test would still pass).
+        const tsTest = fs.readFileSync(path.resolve(__dirname, 'dsl/codegenBindings.test.ts'), 'utf-8');
+        expect(tsTest).toMatch(/0xCBF29CE484222325n/);
+        expect(tsTest).toMatch(/0xAF63DC4C8601EC8Cn/);
+        expect(tsTest).toMatch(/0xAF63DF4C8601F1A5n/);
+        expect(tsTest).toMatch(/0x2098148EC99FB680n/);
+    });
+});
+

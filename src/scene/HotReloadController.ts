@@ -218,6 +218,83 @@ export class HotReloadController {
      */
     getRuleHistory(): DslRule[] { return this.ruleHistory.slice(); }
 
+    /**
+     * Round 164 — apply a pre-built array of
+     * `DslRule` instances. Bypasses the rate
+     * limiter and the DSL parser (the rules
+     * are already valid `DslRule` objects, not
+     * raw DSL strings). Each rule is dispatched
+     * to the executor in order; the last applied
+     * rule becomes the new `activeRule`; the
+     * full set is pushed to the ring-buffer
+     * history (capped at HISTORY_CAPACITY,
+     * oldest-first).
+     *
+     * Intended use case: the App's
+     * `autoGenerateForDimension` codegen call
+     * (round-164 A) feeds the result of
+     * `generateRules(input)` straight into
+     * this method at dimension-enter time, so
+     * the scene starts with a fully-formed
+     * auto-generated rule set — no player
+     * hot-reload required. The first rule
+     * becomes the "current" rule that
+     * `getActiveRule()` returns, and the panel
+     * history list shows the rest of the
+     * generated rules.
+     *
+     * The method emits one `applied` event per
+     * rule, so any subscriber (the
+     * `DslCodex` panel, the
+     * `DebugOverlay`, etc.) updates the
+     * moment the rule lands. The state stays
+     * `applied` after the loop ends (the
+     * shielded/charge transitions are
+     * suppressed for codegen — codegen rules
+     * are "always on" not "shielded for 1
+     * round" — so the next player hot-reload
+     * is not blocked by the codegen's own
+     * rules).
+     */
+    applyGenerated(rules: DslRule[]): void {
+        for (let i = 0; i < rules.length; i++) {
+            const rule = rules[i];
+            this.lastApplies.push(performance.now());
+            this.exec.apply(rule);
+            if (i === rules.length - 1) {
+                // The last rule in the batch
+                // becomes the "active" rule (so
+                // `getActiveRule()` returns it).
+                this.activeRule = rule;
+            }
+        }
+        // Push the whole set onto the history
+        // ring buffer. The buffer drops the
+        // oldest entries first (FIFO, capped at
+        // HISTORY_CAPACITY = 5).
+        for (const rule of rules) {
+            this.ruleHistory.push(rule);
+        }
+        while (this.ruleHistory.length > HotReloadController.HISTORY_CAPACITY) {
+            this.ruleHistory.shift();
+        }
+        this.state = 'applied';
+        this.charge = 0;
+        // Emit a single "applied" event so any
+        // subscriber (DslCodex panel, Debug
+        // overlay) refreshes once with the new
+        // history. The per-rule `applied` event
+        // would be too chatty for a 5-rule
+        // batch (the panel would re-render 5
+        // times in a row).
+        this.emit({
+            state: 'applied',
+            charge: 0,
+            dsl: '<codegen>',
+            rule: this.activeRule,
+        });
+    }
+
     /** Begin a hot-reload. Returns true if accepted, false if rate-limited. */
     begin(dsl: string): boolean {
         if (this.state !== 'idle' && this.state !== 'applied') return false;

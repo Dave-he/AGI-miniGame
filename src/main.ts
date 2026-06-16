@@ -45,6 +45,7 @@ import { ZERO_SCENE_SCALARS, cloneSceneScalars, type SceneScalars } from './ai/S
 import { getBiomeAtmosphere } from './scene/BiomeAtmosphere';
 import { getBiomeAudio } from './audio/BiomeAudio';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
+import { autoGenerateForDimension } from './dsl/codegenBindings';
 import { TutorialOverlay } from './ui/TutorialOverlay';
 import { renderStatsPanel, StatsPanelHandle } from './ui/StatsPanel';
 import { GodConsole } from './ui/GodConsole';
@@ -1954,6 +1955,28 @@ class App {
         }
         this.hud.setState({ dimension: r.blueprint });
         this.scene.onDimensionEntered(r.blueprint);
+        // Round 164 — auto-generate the rule set
+        // for the new dimension and apply it
+        // through `HotReloadController.applyGenerated`
+        // (the round-162/163/164 codegen is
+        // finally wired into the App — closes
+        // the "DSL codegen exists but isn't
+        // called" gap). The seed is derived from
+        // the dimension ID via
+        // `seedFromString` (round-164 B) so
+        // reloads give the same rules. Failures
+        // are caught + logged so a codegen
+        // regression can't break the
+        // dimension-enter flow (defense in
+        // depth: the scene is already set up
+        // and the player should not see a
+        // blank screen because the auto-gen
+        // misfired).
+        try {
+            this.autoGenerateRulesForCurrentDimension();
+        } catch (e) {
+            this.hud.log(`[codegen] 自动生成规则失败: ${e instanceof Error ? e.message : String(e)}`);
+        }
         this.hud.log(`进入次元: ${r.blueprint.name}`);
         this.hud.log(`玩法组合: ${r.atomIds.join(' + ')}`);
         this.hud.log(`主题: ${r.blueprint.theme?.visualStyle}`);
@@ -3216,6 +3239,74 @@ class App {
             this.lastDslOutcome = 'rejected';
             this.hud.log('[HotReload] 拒绝：频率限制或格式错误');
         }
+        this.dslCodexHandle?.refresh();
+    }
+
+    /**
+     * Round 164 — auto-generate the rule set
+     * for the current dimension and apply it
+     * through `HotReloadController.applyGenerated`.
+     *
+     * The "current dimension" is whatever
+     * `this.worldState.lastBiome` points at
+     * (set by the dimension-enter flow). The
+     * seed is `seedFromString(dimensionId)` so
+     * reloading the same dimension gives the
+     * same rules (round-72 save stability).
+     *
+     * The complexity defaults to `Medium` —
+     * future rounds could wire this to a
+     * player-level / progression-tier signal
+     * (e.g. Lv 1-3 = Low, Lv 4-7 = Medium,
+     * Lv 8+ = High).
+     *
+     * The method is a no-op when the codegen
+     * bindings import fails (e.g. in test
+     * environments where the module is
+     * stubbed). The dimension-enter call site
+     * already wraps this in try/catch so a
+     * codegen regression cannot break the
+     * scene setup.
+     */
+    private autoGenerateRulesForCurrentDimension(): void {
+        // The worldState tracks the most
+        // recently entered biome. The
+        // `autoGenerateForDimension` helper
+        // builds the GenInput + emits the
+        // rules; the App just plumbs them
+        // through to `hot.applyGenerated`.
+        const biomeId = this.worldState.lastBiome;
+        if (!biomeId) {
+            // No biome set yet (very early
+            // boot, or a test that bypasses
+            // the dimension-enter flow).
+            return;
+        }
+        // Use the last-entered blueprint name
+        // as the dimension ID. `worldState`
+        // tracks `lastBiome` but not the
+        // blueprint name; the HUD state does
+        // (via `setState({ dimension: ... })`).
+        // We fall back to a stable string when
+        // the HUD state doesn't have one yet.
+        const dimensionId = this.hud.getState().dimension?.name ?? biomeId;
+        const { input, rules } = autoGenerateForDimension(dimensionId, biomeId);
+        if (rules.length === 0) {
+            // Should never happen (codegen
+            // always emits the baseline), but
+            // pin the contract.
+            return;
+        }
+        this.hot.applyGenerated(rules);
+        // Sync the round-133 K-key panel
+        // status badge so the player sees
+        // "已接受" instead of the
+        // "无 hot-reload" default.
+        this.currentDslRule = this.hot.getActiveRule() ?? null;
+        this.lastDslOutcome = 'accepted';
+        this.hud.log(
+            `[codegen] 自动生成 ${rules.length} 条规则 (biome=${input.biome}, mood=${input.mood}, complexity=${input.complexity}, seed=0x${input.seed.toString(16).slice(0, 8)})`,
+        );
         this.dslCodexHandle?.refresh();
     }
 
