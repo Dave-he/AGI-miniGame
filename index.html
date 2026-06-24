@@ -143,6 +143,38 @@
       .hud-minimized { width: 32px; height: 32px; border-radius: 50%; }
       .hud-minimized { overflow: hidden; }
 
+      /* Round 169 — `.hud-auto-shrink`
+         collapses the HUD to a
+         micro-form (width/height
+         + font-size ~50%) so the
+         player can see more of
+         the scene. Unlike
+         round-160 `.hud-minimized`
+         (which reduces the HUD
+         to a 32×32 icon), the
+         HUD stays visible AND
+         interactive — just
+         smaller. The
+         `hud-auto-shrink-active`
+         class is the secondary
+         "idle-timer" flag the
+         runtime uses to suppress
+         the shrink temporarily
+         when the player is
+         actively interacting
+         (e.g. mouseover / key
+         event). Toggled via the
+         `U` key shortcut and
+         persisted to localStorage
+         key `agi_hud_auto_shrink`. */
+      .hud-auto-shrink { transform: scale(0.55); transform-origin: top right; opacity: 0.78; }
+      .hud-auto-shrink.hud-corner-tl { transform-origin: top left; }
+      .hud-auto-shrink.hud-corner-tr { transform-origin: top right; }
+      .hud-auto-shrink.hud-corner-bl { transform-origin: bottom left; }
+      .hud-auto-shrink.hud-corner-br { transform-origin: bottom right; }
+      .hud-auto-shrink-active { opacity: 1; }
+      .hud-auto-shrink.hud-auto-shrink-active { transform: scale(0.62); opacity: 1; }
+
       /* Round 162 — `.hud-scene-speed-strip`
          is a compact badge in
          the round-51 memories

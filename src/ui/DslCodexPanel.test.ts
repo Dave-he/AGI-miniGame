@@ -5507,5 +5507,454 @@ describe('DslCodexPanel — round 168 column-level click-sort', () => {
             root.querySelector('.dsl-codex-history-col-cell[data-column="idx"]')
         ).toBeNull();
     });
+
+    // Round 169 — codegen
+    // badge: when the
+    // host wires a
+    // `getIsGenerated`
+    // callback, rows
+    // whose rule returns
+    // true render a 🤖
+    // badge + the
+    // `dsl-codex-history-row-generated`
+    // class +
+    // `data-generated="1"`
+    // attribute. Rows
+    // whose rule returns
+    // false (or when no
+    // callback is wired)
+    // render no badge.
+
+    describe('DslCodexPanel — round 169 codegen badge', () => {
+        test('getIsGenerated_marks_codegen_rows_with_badge_and_data_attr', () => {
+            const root = document.createElement('div');
+            document.body.appendChild(root);
+            const generatedRule: DslRule = { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [5] }] };
+            const manualRule: DslRule = { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] };
+            const generatedSet = new Set<DslRule>([generatedRule]);
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => [generatedRule, manualRule],
+                undefined,
+                undefined,
+                undefined,
+                (rule) => generatedSet.has(rule),
+            );
+            // Generated row has badge + class + data attr.
+            const rows = root.querySelectorAll('.dsl-codex-history-row');
+            expect(rows.length).toBe(2);
+            const genRow = rows[0];
+            expect(genRow.classList.contains('dsl-codex-history-row-generated')).toBe(true);
+            expect(genRow.getAttribute('data-generated')).toBe('1');
+            expect(genRow.querySelector('.dsl-codex-history-generated-badge')).not.toBeNull();
+            // Manual row has NEITHER.
+            const manRow = rows[1];
+            expect(manRow.classList.contains('dsl-codex-history-row-generated')).toBe(false);
+            expect(manRow.getAttribute('data-generated')).toBeNull();
+            expect(manRow.querySelector('.dsl-codex-history-generated-badge')).toBeNull();
+            document.body.removeChild(root);
+        });
+
+        test('omitted_getIsGenerated_renders_no_badge', () => {
+            // Pre-round-169 callers that
+            // don't pass the callback
+            // must still work (no
+            // badge, no extra class,
+            // no data attr).
+            const root = document.createElement('div');
+            document.body.appendChild(root);
+            const rule: DslRule = { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [5] }] };
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => [rule],
+            );
+            const row = root.querySelector('.dsl-codex-history-row')!;
+            expect(row.classList.contains('dsl-codex-history-row-generated')).toBe(false);
+            expect(row.querySelector('.dsl-codex-history-generated-badge')).toBeNull();
+            document.body.removeChild(root);
+        });
+
+        test('getIsGenerated_returning_false_for_all_renders_no_badge', () => {
+            // Callback wired but every
+            // rule returns false
+            // (e.g. host wires
+            // `isGenerated` from a
+            // different source that
+            // never flags anything).
+            const root = document.createElement('div');
+            document.body.appendChild(root);
+            const rule: DslRule = { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [5] }] };
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => [rule],
+                undefined,
+                undefined,
+                undefined,
+                () => false,
+            );
+            const row = root.querySelector('.dsl-codex-history-row')!;
+            expect(row.classList.contains('dsl-codex-history-row-generated')).toBe(false);
+            expect(row.querySelector('.dsl-codex-history-generated-badge')).toBeNull();
+            document.body.removeChild(root);
+        });
+
+        test('badge_sits_before_idx_cell_and_is_not_a_data_column', () => {
+            // The badge is the
+            // first child of the
+            // row, NOT a
+            // `<span
+            // class="dsl-codex-history-col-cell">`
+            // — it's outside the
+            // hiddenColumns
+            // gating so it
+            // stays visible even
+            // when every column
+            // is toggled off.
+            const root = document.createElement('div');
+            document.body.appendChild(root);
+            const rule: DslRule = { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [5] }] };
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => [rule],
+                undefined,
+                undefined,
+                undefined,
+                () => true,
+            );
+            const row = root.querySelector('.dsl-codex-history-row')!;
+            const firstChild = row.firstElementChild!;
+            expect(firstChild.classList.contains('dsl-codex-history-generated-badge')).toBe(true);
+            // No `data-column` attr
+            // (it's not a sortable
+            // column).
+            expect(firstChild.getAttribute('data-column')).toBeNull();
+            document.body.removeChild(root);
+        });
+
+        test('mixed_history_marks_only_generated_rows', () => {
+            // 5-row history: rows 0,2,4 are generated; rows 1,3 are manual.
+            const root = document.createElement('div');
+            document.body.appendChild(root);
+            const rules: DslRule[] = [
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [2] }] },
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [3] }] },
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [4] }] },
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [5] }] },
+            ];
+            const generatedSet = new Set<DslRule>([rules[0], rules[2], rules[4]]);
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => rules,
+                undefined,
+                undefined,
+                undefined,
+                (rule) => generatedSet.has(rule),
+            );
+            const rows = root.querySelectorAll('.dsl-codex-history-row');
+            expect(rows.length).toBe(5);
+            expect(rows[0].classList.contains('dsl-codex-history-row-generated')).toBe(true);
+            expect(rows[1].classList.contains('dsl-codex-history-row-generated')).toBe(false);
+            expect(rows[2].classList.contains('dsl-codex-history-row-generated')).toBe(true);
+            expect(rows[3].classList.contains('dsl-codex-history-row-generated')).toBe(false);
+            expect(rows[4].classList.contains('dsl-codex-history-row-generated')).toBe(true);
+            // Total
+            // badge
+            // count
+            // is
+            // 3.
+            expect(root.querySelectorAll('.dsl-codex-history-generated-badge').length).toBe(3);
+            document.body.removeChild(root);
+        });
+    });
+
+    // Round 169 — multi-column
+    // sort via Shift+Click on
+    // a column header. The
+    // existing 7-state cycle
+    // is unchanged for plain
+    // clicks; Shift+Click adds
+    // the clicked column as a
+    // secondary sort key (the
+    // primary stays in place
+    // and does NOT advance).
+
+    describe('DslCodexPanel — round 169 multi-column sort', () => {
+        function shiftClick(el: Element): void {
+            const ev = new MouseEvent('click', { bubbles: true, shiftKey: true });
+            el.dispatchEvent(ev);
+        }
+
+        test('shift_click_on_fresh_column_adds_it_as_secondary', () => {
+            const root = makeRoot();
+            const history: DslRule[] = [
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Heal', args: [1] }] },
+            ];
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => history,
+            );
+            // Click "actions" → asc primary.
+            const actionsHdr = root.querySelector(
+                '#dsl-codex-history-col-header-actions'
+            ) as HTMLElement;
+            actionsHdr.click();
+            // Shift+Click "source" → secondary asc.
+            const srcHdr = root.querySelector(
+                '#dsl-codex-history-col-header-source'
+            ) as HTMLElement;
+            shiftClick(srcHdr);
+            // Primary "actions" header should still be active (the cycle did NOT advance).
+            const actionsAfter = root.querySelector(
+                '#dsl-codex-history-col-header-actions'
+            ) as HTMLElement;
+            expect(actionsAfter.classList.contains('dsl-codex-history-col-header-active')).toBe(true);
+            // Secondary "source" header should now be marked secondary.
+            const srcAfter = root.querySelector(
+                '#dsl-codex-history-col-header-source'
+            ) as HTMLElement;
+            expect(srcAfter.classList.contains('dsl-codex-history-col-header-secondary')).toBe(true);
+            // Indicator on the secondary column is `⤵↑` (asc).
+            expect(srcAfter.textContent).toContain('⤵↑');
+        });
+
+        test('shift_click_on_existing_secondary_flips_its_direction', () => {
+            const root = makeRoot();
+            const history: DslRule[] = [
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+            ];
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => history,
+            );
+            const actionsHdr = root.querySelector(
+                '#dsl-codex-history-col-header-actions'
+            ) as HTMLElement;
+            actionsHdr.click();
+            const srcHdr = root.querySelector(
+                '#dsl-codex-history-col-header-source'
+            ) as HTMLElement;
+            shiftClick(srcHdr);
+            // First shift+click: secondary asc.
+            let srcNow = root.querySelector(
+                '#dsl-codex-history-col-header-source'
+            ) as HTMLElement;
+            expect(srcNow.textContent).toContain('⤵↑');
+            // Second shift+click on the same header: secondary desc.
+            shiftClick(srcNow);
+            srcNow = root.querySelector(
+                '#dsl-codex-history-col-header-source'
+            ) as HTMLElement;
+            expect(srcNow.textContent).toContain('⤵↓');
+        });
+
+        test('shift_click_on_primary_column_clears_secondary', () => {
+            const root = makeRoot();
+            const history: DslRule[] = [
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+            ];
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => history,
+            );
+            const actionsHdr = root.querySelector(
+                '#dsl-codex-history-col-header-actions'
+            ) as HTMLElement;
+            actionsHdr.click();
+            const srcHdr = root.querySelector(
+                '#dsl-codex-history-col-header-source'
+            ) as HTMLElement;
+            shiftClick(srcHdr);
+            // Sanity: secondary is engaged.
+            expect(
+                (root.querySelector(
+                    '#dsl-codex-history-col-header-source'
+                ) as HTMLElement).classList.contains('dsl-codex-history-col-header-secondary')
+            ).toBe(true);
+            // Shift+Click on the primary clears the secondary.
+            const actionsNow = root.querySelector(
+                '#dsl-codex-history-col-header-actions'
+            ) as HTMLElement;
+            shiftClick(actionsNow);
+            const srcNow = root.querySelector(
+                '#dsl-codex-history-col-header-source'
+            ) as HTMLElement;
+            expect(srcNow.classList.contains('dsl-codex-history-col-header-secondary')).toBe(false);
+            // Primary stays active (no cycle advance).
+            const actionsAfter = root.querySelector(
+                '#dsl-codex-history-col-header-actions'
+            ) as HTMLElement;
+            expect(actionsAfter.classList.contains('dsl-codex-history-col-header-active')).toBe(true);
+            // Primary indicator is still ` ↑` (asc, no secondary/costKey state).
+            expect(actionsAfter.textContent).toContain('↑');
+            expect(actionsAfter.textContent).not.toContain('↑+');
+        });
+
+        test('plain_click_advances_primary_cycle_when_secondary_is_engaged', () => {
+            // The existing 7-state cycle
+            // must still work even
+            // when a secondary sort
+            // is active. Plain click
+            // on the primary advances
+            // the primary cycle (the
+            // secondary stays).
+            const root = makeRoot();
+            const history: DslRule[] = [
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+            ];
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => history,
+            );
+            const actionsHdr = root.querySelector(
+                '#dsl-codex-history-col-header-actions'
+            ) as HTMLElement;
+            actionsHdr.click();
+            // Add secondary.
+            const srcHdr = root.querySelector(
+                '#dsl-codex-history-col-header-source'
+            ) as HTMLElement;
+            shiftClick(srcHdr);
+            // Plain click on primary: asc → desc. Secondary stays.
+            const actionsNow = root.querySelector(
+                '#dsl-codex-history-col-header-actions'
+            ) as HTMLElement;
+            actionsNow.click();
+            const actionsAfter = root.querySelector(
+                '#dsl-codex-history-col-header-actions'
+            ) as HTMLElement;
+            expect(actionsAfter.textContent).toContain('↓');
+            // Secondary still engaged.
+            const srcAfter = root.querySelector(
+                '#dsl-codex-history-col-header-source'
+            ) as HTMLElement;
+            expect(srcAfter.classList.contains('dsl-codex-history-col-header-secondary')).toBe(true);
+        });
+
+        test('multi_column_sort_orders_rows_by_primary_then_secondary', () => {
+            // 4-rule history with a mix
+            // of action counts and
+            // source strings. Sort by
+            // actions asc primary,
+            // source asc secondary.
+            // Within the same
+            // action-count group,
+            // rules should be ordered
+            // by source alphabetically.
+            const root = makeRoot();
+            const history: DslRule[] = [
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }, { kind: 'Heal', args: [1] }] },
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+                { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['z', 1] }] },
+                { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['a', 1] }] },
+            ];
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => history,
+            );
+            // Click "actions" → asc primary (1-action first, then 2-action).
+            (root.querySelector('#dsl-codex-history-col-header-actions') as HTMLElement).click();
+            // Shift+Click "source" → secondary asc.
+            shiftClick(
+                root.querySelector('#dsl-codex-history-col-header-source') as HTMLElement
+            );
+            // Read the row order. After the sort:
+            // history[1] = Collide/Damage(1) → source "On(Collide, null)" (1 action)
+            // history[2] = Spawn/Spawn('z') → source "On(Spawn, \"z\")" (1 action)
+            // history[3] = Spawn/Spawn('a') → source "On(Spawn, \"a\")" (1 action)
+            // history[0] = Collide/Damage(1)+Heal(1) → source "On(Collide, null), Heal(1)" (2 actions)
+            //
+            // Primary actions asc: 1-action group (history[1,2,3]) first,
+            // then 2-action group (history[0]).
+            // Within 1-action group: source asc → "On(Collide" < "On(Spawn"
+            // then within "On(Spawn" tie: "a" < "z".
+            // So display order is:
+            //   rows[0] = history[1] (On(Collide), 1)
+            //   rows[1] = history[3] (On(Spawn, "a"), 1)
+            //   rows[2] = history[2] (On(Spawn, "z"), 1)
+            //   rows[3] = history[0] (On(Collide, ..., 2 actions)
+            //
+            // `data-rule-idx` is the post-sort display index (0..3).
+            const rows = root.querySelectorAll('.dsl-codex-history-row');
+            expect(rows.length).toBe(4);
+            // Pin the display order via data-rule-idx (always 0..3 after sort).
+            expect(rows[0].getAttribute('data-rule-idx')).toBe('0');
+            expect(rows[1].getAttribute('data-rule-idx')).toBe('1');
+            expect(rows[2].getAttribute('data-rule-idx')).toBe('2');
+            expect(rows[3].getAttribute('data-rule-idx')).toBe('3');
+            // Pin the source-DSL text to verify the secondary sort actually applied.
+            const srcs = Array.from(rows).map((r) =>
+                (r.querySelector('.dsl-codex-history-col-cell[data-column="source"]') as HTMLElement)?.textContent ?? ''
+            );
+            // The first 3 rows are 1-action rules: On(Collide, ...) < On(Spawn, "a") < On(Spawn, "z").
+            expect(srcs[0]).toMatch(/^On\(Collide/);
+            expect(srcs[1]).toMatch(/^On\(Spawn.*"a"/);
+            expect(srcs[2]).toMatch(/^On\(Spawn.*"z"/);
+            // The last row is the 2-action rule.
+            const acts = Array.from(rows).map((r) =>
+                (r.querySelector('.dsl-codex-history-col-cell[data-column="actions"]') as HTMLElement)?.textContent ?? ''
+            );
+            expect(acts[0]).toBe('1 动作');
+            expect(acts[1]).toBe('1 动作');
+            expect(acts[2]).toBe('1 动作');
+            expect(acts[3]).toBe('2 动作');
+        });
+
+        test('shift_click_with_no_active_primary_is_a_no_op', () => {
+            // The secondary path is
+            // gated on
+            // `currentColumnSort !==
+            // null`. Shift+Click with
+            // no primary active is
+            // ignored (it shouldn't
+            // promote the clicked
+            // column to either
+            // primary or secondary).
+            const root = makeRoot();
+            const history: DslRule[] = [
+                { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+            ];
+            renderDslCodexPanel(
+                root,
+                () => null,
+                () => 'none',
+                () => history,
+            );
+            const srcHdr = root.querySelector(
+                '#dsl-codex-history-col-header-source'
+            ) as HTMLElement;
+            shiftClick(srcHdr);
+            // No header should be
+            // active or secondary
+            // after the shift+click.
+            const headers = root.querySelectorAll('.dsl-codex-history-col-header');
+            for (const h of Array.from(headers)) {
+                const cls = (h as HTMLElement).className;
+                expect(cls.includes('dsl-codex-history-col-header-active')).toBe(false);
+                expect(cls.includes('dsl-codex-history-col-header-secondary')).toBe(false);
+            }
+        });
+    });
 });
 

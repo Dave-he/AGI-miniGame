@@ -477,6 +477,73 @@ export type DslHistoryColumnSort = {
      * identically to `costKey: false`.
      */
     costKey?: boolean;
+    /**
+     * Round 169 — secondary
+     * sort column. When
+     * present, ties in the
+     * primary column break
+     * by the secondary
+     * column's value (with
+     * its own direction),
+     * NOT by `origIndex` or
+     * the round-158
+     * `idx desc` tiebreaker.
+     *
+     * Reached via
+     * Shift+Click on a column
+     * header (or cell): the
+     * clicked column becomes
+     * the secondary sort key
+     * while the existing
+     * primary stays in place.
+     * Shift+Click on the same
+     * column flips its
+     * direction; Shift+Click
+     * on the primary column
+     * itself clears the
+     * secondary (back to the
+     * round-158 idx-desc
+     * tiebreaker if
+     * `secondary: true`,
+     * else the round-144
+     * idx-asc tiebreaker).
+     *
+     * The field is optional
+     * so the existing
+     * round-144/158/165
+     * callers (and the
+     * localStorage-persisted
+     * `persistentColumnSort`)
+     * keep working without
+     * migration — a missing
+     * `secondarySort` falls
+     * through to the
+     * round-158 `secondary:
+     * true` behavior or the
+     * round-144 default.
+     *
+     * Cost-key primary +
+     * secondary by column:
+     * when `costKey: true`
+     * AND `secondarySort` is
+     * present, ties in
+     * `mutation_cost` break
+     * by the secondary
+     * column's value (not
+     * by `origIndex`).
+     * Cost-key primary +
+     * secondary by another
+     * cost-key dimension
+     * isn't supported (the
+     * cost-key axis is the
+     * primary, so the
+     * secondary is always by
+     * a *column*).
+     */
+    secondarySort?: {
+        column: DslHistoryColumn;
+        direction: 'asc' | 'desc';
+    };
 } | null;
 
 /**
@@ -1342,50 +1409,56 @@ function renderHistoryColumnHeader(
     ): string | null => {
         if (hiddenColumns.has(column)) return null;
         const active = columnSort?.column === column;
-        // Round 158 — 4th-state
-        // indicator. When the
-        // column is active with
-        // `secondary: true`, show
-        // ` ↑+` (the `+` suffix
-        // signals the secondary
-        // tiebreaker is engaged).
-        // Otherwise the round-144
-        // 3-state indicator (` ↑` /
-        // ` ↓`) applies. The
-        // `↕` inactive hint is
-        // unchanged.
-        const indicator = active
-            ? (columnSort?.direction === 'asc'
-                ? (columnSort?.costKey ? ' ↑$'
-                    : columnSort?.secondary ? ' ↑+' : ' ↑')
-                : (columnSort?.costKey ? ' ↓$' : ' ↓'))
-            : ' <span class="dsl-codex-history-col-hint">↕</span>';
-        const cls = active
-            ? 'dsl-codex-history-col-header dsl-codex-history-col-header-active'
-            : 'dsl-codex-history-col-header';
-        const ariaSort = active
-            ? (columnSort?.direction === 'asc' ? 'ascending' : 'descending')
-            : 'none';
-        // Round 165 — title hint
-        // also reflects the 5th
-        // state. The player who
-        // hovers the header sees
-        // "按X升序(cost)" instead
-        // of just "按X升序" so
-        // they understand the `$`
-        // cost-key indicator is
-        // showing (the same `$`
-        // is used in the indicator
-        // itself as a single-glyph
-        // mnemonic — `$` ≈ "cost
-        // of mutation"). The 4th-
-        // state `(次要)` title
-        // suffix is preserved.
-        const titleSuffix = active && columnSort?.costKey
-            ? '(cost)'
-            : active && columnSort?.secondary
-                ? '(次要)'
-                : '';
+        // Round 169 — secondary
+        // column indicator. When
+        // this column is the
+        // *secondary* sort key
+        // (set via Shift+Click,
+        // not the primary cycle),
+        // render a ` ⤵` glyph
+        // with the secondary's
+        // own direction. The
+        // primary column still
+        // gets the round-158
+        // indicator (` ↑` /
+        // ` ↓` / ` ↑+` /
+        // ` ↑$`).
+        const isSecondary = columnSort?.secondarySort?.column === column;
+        const indicator = isSecondary
+            ? (columnSort?.secondarySort?.direction === 'asc' ? ' ⤵↑' : ' ⤵↓')
+            : active
+                ? (columnSort?.direction === 'asc'
+                    ? (columnSort?.costKey ? ' ↑$'
+                        : columnSort?.secondary ? ' ↑+' : ' ↑')
+                    : (columnSort?.costKey ? ' ↓$' : ' ↓'))
+                : ' <span class="dsl-codex-history-col-hint">↕</span>';
+        const cls = isSecondary
+            ? 'dsl-codex-history-col-header dsl-codex-history-col-header-secondary'
+            : active
+                ? 'dsl-codex-history-col-header dsl-codex-history-col-header-active'
+                : 'dsl-codex-history-col-header';
+        const ariaSort = isSecondary
+            ? (columnSort?.secondarySort?.direction === 'asc' ? 'ascending' : 'descending')
+            : active
+                ? (columnSort?.direction === 'asc' ? 'ascending' : 'descending')
+                : 'none';
+        // Round 169 — title hint
+        // for secondary columns.
+        // Players hovering see
+        // "按X排序(次要-升序)" /
+        // "按X排序(次要-降序)"
+        // so they understand the
+        // ⤵ glyph is showing
+        // "this is the tiebreaker
+        // column, not the
+        // primary".
+        const titleSuffix = isSecondary
+            ? `(次要${columnSort?.secondarySort?.direction === 'asc' ? '-升序' : '-降序'})`
+            : active && columnSort?.costKey
+                ? '(cost)'
+                : active && columnSort?.secondary
+                    ? '(次要)'
+                    : '';
         const title = `按${label}排序${titleSuffix}`;
         return `<span class="${cls}" id="${id}" data-column="${column}" aria-sort="${ariaSort}" role="button" tabindex="0" title="${title}">${label}${indicator}</span>`;
     };
@@ -1518,6 +1591,27 @@ function renderHistoryList(
     // concern from
     // data columns).
     hiddenColumns: Set<DslHistoryColumn>,
+    // Round 169 — optional
+    // callback that returns
+    // true when a history row
+    // came from codegen (the
+    // `HotReloadController.
+    // applyGenerated` path)
+    // vs manual hot-reload.
+    // When provided, generated
+    // rows render a `🤖`
+    // badge + the
+    // `dsl-codex-history-row-
+    // generated` class +
+    // `data-generated="1"`
+    // attribute so test-utils
+    // and CSS can read the
+    // codegen-vs-manual flag
+    // without parsing the
+    // DOM. Omitted = no
+    // badge (pre-round-169
+    // callers).
+    getIsGenerated?: (rule: DslRule) => boolean,
 ): string {
     // Round 136 —
     // apply the
@@ -1653,8 +1747,64 @@ function renderHistoryList(
             const aCost = mutationCost(a.rule);
             const bCost = mutationCost(b.rule);
             if (aCost !== bCost) return (aCost - bCost) * dir;
+            // Round 169 — when the
+            // primary is costKey
+            // (mutation_cost axis)
+            // AND a secondary sort
+            // is engaged, ties in
+            // costKey break by the
+            // secondary column's
+            // value, not by
+            // `origIndex`.
+            if (columnSort.secondarySort) {
+                const ssDir = columnSort.secondarySort.direction === 'asc' ? 1 : -1;
+                switch (columnSort.secondarySort.column) {
+                    case 'idx':
+                        return (a.origIndex - b.origIndex) * ssDir;
+                    case 'source':
+                        return ruleToSource(a.rule).localeCompare(ruleToSource(b.rule)) * ssDir;
+                    case 'actions':
+                        return (a.rule.actions.length - b.rule.actions.length) * ssDir;
+                }
+            }
             return secondaryTiebreaker;
         }
+        // Round 169 —
+        // `secondarySort` (set by
+        // Shift+Click on a
+        // column header) takes
+        // precedence over the
+        // round-158 `secondary`
+        // flag. When two rules
+        // tie on the primary
+        // sort, they break by
+        // the secondary column's
+        // *value* (with its own
+        // direction), not by
+        // `origIndex` or the
+        // round-158 `idx desc`
+        // tiebreaker.
+        const secondarySortCmp = (
+            ruleA: DslRule,
+            ruleB: DslRule,
+        ): number => {
+            if (!columnSort.secondarySort) return secondaryTiebreaker;
+            const ssDir = columnSort.secondarySort.direction === 'asc' ? 1 : -1;
+            switch (columnSort.secondarySort.column) {
+                case 'idx':
+                    return (a.origIndex - b.origIndex) * ssDir;
+                case 'source': {
+                    const aSrc = ruleToSource(ruleA);
+                    const bSrc = ruleToSource(ruleB);
+                    return aSrc.localeCompare(bSrc) * ssDir;
+                }
+                case 'actions': {
+                    const aLen = ruleA.actions.length;
+                    const bLen = ruleB.actions.length;
+                    return (aLen - bLen) * ssDir;
+                }
+            }
+        };
         switch (columnSort.column) {
             case 'idx':
                 // Sort by the
@@ -1683,13 +1833,13 @@ function renderHistoryList(
                 const bSrc = ruleToSource(b.rule);
                 const cmp = aSrc.localeCompare(bSrc);
                 if (cmp !== 0) return cmp * dir;
-                return secondaryTiebreaker;
+                return secondarySortCmp(a.rule, b.rule);
             }
             case 'actions': {
                 const aLen = a.rule.actions.length;
                 const bLen = b.rule.actions.length;
                 if (aLen !== bLen) return (aLen - bLen) * dir;
-                return secondaryTiebreaker;
+                return secondarySortCmp(a.rule, b.rule);
             }
         }
     };
@@ -1797,8 +1947,43 @@ function renderHistoryList(
         const actCell = hiddenColumns.has('actions')
             ? ''
             : `<span class="dsl-codex-history-actions dsl-codex-history-col-cell" data-column="actions">${rule.actions.length} 动作</span>`;
+        // Round 169 — codegen
+        // badge. Only rendered
+        // when the host wired
+        // `getIsGenerated` AND
+        // the rule came from
+        // `applyGenerated` (not
+        // manual hot-reload).
+        // The 🤖 emoji is the
+        // visual marker; the
+        // `dsl-codex-history-row-generated`
+        // class + `data-generated="1"`
+        // attribute give test-utils
+        // a programmatic read of
+        // the codegen flag
+        // (mirrors the round-144
+        // `data-rule-idx` pattern).
+        // The badge sits BEFORE
+        // the idx cell so it's
+        // always the first thing
+        // the player sees — it's
+        // not tied to any
+        // `DslHistoryColumn` so
+        // it's not gated by
+        // `hiddenColumns`.
+        const isGenerated = getIsGenerated ? getIsGenerated(rule) : false;
+        const generatedBadge = isGenerated
+            ? `<span class="dsl-codex-history-generated-badge" data-generated="1" title="AGI 自动生成">🤖</span>`
+            : '';
+        const rowCls = isGenerated
+            ? `${cls} dsl-codex-history-row-generated`
+            : cls;
+        const rowDataAttr = isGenerated
+            ? ` data-rule-idx="${i}" data-generated="1"${isSelected ? ' data-selected="1"' : ''}${clickable ? ' role="button" tabindex="0"' : ''}`
+            : dataAttr;
         return `
-            <div class="${cls}"${dataAttr}>
+            <div class="${rowCls}"${rowDataAttr}>
+                ${generatedBadge}
                 ${idxCell}
                 ${srcCell}
                 ${actCell}
@@ -1924,6 +2109,42 @@ export function renderDslCodexPanel(
      * rendered.
      */
     onPreviewHistory?: (rule: DslRule) => void,
+    /**
+     * Round 169 —
+     * optional "is this
+     * row from codegen"
+     * callback. When
+     * provided, each
+     * history row whose
+     * rule returns true
+     * gets a `🤖`
+     * badge + the
+     * `dsl-codex-history-
+     * row-generated`
+     * class + a
+     * `data-generated="1"`
+     * attribute. The
+     * panel does NOT
+     * know the
+     * difference between
+     * "manually hot-
+     * reloaded" and
+     * "auto-generated by
+     * codegen" on its
+     * own — the host
+     * wires the
+     * `HotReloadController.
+     * isGenerated(rule)`
+     * check via this
+     * callback.
+     *
+     * When omitted, no
+     * badge is rendered
+     * (backward compat
+     * with pre-round-169
+     * callers).
+     */
+    getIsGenerated?: (rule: DslRule) => boolean,
 ): DslCodexPanelHandle {
     const t = (k: string, params?: any) => i18n ? i18n.t(k, params) : k;
 
@@ -2728,7 +2949,7 @@ export function renderDslCodexPanel(
      * dropdown
      * sort).
      */
-    const dispatchColumnSort = (target: EventTarget | null) => {
+    const dispatchColumnSort = (target: EventTarget | null, ev?: MouseEvent) => {
         if (!getRuleHistory) return;
         // Round 168 — accept both the
         // column header AND any cell
@@ -2756,6 +2977,96 @@ export function renderDslCodexPanel(
         }
         const column = header.getAttribute('data-column');
         if (column !== 'idx' && column !== 'source' && column !== 'actions') return;
+        // Round 169 — Shift+Click
+        // routes to the secondary
+        // sort path. The primary
+        // column stays in place
+        // (no cycle advance); the
+        // clicked column becomes
+        // (or flips) the tiebreaker
+        // column. Shift+Click on
+        // the primary column
+        // itself clears any
+        // existing secondary.
+        //
+        // The secondary path is
+        // gated on `currentColumnSort
+        // !== null` — there's no
+        // "secondary without a
+        // primary" state (the
+        // player can't reach a
+        // multi-column sort
+        // without first picking
+        // the primary). When the
+        // player Shift+Clicks
+        // without an active
+        // primary, it's a no-op
+        // (NOT a primary-cycle
+        // advance — they didn't
+        // ask for a column sort,
+        // they asked for a
+        // secondary).
+        if (ev?.shiftKey) {
+            if (currentColumnSort === null) {
+                // No-op: shift+click
+                // without an active
+                // primary does NOT
+                // promote the column
+                // to primary. The
+                // player must click
+                // (without shift)
+                // first to establish
+                // a primary.
+                doRender();
+                return;
+            }
+            if (currentColumnSort.column === column) {
+                // Shift+Click on
+                // the primary
+                // column clears
+                // the secondary
+                // (back to the
+                // round-158 idx
+                // tiebreaker if
+                // `secondary:
+                // true`, else the
+                // round-144 idx
+                // tiebreaker). It
+                // does NOT advance
+                // the primary
+                // cycle.
+                const { secondarySort: _drop, ...rest } = currentColumnSort;
+                currentColumnSort = rest as typeof currentColumnSort;
+            } else if (currentColumnSort.secondarySort?.column === column) {
+                // Shift+Click on
+                // the existing
+                // secondary
+                // column flips
+                // its direction.
+                currentColumnSort = {
+                    ...currentColumnSort,
+                    secondarySort: {
+                        column,
+                        direction: currentColumnSort.secondarySort.direction === 'asc' ? 'desc' : 'asc',
+                    },
+                };
+            } else {
+                // Shift+Click on
+                // a fresh
+                // column → it
+                // becomes the
+                // new secondary
+                // (default
+                // direction:
+                // 'asc').
+                currentColumnSort = {
+                    ...currentColumnSort,
+                    secondarySort: { column, direction: 'asc' },
+                };
+            }
+            doRender();
+            return;
+        }
         // Round 165 — 5-state click
         // cycle (extending the
         // round-158 4-state machine
@@ -2794,9 +3105,21 @@ export function renderDslCodexPanel(
         if (currentColumnSort === null) {
             currentColumnSort = { column, direction: 'asc' };
         } else if (currentColumnSort.column === column) {
+            // Round 169 — every primary
+            // cycle branch preserves
+            // `secondarySort` so the
+            // secondary column stays
+            // engaged when the player
+            // advances asc → desc → ...
+            // via plain click. The
+            // Shift+Click path clears
+            // the secondary on its own
+            // (round 169 — clearing on
+            // the primary).
+            const ss = currentColumnSort.secondarySort;
             if (currentColumnSort.direction === 'asc' && !currentColumnSort.secondary && !currentColumnSort.costKey) {
                 // asc (default) → desc.
-                currentColumnSort = { column, direction: 'desc' };
+                currentColumnSort = { column, direction: 'desc', ...(ss ? { secondarySort: ss } : {}) };
             } else if (currentColumnSort.direction === 'desc' && !currentColumnSort.secondary && !currentColumnSort.costKey) {
                 // desc → asc+secondary
                 // (4th state — round 158).
@@ -2810,7 +3133,7 @@ export function renderDslCodexPanel(
                 // clear for costKey users, just
                 // like the 4th click was the clear
                 // for round-158 4-state users).
-                currentColumnSort = { column, direction: 'asc', secondary: true };
+                currentColumnSort = { column, direction: 'asc', secondary: true, ...(ss ? { secondarySort: ss } : {}) };
             } else if (currentColumnSort.direction === 'asc' && currentColumnSort.secondary) {
                 // asc+secondary → costKey
                 // (5th state — round 165).
@@ -2820,7 +3143,7 @@ export function renderDslCodexPanel(
                 // between cheapest-first and
                 // costliest-first by clicking
                 // the column twice in a row.
-                currentColumnSort = { column, direction: 'asc', costKey: true };
+                currentColumnSort = { column, direction: 'asc', costKey: true, ...(ss ? { secondarySort: ss } : {}) };
             } else if (currentColumnSort.costKey && currentColumnSort.direction === 'asc') {
                 // costKey asc → costKey desc
                 // (6th click — surfaces
@@ -2828,12 +3151,16 @@ export function renderDslCodexPanel(
                 // which is the "show me the
                 // round-162 codegen output"
                 // workflow).
-                currentColumnSort = { column, direction: 'desc', costKey: true };
+                currentColumnSort = { column, direction: 'desc', costKey: true, ...(ss ? { secondarySort: ss } : {}) };
             } else {
                 // costKey desc → null
                 // (clear, back to dropdown
                 // sort). This is the 7th
                 // click in the cycle.
+                // secondarySort is dropped
+                // here — clearing the
+                // primary clears
+                // everything.
                 currentColumnSort = null;
             }
         } else {
@@ -3101,7 +3428,7 @@ export function renderDslCodexPanel(
                             ${renderHistoryReset()}
                             ${renderColumnVisibilityToggle(currentHiddenColumns)}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
-                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, selectedIndex, previewable, currentColumnSort, currentHiddenColumns)}
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, selectedIndex, previewable, currentColumnSort, currentHiddenColumns, getIsGenerated)}
                         `;
                     })() : ''}
                 </div>
@@ -3140,7 +3467,7 @@ export function renderDslCodexPanel(
                             ${renderHistoryReset()}
                             ${renderColumnVisibilityToggle(currentHiddenColumns)}
                             <div class="dsl-codex-section-label">${escapeHtml(t('dslCodex.history'))} ${badge}</div>
-                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, selectedIndex, previewable, currentColumnSort, currentHiddenColumns)}
+                            ${renderHistoryList(hist, clickable, currentFilter, currentActionFilter, currentSearch, currentSort, selectedIndex, previewable, currentColumnSort, currentHiddenColumns, getIsGenerated)}
                         `;
                     })()}
                 ` : ''}
@@ -3223,7 +3550,17 @@ export function renderDslCodexPanel(
             // `dispatchColumnSort`.
             if (!target?.closest('.dsl-codex-history-col-header, .dsl-codex-history-col-cell')) return;
             e.preventDefault();
-            dispatchColumnSort(target);
+            // Round 169 — pass the
+            // KeyboardEvent as a
+            // `MouseEvent`-shaped
+            // arg so the
+            // Shift+Enter /
+            // Shift+Space path
+            // routes to the
+            // secondary-sort
+            // branch (same as
+            // Shift+Click).
+            dispatchColumnSort(target, e as unknown as MouseEvent);
         });
     }
 
@@ -3453,7 +3790,7 @@ export function renderDslCodexPanel(
     // needs
     // sorting).
     if (getRuleHistory) {
-        root.addEventListener('click', (e) => dispatchColumnSort(e.target));
+        root.addEventListener('click', (e) => dispatchColumnSort(e.target, e as MouseEvent));
     }
 
     // Round 143 —

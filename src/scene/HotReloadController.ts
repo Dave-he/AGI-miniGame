@@ -153,6 +153,45 @@ export class HotReloadController {
      * scrolling.
      */
     private static readonly HISTORY_CAPACITY = 5;
+    /**
+     * Round 169 —
+     * WeakSet of rules
+     * that came from
+     * `applyGenerated`
+     * (codegen path),
+     * NOT from manual
+     * `begin(dsl)` /
+     * `reApplyRule(...)`.
+     *
+     * The DslCodex panel
+     * queries this via
+     * `isGenerated(rule)`
+     * so it can render a
+     * `🤖` badge + the
+     * `dsl-codex-history-
+     * row-generated` class
+     * on rows that the
+     * AGI auto-generated,
+     * letting the player
+     * distinguish "the
+     * AGI did this on its
+     * own" from "I
+     * hot-reloaded this
+     * myself".
+     *
+     * Using a WeakSet
+     * (not an array of
+     * references) means
+     * rules evicted from
+     * the ring buffer
+     * (and any other
+     * strong-reference
+     * holder dropped)
+     * garbage-collect
+     * cleanly without
+     * leaking the marker.
+     */
+    private generatedRules: WeakSet<DslRule> = new WeakSet();
 
     constructor(exec: DslExecutor, cfg: HotReloadConfig = DEFAULT_HOT_RELOAD_CONFIG) {
         this.exec = exec;
@@ -259,6 +298,19 @@ export class HotReloadController {
     applyGenerated(rules: DslRule[]): void {
         for (let i = 0; i < rules.length; i++) {
             const rule = rules[i];
+            // Round 169 — mark each
+            // generated rule so the
+            // DslCodexPanel can badge
+            // codegen rows with 🤖.
+            // Must happen BEFORE
+            // `exec.apply(rule)` so
+            // the marker is set even
+            // if `apply()` throws
+            // (we'd rather the panel
+            // show "this came from
+            // codegen" than silently
+            // hide the source).
+            this.generatedRules.add(rule);
             this.lastApplies.push(performance.now());
             this.exec.apply(rule);
             if (i === rules.length - 1) {
@@ -293,6 +345,26 @@ export class HotReloadController {
             dsl: '<codegen>',
             rule: this.activeRule,
         });
+    }
+
+    /**
+     * Round 169 — returns true if `rule` was
+     * produced by a codegen call
+     * (`applyGenerated`) and not by manual
+     * hot-reload (`begin` / `reApplyRule`).
+     *
+     * The DslCodex panel calls this from its
+     * `getIsGenerated?: (rule) => boolean`
+     * callback so it can show the `🤖`
+     * auto-generated badge on codegen rows.
+     *
+     * O(1) WeakSet.has lookup. Returns false
+     * for any rule that isn't tracked (e.g.
+     * rules built by tests that bypassed
+     * `applyGenerated`).
+     */
+    isGenerated(rule: DslRule): boolean {
+        return this.generatedRules.has(rule);
     }
 
     /** Begin a hot-reload. Returns true if accepted, false if rate-limited. */

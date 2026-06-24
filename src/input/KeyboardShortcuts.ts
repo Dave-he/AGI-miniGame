@@ -263,6 +263,33 @@ export type KeyboardAction =
     // panel collapses to a
     // single icon bar.
     | { kind: 'toggle-hud-minimized' }
+    // Round 169 — U key
+    // toggles HUD
+    // auto-shrink mode.
+    // When enabled, the
+    // HUD collapses to
+    // a micro-form
+    // (height/width +
+    // font-size shrunk
+    // to ~50%) so the
+    // player can see
+    // more of the
+    // scene. U is the
+    // only remaining
+    // free letter
+    // (a..z minus the 25
+    // claimed in
+    // earlier rounds)
+    // and reads as
+    // "sUbtle" (the HUD
+    // recedes into the
+    // background). Same
+    // pattern as the
+    // other HUD
+    // toggles — one
+    // keystroke, no
+    // sub-menu.
+    | { kind: 'toggle-hud-auto-shrink' }
     // Round 161 — cycle
     // through the 4 scene
     // speed presets
@@ -694,6 +721,42 @@ export const BINDING_DESCRIPTIONS: ReadonlyArray<{ key: string; action: string }
     // (`agi_hud_minimized`) so
     // it survives page reloads.
     { key: 'B',    action: '切换 HUD 最小化 (折叠为 32×32 图标, 点图标还原)' },
+    // Round 169 — U key
+    // toggles HUD
+    // auto-shrink mode
+    // (缩为微缩形态,
+    // 比最小化少 1 步 —
+    // 仍可见可交互,
+    // 只是 transform:
+    // scale(0.55) +
+    // opacity 0.78).
+    // U is the only
+    // remaining free
+    // letter (a..z minus
+    // the 25 claimed in
+    // earlier rounds;
+    // see the round-161
+    // note about `,`
+    // taking scene-speed
+    // because no letter
+    // was free). The U
+    // row is a strict
+    // data-driven mirror
+    // of the union member
+    // + the routeKey
+    // `toggle-hud-auto-shrink`
+    // case — the help
+    // overlay iterates
+    // `BINDING_DESCRIPTIONS`
+    // so the new row is
+    // picked up
+    // automatically.
+    // State persists in
+    // localStorage
+    // (`agi_hud_auto_shrink`)
+    // so it survives page
+    // reloads.
+    { key: 'U',    action: '切换 HUD 自动微缩 (scale 0.55 + opacity 0.78, 让出更多画面给场景)' },
     // Round 161 — `,` (comma)
     // key cycles the
     // scene speed
@@ -1504,6 +1567,36 @@ export function routeKey(key: string): KeyboardAction | null {
         case 'b':
         case 'B':
             return { kind: 'toggle-hud-minimized' };
+        // Round 169 — U key
+        // toggles HUD
+        // auto-shrink mode.
+        // U is the only
+        // remaining free
+        // letter (all 25
+        // other letters
+        // are claimed by
+        // earlier rounds
+        // — see the
+        // round-161
+        // comment about
+        // `,` taking
+        // scene-speed
+        // because no
+        // letter was
+        // free). U
+        // reads as
+        // "sUbtle" — the
+        // HUD recedes
+        // into the
+        // background.
+        // Same pattern as
+        // the other HUD
+        // toggles — one
+        // keystroke, no
+        // sub-menu.
+        case 'u':
+        case 'U':
+            return { kind: 'toggle-hud-auto-shrink' };
         // Round 161 — `,` (comma)
         // key cycles the
         // scene speed

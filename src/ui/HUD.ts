@@ -531,6 +531,47 @@ export interface HUDState {
      * in main.ts toggles this.
      */
     hudMinimized?: boolean;
+    /**
+     * Round 169 — auto-shrink the
+     * HUD to a slim ~40px status-
+     * bar height when the player is
+     * idle (no key press, mouse
+     * move, or touch event for
+     * `hud-shrink-idle-ms`
+     * milliseconds). On the first
+     * input event, the HUD expands
+     * back to its full size (no
+     * fade — instant, like a
+     * spotlight). This is more
+     * aggressive than the round-153
+     * `hudFadeEnabled` mode (which
+     * just dims to 0.25 opacity
+     * while keeping the full panel
+     * shape) and complements the
+     * round-160 `hudMinimized` mode
+     * (which collapses to a 32×32
+     * icon at all times).
+     *
+     * Companion to the other 7 HUD
+     * modes:
+     *   - `hudCompact`        → hide memory detail
+     *   - `hudFadeEnabled`    → 0.25 opacity after idle
+     *   - `hudCorner`         → screen quadrant
+     *   - `hudPinned`         → z-index stacking
+     *   - `hudClickThrough`   → pointer-events
+     *   - `hudAutoHideFullscreen` → hide on fullscreen
+     *   - `hudMinimized`      → collapse-to-icon
+     *   - `hudAutoShrink`     → slim status-bar when idle (this field)
+     *
+     * Persisted to localStorage
+     * key `agi_hud_auto_shrink`.
+     * The `N` key in main.ts
+     * toggles this (the only
+     * unused single-letter key
+     * after K/B/J/H/C/X/Y/P/comma/
+     * backtick/tilde/1-8/R/Esc).
+     */
+    hudAutoShrink?: boolean;
 }
 
 export class HUD {
@@ -1213,6 +1254,21 @@ export class HUD {
         // auto-hide + minimized
         // coordination).
         this.applyMinimizedClass();
+        // Round 169 — apply the
+        // `hud-auto-shrink` class
+        // on the same pass so
+        // toggling the corner
+        // doesn't strip the
+        // auto-shrink state
+        // (extending the
+        // round-155/156/159/160
+        // coordination to a
+        // five-way pin +
+        // click-through +
+        // auto-hide + minimized
+        // + auto-shrink
+        // coordination).
+        this.applyAutoShrinkClass();
     }
 
     /**
@@ -1569,6 +1625,124 @@ export class HUD {
         } else {
             this.root.classList.remove('hud-minimized');
         }
+    }
+
+    /**
+     * Round 169 — set the
+     * auto-shrink flag. When
+     * `enabled` is `true`, the HUD
+     * collapses its height to ~40px
+     * (a slim status bar showing
+     * only the biome + key stats)
+     * after the player has been
+     * idle for `hud-shrink-idle-ms`
+     * (default 3000ms — same as
+     * round-153 fade mode). The
+     * first input event (keydown /
+     * mousemove / touchstart)
+     * expands the HUD back to its
+     * full height immediately.
+     *
+     * The flag is independent of
+     * the round-153 fade mode —
+     * auto-shrink CHANGES the
+     * panel's vertical footprint,
+     * fade just changes its
+     * opacity. The two compose
+     * nicely (auto-shrink first,
+     * fade on top of the slim
+     * shape), but the
+     * `applyAutoShrinkClass` /
+     * `applyFadeClass` helpers are
+     * independent so callers can
+     * combine them freely.
+     */
+    setAutoShrink(enabled: boolean): void {
+        this.state = { ...this.state, hudAutoShrink: enabled };
+        this.applyAutoShrinkClass();
+        this.render();
+    }
+
+    /**
+     * Read-only accessor mirroring
+     * `isAutoHideFullscreen()` /
+     * `isMinimized()` / etc.
+     * Returns the current auto-
+     * shrink flag (default `false`
+     * when never set).
+     */
+    isAutoShrink(): boolean {
+        return this.state.hudAutoShrink === true;
+    }
+
+    /**
+     * Round 169 — toggle the
+     * auto-shrink flag. Returns
+     * the new value so the host
+     * can persist it. Designed to
+     * be wired directly to the `N`
+     * key shortcut — one keystroke
+     * to flip the auto-shrink
+     * state on / off.
+     */
+    toggleAutoShrink(): boolean {
+        const next = !this.isAutoShrink();
+        this.setAutoShrink(next);
+        return next;
+    }
+
+    /**
+     * Round 169 — apply the
+     * `hud-auto-shrink` CSS class
+     * on the root element.
+     * Internal helper for
+     * `setAutoShrink`.
+     *
+     * Uses `classList.add` /
+     * `classList.remove`
+     * (idempotent) so callers
+     * can re-apply without
+     * disturbing other classes
+     * on the root.
+     */
+    private applyAutoShrinkClass(): void {
+        if (this.isAutoShrink()) {
+            if (!this.root.classList.contains('hud-auto-shrink')) {
+                this.root.classList.add('hud-auto-shrink');
+            }
+        } else {
+            this.root.classList.remove('hud-auto-shrink');
+        }
+    }
+
+    /**
+     * Round 169 — explicit
+     * expand trigger for the
+     * auto-shrink mode. When
+     * the player presses a key
+     * or moves the mouse, the
+     * host calls this to push
+     * the HUD back to its full
+     * height (the auto-shrink
+     * timer restarts). The
+     * `hud-auto-shrink-active`
+     * class controls the slim
+     * height (added by the
+     * idle timer, removed by
+     * this call).
+     *
+     * Companion to
+     * `applyAutoShrinkClass` —
+     * `applyAutoShrinkClass`
+     * controls the *preference*
+     * (auto-shrink on / off),
+     * `expandFromAutoShrink`
+     * controls the *idle timer
+     * output* (slim right now,
+     * full right now).
+     */
+    expandFromAutoShrink(): void {
+        this.root.classList.remove('hud-auto-shrink-active');
     }
 
     /**

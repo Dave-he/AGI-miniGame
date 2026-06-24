@@ -2874,6 +2874,218 @@ describe('HUD — round 152 compact mode', () => {
     });
 
     // =========================================================
+    // Round 169 C — HUD
+    // 21st mode: `hudAutoShrink`.
+    // The new mode flag
+    // applies the
+    // `hud-auto-shrink`
+    // CSS class on the
+    // root, which the
+    // index.html rule
+    // pairs with a
+    // `transform: scale(0.55)`
+    // + `opacity: 0.78`
+    // (micro-form).
+    // Unlike round-160
+    // `hud-minimized` (which
+    // collapses the HUD
+    // to a 32×32 icon),
+    // auto-shrink keeps
+    // the HUD visible
+    // AND interactive
+    // — just smaller.
+    //
+    // The companion
+    // `expandFromAutoShrink`
+    // method applies
+    // the secondary
+    // `hud-auto-shrink-active`
+    // class which the
+    // CSS uses to
+    // restore the
+    // opacity to 1
+    // (the runtime can
+    // wire this to a
+    // mouseover / focus
+    // event so the HUD
+    // pops back to full
+    // opacity when the
+    // player is actively
+    // interacting).
+    //
+    // 8 tests pinning
+    // the new state
+    // machine + class +
+    // class preservation
+    // across the
+    // round-152 → 160
+    // stack +
+    // BINDING_DESCRIPTIONS
+    // hotkey row.
+    // =========================================================
+
+    test('default_state_is_not_auto_shrink_round_169', () => {
+        // A fresh HUD has
+        // the auto-shrink
+        // flag off (default
+        // `false` when
+        // never set). The
+        // U key shortcut
+        // is the way the
+        // player opts in.
+        const { hud } = makeHud();
+        expect(hud.isAutoShrink()).toBe(false);
+    });
+
+    test('setAutoShrink_true_applies_hud_auto_shrink_class_round_169', () => {
+        const { hud, root } = makeHud();
+        expect(root.classList.contains('hud-auto-shrink')).toBe(false);
+        hud.setAutoShrink(true);
+        expect(root.classList.contains('hud-auto-shrink')).toBe(true);
+    });
+
+    test('setAutoShrink_false_strips_hud_auto_shrink_class_round_169', () => {
+        const { hud, root } = makeHud();
+        hud.setAutoShrink(true);
+        expect(root.classList.contains('hud-auto-shrink')).toBe(true);
+        hud.setAutoShrink(false);
+        expect(root.classList.contains('hud-auto-shrink')).toBe(false);
+    });
+
+    test('toggleAutoShrink_flips_state_and_class_round_169', () => {
+        const { hud, root } = makeHud();
+        // First toggle: false → true
+        const after1 = hud.toggleAutoShrink();
+        expect(after1).toBe(true);
+        expect(hud.isAutoShrink()).toBe(true);
+        expect(root.classList.contains('hud-auto-shrink')).toBe(true);
+        // Second toggle: true → false
+        const after2 = hud.toggleAutoShrink();
+        expect(after2).toBe(false);
+        expect(hud.isAutoShrink()).toBe(false);
+        expect(root.classList.contains('hud-auto-shrink')).toBe(false);
+    });
+
+    test('expandFromAutoShrink_removes_active_class_round_169', () => {
+        // The runtime uses
+        // `expandFromAutoShrink`
+        // as the
+        // mouseover /
+        // focus event
+        // hook so the
+        // HUD pops back
+        // to full
+        // opacity when
+        // the player is
+        // actively
+        // interacting.
+        // The secondary
+        // `hud-auto-shrink-active`
+        // class is the
+        // "slim right now"
+        // flag — the
+        // idle timer adds
+        // it, this method
+        // removes it.
+        // The primary
+        // `hud-auto-shrink`
+        // class is
+        // preserved (the
+        // preference
+        // survives the
+        // expand).
+        const { hud, root } = makeHud();
+        hud.setAutoShrink(true);
+        // Pretend the idle
+        // timer added the
+        // active class.
+        root.classList.add('hud-auto-shrink-active');
+        expect(root.classList.contains('hud-auto-shrink-active')).toBe(true);
+        hud.expandFromAutoShrink();
+        expect(root.classList.contains('hud-auto-shrink-active')).toBe(false);
+        // Primary
+        // auto-shrink
+        // preference
+        // (the "I want
+        // micro-form"
+        // flag) is
+        // preserved.
+        expect(root.classList.contains('hud-auto-shrink')).toBe(true);
+    });
+
+    test('setCorner_preserves_auto_shrink_class_round_169', () => {
+        // The corner
+        // cycle
+        // (round-154)
+        // must not strip
+        // the auto-shrink
+        // class.
+        // Symmetric to
+        // the round-160
+        // `setCorner_preserves_minimized_class`
+        // contract —
+        // extends the
+        // 5-way pin +
+        // click-through +
+        // auto-hide +
+        // minimized +
+        // auto-shrink
+        // coordination in
+        // `applyCornerClass`.
+        const { hud, root } = makeHud();
+        hud.setAutoShrink(true);
+        expect(root.classList.contains('hud-auto-shrink')).toBe(true);
+        hud.setCorner('br');
+        expect(root.classList.contains('hud-auto-shrink')).toBe(true);
+    });
+
+    test('applyAutoShrinkClass_is_idempotent_round_169', () => {
+        // The class
+        // manipulation
+        // uses
+        // `classList.add`
+        // / `remove` (not
+        // `className =`)
+        // so calling the
+        // setter twice
+        // doesn't
+        // double-add the
+        // class. Defense
+        // in depth.
+        const { hud, root } = makeHud();
+        hud.setAutoShrink(true);
+        hud.setAutoShrink(true);
+        const matches = root.className.match(/hud-auto-shrink/g) || [];
+        expect(matches.length).toBe(1);
+    });
+
+    test('BINDING_DESCRIPTIONS_includes_hud_auto_shrink_hotkey_round_169', () => {
+        // The U key
+        // shortcut for
+        // the HUD
+        // auto-shrink
+        // toggle is
+        // mirrored in
+        // BINDING_DESCRIPTIONS
+        // so the help
+        // overlay
+        // auto-iterates
+        // it (same
+        // pattern as
+        // round-160's B
+        // / round-155's
+        // X / round-156's
+        // Y / round-159's
+        // K). Pin the
+        // exact U entry
+        // here.
+        const rows = BINDING_DESCRIPTIONS.filter(
+            (d) => d.key === 'U' && (d.action.includes('自动') || d.action.includes('shrink') || d.action.includes('微缩') || d.action.includes('缩小'))
+        );
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+    });
+
+    // =========================================================
     // Round 162 — HUD
     // scene-speed mini-strip.
     // Companion to the

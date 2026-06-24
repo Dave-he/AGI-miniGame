@@ -151,4 +151,166 @@ describe('HotReloadController', () => {
         });
         expect(b).toBe(false);
     });
+
+    // Round 169 — codegen
+    // path: `applyGenerated`
+    // marks each rule as
+    // "generated" so the
+    // DslCodexPanel can
+    // badge it with 🤖.
+    // `isGenerated(rule)`
+    // is the public
+    // read-side of the
+    // marker; rules from
+    // manual `begin(dsl)`
+    // / `reApplyRule`
+    // must NOT be flagged.
+
+    test('applyGenerated_marks_rules_as_generated (round 169)', () => {
+        const { ctrl } = makeController();
+        const rules = [
+            { event: { kind: 'Collide' as const }, actions: [{ kind: 'Damage' as const, args: [5] }] },
+            { event: { kind: 'Collide' as const }, actions: [{ kind: 'Heal' as const, args: [1] }] },
+        ];
+        ctrl.applyGenerated(rules);
+        // Every
+        // rule in
+        // the
+        // batch
+        // should
+        // be
+        // marked
+        // generated.
+        for (const r of rules) {
+            expect(ctrl.isGenerated(r)).toBe(true);
+        }
+    });
+
+    test('isGenerated_returns_false_for_rules_outside_codegen (round 169)', () => {
+        const { ctrl } = makeController();
+        const codegenRule = { event: { kind: 'Collide' as const }, actions: [{ kind: 'Damage' as const, args: [5] }] };
+        const manualRule = { event: { kind: 'Collide' as const }, actions: [{ kind: 'Heal' as const, args: [1] }] };
+        ctrl.applyGenerated([codegenRule]);
+        // `manualRule` was
+        // never fed to
+        // `applyGenerated`,
+        // so it must NOT
+        // be flagged
+        // (the marker is
+        // opt-in, not
+        // opt-out).
+        expect(ctrl.isGenerated(codegenRule)).toBe(true);
+        expect(ctrl.isGenerated(manualRule)).toBe(false);
+    });
+
+    test('reApplyRule_does_NOT_mark_rule_as_generated (round 169)', () => {
+        const { ctrl } = makeController();
+        const rule = { event: { kind: 'Collide' as const }, actions: [{ kind: 'Damage' as const, args: [5] }] };
+        // Manual
+        // history-replay
+        // path —
+        // identical to
+        // what
+        // DslCodexPanel
+        // calls when the
+        // player clicks
+        // a history
+        // row. NOT a
+        // codegen
+        // emission.
+        const ok = ctrl.reApplyRule(rule);
+        expect(ok).toBe(true);
+        expect(ctrl.isGenerated(rule)).toBe(false);
+    });
+
+    test('applyGenerated_pushes_to_ruleHistory_and_marks_each (round 169)', () => {
+        const { ctrl } = makeController();
+        const rules = [
+            { event: { kind: 'Collide' as const }, actions: [{ kind: 'Damage' as const, args: [1] }] },
+            { event: { kind: 'Collide' as const }, actions: [{ kind: 'Damage' as const, args: [2] }] },
+            { event: { kind: 'Collide' as const }, actions: [{ kind: 'Damage' as const, args: [3] }] },
+        ];
+        ctrl.applyGenerated(rules);
+        const hist = ctrl.getRuleHistory();
+        // Ring
+        // buffer
+        // contains
+        // all
+        // 3
+        // rules
+        // (under
+        // HISTORY_CAPACITY=5).
+        expect(hist.length).toBe(3);
+        // Order
+        // is
+        // insertion
+        // order
+        // (FIFO).
+        expect(hist).toEqual(rules);
+        // Every
+        // rule
+        // in
+        // history
+        // is
+        // flagged
+        // generated.
+        for (const r of hist) {
+            expect(ctrl.isGenerated(r)).toBe(true);
+        }
+    });
+
+    test('applyGenerated_marks_rule_even_if_exec_apply_throws (round 169)', () => {
+        // If `exec.apply(rule)` throws
+        // mid-loop, the marker must
+        // still be set on the rule
+        // being processed (so the
+        // panel can show "this came
+        // from codegen" instead of
+        // silently hiding the source
+        // on the failed one).
+        //
+        // Note: rules after the
+        // throw are NOT marked
+        // (the loop bails before
+        // reaching them) — that's
+        // acceptable because the
+        // loop already exited via
+        // the exception, so the
+        // rules were never
+        // processed in the first
+        // place.
+        const { ctrl } = makeController();
+        const rules = [
+            { event: { kind: 'Collide' as const }, actions: [{ kind: 'Damage' as const, args: [1] }] },
+            { event: { kind: 'Collide' as const }, actions: [{ kind: 'Damage' as const, args: [2] }] },
+        ];
+        // Patch exec.apply to throw
+        // on the first rule only.
+        const origApply = (ctrl as any).exec.apply.bind((ctrl as any).exec);
+        let calls = 0;
+        (ctrl as any).exec.apply = (r: any) => {
+            calls += 1;
+            if (calls === 1) throw new Error('simulated apply failure');
+            return origApply(r);
+        };
+        try {
+            ctrl.applyGenerated(rules);
+        } catch (_e) {
+            // We expect an exception
+            // on the first rule.
+        }
+        // The first rule (the one
+        // that was being processed
+        // when the throw happened)
+        // IS marked — the marker
+        // is set BEFORE
+        // `exec.apply(rule)`, so
+        // the exception doesn't
+        // undo it.
+        expect(ctrl.isGenerated(rules[0])).toBe(true);
+        // The second rule was never
+        // reached, so it's NOT
+        // marked.
+        expect(ctrl.isGenerated(rules[1])).toBe(false);
+    });
 });

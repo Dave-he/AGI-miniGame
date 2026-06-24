@@ -797,6 +797,21 @@ class App {
         // has to explicitly press
         // B to opt in.
         this.hud.setMinimized(loadHudMinimizedFromStorage());
+        // Round 169 — restore
+        // the HUD
+        // auto-shrink
+        // preference.
+        // `setAutoShrink` is
+        // idempotent: a
+        // fresh boot with
+        // no saved value
+        // defaults to
+        // auto-shrink OFF
+        // (false) — the
+        // player has to
+        // explicitly press
+        // U to opt in.
+        this.hud.setAutoShrink(loadHudAutoShrinkFromStorage());
         // Round 161 — restore the
         // scene speed preset
         // alongside the HUD
@@ -1618,6 +1633,25 @@ class App {
                         });
                     }
                 },
+                // Round 169 —
+                // wire the
+                // `HotReloadController.
+                // isGenerated(rule)`
+                // check so the
+                // DslCodex panel
+                // can badge
+                // codegen-generated
+                // rows with 🤖.
+                // Without this
+                // callback, the
+                // panel can't
+                // tell manual
+                // hot-reload
+                // apart from
+                // `autoGenerateRules
+                // ForCurrentDimension`
+                // output.
+                (rule) => this.hot.isGenerated(rule),
             );
         }
         // Round 137 — wire
@@ -2615,6 +2649,34 @@ class App {
     toggleHudMinimized(): void {
         const next = this.hud.toggleMinimized();
         saveHudMinimizedToStorage(next);
+    }
+
+    /**
+     * Round 169 — toggle
+     * HUD auto-shrink
+     * mode. When ON, the
+     * HUD collapses to a
+     * micro-form
+     * (height/width +
+     * font-size shrunk
+     * to ~50%) so the
+     * player can see
+     * more of the
+     * scene. The U key
+     * shortcut calls
+     * this via the
+     * round-169
+     * `toggle-hud-auto-shrink`
+     * KeyboardAction.
+     * Mirrors
+     * `toggleHudMinimized`
+     * (round 160):
+     * one call + one
+     * localStorage write.
+     */
+    toggleHudAutoShrink(): void {
+        const next = this.hud.toggleAutoShrink();
+        saveHudAutoShrinkToStorage(next);
     }
 
     /**
@@ -4486,6 +4548,16 @@ async function bootstrap(): Promise<void> {
             // localStorage write
             // + re-render).
             case 'toggle-hud-minimized': app.toggleHudMinimized(); break;
+            // Round 169 — U
+            // key toggles
+            // the HUD
+            // auto-shrink
+            // mode (one
+            // boolean flip
+            // + localStorage
+            // write +
+            // re-render).
+            case 'toggle-hud-auto-shrink': app.toggleHudAutoShrink(); break;
             // Round 161 — N
             // key cycles
             // the scene
@@ -4876,6 +4948,48 @@ function saveHudMinimizedToStorage(enabled: boolean): void {
         // private mode / quota errors.
         // Swallow — the in-memory state
         // is already updated.
+    }
+}
+
+// Round 169 — HUD
+// auto-shrink mode
+// (U key, round 169
+// C) persists across
+// reloads. Default
+// is OFF — the
+// player has to
+// press U to opt
+// in. Same storage
+// pattern as
+// `HudMinimized`:
+// dedicated key
+// (`agi_hud_auto_shrink`)
+// to avoid coupling
+// with the other
+// HUD mode flags.
+
+const HUD_AUTO_SHRINK_STORAGE_KEY = 'agi_hud_auto_shrink';
+
+function loadHudAutoShrinkFromStorage(): boolean {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+        const raw = localStorage.getItem(HUD_AUTO_SHRINK_STORAGE_KEY);
+        return raw === '1';
+    } catch {
+        return false;
+    }
+}
+
+function saveHudAutoShrinkToStorage(enabled: boolean): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(HUD_AUTO_SHRINK_STORAGE_KEY, enabled ? '1' : '0');
+    } catch {
+        // localStorage can throw in
+        // private mode / quota
+        // errors. Swallow — the
+        // in-memory state is
+        // already updated.
     }
 }
 
