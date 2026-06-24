@@ -93,6 +93,10 @@ function makeStubModule(overrides: Partial<SceneGenWasmModule> = {}): SceneGenWa
             const args = JSON.parse(argsJson);
             const biomeMap: Record<string, string> = {
                 forest: 'Forest', desert: 'Desert', ice: 'Ice', cyberpunk: 'Cyberpunk',
+                // Round 167 — `lava` and `space` are first-class
+                // mappings. Tests pin the Rust `biome_from_id`
+                // contract byte-for-byte.
+                lava: 'Lava', space: 'Space',
             };
             const biome = biomeMap[args.biome_id as string] ?? 'Forest';
             const complexityMap: Record<string, string> = { low: 'Low', high: 'High', med: 'Medium' };
@@ -105,11 +109,34 @@ function makeStubModule(overrides: Partial<SceneGenWasmModule> = {}): SceneGenWa
             const mood = moodList[moodPicker];
             return JSON.stringify({ biome, mood, complexity, seed: seedStub.toString() });
         },
-        generate_rules_json: (_argsJson: string) => JSON.stringify([
-            { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['cyberpunk_mob', 3] }] },
-            { event: { kind: 'Collide', arg: null }, actions: [{ kind: 'Damage', args: [1.5] }] },
-            { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'SpawnEntity', args: ['cyberpunk_timer_spawn'] }] },
-        ]),
+        generate_rules_json: (argsJson: string) => {
+            // Round 167 — vary the rule count by complexity so
+            // the round-166 Low/Medium/High coverage contracts
+            // are pinned on the WASM path. The TS mirror's
+            // `generateRules` emits 1/3/5 by complexity; the
+            // stub now mirrors that shape.
+            const args = JSON.parse(argsJson) as { complexity?: string };
+            if (args.complexity === 'Low') {
+                return JSON.stringify([
+                    { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['cyberpunk_mob', 3] }] },
+                ]);
+            }
+            if (args.complexity === 'High') {
+                return JSON.stringify([
+                    { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['cyberpunk_mob', 3] }] },
+                    { event: { kind: 'Collide', arg: null }, actions: [{ kind: 'Damage', args: [1.5] }] },
+                    { event: { kind: 'Timer', arg: 3 }, actions: [{ kind: 'SpawnEntity', args: ['cyberpunk_timer_spawn'] }] },
+                    { event: { kind: 'Timer', arg: 8 }, actions: [{ kind: 'SpawnEntity', args: ['cyberpunk_timer_spawn'] }] },
+                    { event: { kind: 'PlayerHit', arg: null }, actions: [{ kind: 'Damage', args: [4.5] }] },
+                ]);
+            }
+            // Medium (default)
+            return JSON.stringify([
+                { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['cyberpunk_mob', 3] }] },
+                { event: { kind: 'Collide', arg: null }, actions: [{ kind: 'Damage', args: [1.5] }] },
+                { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'SpawnEntity', args: ['cyberpunk_timer_spawn'] }] },
+            ]);
+        },
         ...overrides,
     };
 }

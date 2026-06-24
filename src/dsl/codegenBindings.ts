@@ -52,13 +52,25 @@ import type { DslRule, DslAction, DslEvent, DslEventKind, DslActionKind } from '
 // ---------------------------------------------------------------------------
 
 /**
- * Round 162 — biome flavor. The 4 biomes match
- * the AGI-miniGame's `BiomeAtmosphere` palette
- * (forest / desert / ice / cyberpunk) so the
- * generated rules "taste" like the scene the
+ * Round 162 → 167 — biome flavor. The 6 biomes match
+ * the full AGI-miniGame `BiomeAtmosphere` palette
+ * (forest / desert / ice / cyberpunk / lava / space)
+ * so the generated rules "taste" like the scene the
  * player is in.
+ *
+ * Round 167 — added `Lava` and `Space`. Before round
+ * 167 the type had 4 variants and the 6-biome
+ * atmosphere palette had 2 extras (`space` and
+ * `lava`) that fell back to `Forest` (via
+ * `biomeIdToKind`'s default arm). Round 167 promotes
+ * them to first-class codegen variants so the
+ * auto-generated rules read `space_mob` / `lava_mob`
+ * instead of `forest_mob` — a Space biome's rules
+ * now "taste" like the actual biome the player is in.
+ * The Rust-side `cocos4-rust::dsl::codegen::BiomeKind`
+ * mirror uses the same 6 variants.
  */
-export type BiomeKind = 'Forest' | 'Desert' | 'Ice' | 'Cyberpunk';
+export type BiomeKind = 'Forest' | 'Desert' | 'Ice' | 'Cyberpunk' | 'Lava' | 'Space';
 
 /**
  * Round 162 — mood tone. Calms down or agitates
@@ -203,6 +215,15 @@ const BIOME_FLAVOR: Record<BiomeKind, string> = {
     Desert: 'desert',
     Ice: 'ice',
     Cyberpunk: 'cyber',
+    // Round 167 — `lava` and `space` flavor strings added
+    // so the auto-generated rules "taste" like the
+    // actual biome (e.g. a Space biome's spawn rule
+    // reads `space_mob` instead of `forest_mob`). The
+    // Rust-side `biome_flavor` function in
+    // `cocos4-rust/src/agi_minigame/dsl/codegen.rs`
+    // mirrors this Record byte-for-byte.
+    Lava: 'lava',
+    Space: 'space',
 };
 
 const EVENT_KIND_BY_RUST: Record<string, DslEventKind> = {
@@ -360,17 +381,21 @@ export function generateRule(input: GenInput): DslRule {
 /**
  * Map an AGI-miniGame `BiomeId` (the 6-biome
  * palette from `WfcBiomes.ts`) to a
- * `BiomeKind` (the 4-biome codegen enum). The
- * 2 extra biomes (`space` and `lava`) fall back
- * to `Forest` so the codegen still produces a
- * valid (if not perfectly flavored) rule set —
- * the DslCodexPanel would show "forest_mob"
- * strings, which is a graceful degradation.
+ * `BiomeKind` (the 6-biome codegen enum). All
+ * 6 canonical biomes (`forest` / `desert` /
+ * `ice` / `cyberpunk` / `lava` / `space`) have
+ * their own first-class variant — unknown tags
+ * still fall back to `Forest` for graceful
+ * degradation.
  *
- * A future round could add `Space` and `Lava`
- * variants to the Rust `BiomeKind` enum to
- * match the full 6-biome palette; for
- * round-164, the 4-biome subset is sufficient.
+ * Round 167 — `lava` and `space` were promoted
+ * from default-Forest to first-class mappings.
+ * Before round 167 the 4-biome subset was
+ * sufficient (the 2 extras silently fell back
+ * to `forest_mob` rules). Round 167 aligns the
+ * codegen with the full 6-biome atmosphere
+ * palette so Space / Lava scenes get their own
+ * flavored rules (`space_mob` / `lava_mob`).
  */
 export function biomeIdToKind(biomeId: string): BiomeKind {
     switch (biomeId) {
@@ -378,6 +403,8 @@ export function biomeIdToKind(biomeId: string): BiomeKind {
         case 'desert':    return 'Desert';
         case 'ice':       return 'Ice';
         case 'cyberpunk': return 'Cyberpunk';
+        case 'lava':      return 'Lava';
+        case 'space':     return 'Space';
         default:          return 'Forest';
     }
 }

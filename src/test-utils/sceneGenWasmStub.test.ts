@@ -217,18 +217,23 @@ describe('sceneGenWasmStub — codegen bridge (round 166)', () => {
     });
 
     test('gen_input_from_strings_json_maps_biomes_canonically', () => {
-        // Mirror the Rust `biome_from_id` mapping:
-        // forest/desert/ice/cyberpunk → Forest/Desert/Ice/Cyberpunk
-        // everything else → Forest (fallback).
+        // Mirror the Rust `biome_from_id` mapping (round-167
+        // promotes `space` + `lava` to first-class variants):
+        //   forest/desert/ice/cyberpunk/lava/space →
+        //     Forest/Desert/Ice/Cyberpunk/Lava/Space
+        //   everything else → Forest (fallback).
         const stub = makeWasmStub();
         for (const [biomeId, expected] of [
             ['forest', 'Forest'],
             ['desert', 'Desert'],
             ['ice', 'Ice'],
             ['cyberpunk', 'Cyberpunk'],
-            ['space', 'Forest'], // fallback
-            ['lava', 'Forest'],  // fallback
+            // Round 167 — first-class mappings.
+            ['lava', 'Lava'],
+            ['space', 'Space'],
+            // Unknown tags still fall back.
             ['unknown', 'Forest'],
+            ['dungeon', 'Forest'],
         ] as const) {
             const out = stub.gen_input_from_strings_json(JSON.stringify({
                 biome_id: biomeId,

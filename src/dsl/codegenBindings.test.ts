@@ -263,15 +263,24 @@ describe('autoGenerateForDimension round_164', () => {
         expect(biomeIdToKind('cyberpunk')).toBe('Cyberpunk');
     });
 
+    test('biome_id_to_kind_maps_space_and_lava_round_167', () => {
+        // Round 167 — `lava` and `space` are now first-class
+        // BiomeKind variants (the 6-biome atmosphere palette
+        // is fully represented). A Space biome's auto-gen
+        // rules now read `space_mob` instead of falling back
+        // to `forest_mob`. The Rust `biome_from_id` mirror
+        // uses the same mapping.
+        expect(biomeIdToKind('space')).toBe('Space');
+        expect(biomeIdToKind('lava')).toBe('Lava');
+    });
+
     test('biome_id_to_kind_falls_back_to_forest_for_unknown_round_164', () => {
-        // The 6-biome palette includes 2 extra
-        // biomes (space / lava) that don't have
-        // a Rust `BiomeKind` variant yet — they
-        // fall back to Forest. A future round
-        // could add them.
-        expect(biomeIdToKind('space')).toBe('Forest');
-        expect(biomeIdToKind('lava')).toBe('Forest');
+        // Truly unknown tags still fall back to Forest —
+        // `space` and `lava` now have first-class mappings
+        // (round 167) so they're NOT in this fallback path.
         expect(biomeIdToKind('unknown')).toBe('Forest');
+        expect(biomeIdToKind('')).toBe('Forest');
+        expect(biomeIdToKind('dungeon')).toBe('Forest');
     });
 
     test('mood_kind_from_seed_covers_all_4_moods_round_164', () => {
@@ -307,5 +316,58 @@ describe('autoGenerateForDimension round_164', () => {
         const high = autoGenerateForDimension('dim_alpha', 'forest', 'High');
         expect(low.rules).toHaveLength(1);
         expect(high.rules).toHaveLength(5);
+    });
+
+    // Round 167 — cross-validation: each
+    // biome's auto-generated rule set must
+    // carry that biome's spawn tag in the
+    // baseline rule's `Spawn` action args[0].
+    // The Rust `generate_rules_json_internal`
+    // emits the same biome-specific mob
+    // string, so a regression on either side
+    // breaks both.
+    test('each_biome_baseline_uses_its_own_mob_tag_round_167', () => {
+        const expectedMob: Record<string, string> = {
+            Forest: 'forest_mob',
+            Desert: 'desert_mob',
+            Ice: 'ice_mob',
+            Cyberpunk: 'cyber_mob',
+            Lava: 'lava_mob',
+            Space: 'space_mob',
+        };
+        for (const biome of Object.keys(expectedMob) as Array<keyof typeof expectedMob>) {
+            const out = autoGenerateForDimension(
+                `dim_${biome.toLowerCase()}`,
+                biome.toLowerCase(),
+                'Low', // Low complexity emits only the baseline.
+            );
+            // Round 132 manual JSON shape: rule.actions[0].args[0].
+            const baseline = out.rules[0];
+            expect(baseline).toBeDefined();
+            const firstAction = (baseline.actions as Array<{ kind: string; args: unknown[] }>)[0];
+            expect(firstAction.kind).toBe('Spawn');
+            expect(firstAction.args[0]).toBe(expectedMob[biome]);
+        }
+    });
+
+    test('biome_id_to_kind_covers_six_atmospheric_variants_round_167', () => {
+        // The 6-biome atmosphere palette is
+        // the source of truth for "what
+        // biomes the player sees" — the
+        // BiomeKind enum must match it
+        // exactly. A regression that drops
+        // Lava or Space would break this
+        // pin.
+        const allBiomes = new Set([
+            biomeIdToKind('forest'),
+            biomeIdToKind('desert'),
+            biomeIdToKind('ice'),
+            biomeIdToKind('cyberpunk'),
+            biomeIdToKind('lava'),
+            biomeIdToKind('space'),
+        ]);
+        expect(allBiomes.size).toBe(6);
+        expect(allBiomes.has('Lava')).toBe(true);
+        expect(allBiomes.has('Space')).toBe(true);
     });
 });

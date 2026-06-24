@@ -9009,14 +9009,20 @@ describe('App — round 162: scene-speed HUD wiring', () => {
 // ---------------------------------------------------------------------------
 
 describe('App — round 164: wire codegen into dimension-enter', () => {
-    test('main_ts_imports_autoGenerateForDimension_round_164', () => {
-        // The App must import the
-        // `autoGenerateForDimension` helper
-        // from `./dsl/codegenBindings` so the
-        // dimension-enter call site can build
-        // the GenInput + emit the rules.
+    test('main_ts_imports_autoGenerateForDimensionWithFallback_round_166', () => {
+        // Round 166: The App must import
+        // `autoGenerateForDimensionWithFallback`
+        // (NOT the round-164 helper
+        // `autoGenerateForDimension`) so the
+        // dimension-enter call site can route
+        // through the WASM codegen bridge with
+        // TS-mirror fallback. The
+        // `autoGenerateForDimension` symbol may
+        // still be imported by the WASM module
+        // itself, but the App must call the
+        // `WithFallback` wrapper.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
-        expect(main).toMatch(/import\s*\{[^}]*autoGenerateForDimension[^}]*\}\s*from\s*['"]\.\/dsl\/codegenBindings['"]/);
+        expect(main).toMatch(/import\s*\{[^}]*autoGenerateForDimensionWithFallback[^}]*\}\s*from\s*['"]\.\/ai\/SceneGenWasm['"]/);
     });
 
     test('main_ts_calls_autoGenerateRulesForCurrentDimension_after_onDimensionEntered_round_164', () => {
@@ -9121,17 +9127,20 @@ describe('App — round 164: wire codegen into dimension-enter', () => {
         expect(body).toMatch(/this\.worldState\.lastBiome/);
     });
 
-    test('autoGenerate_passes_seed_via_seedFromString_round_164', () => {
-        // The App must use
-        // `autoGenerateForDimension(dimensionId, biomeId)`
+    test('autoGenerate_passes_seed_via_seedFromString_round_166', () => {
+        // Round 166: The App must use
+        // `autoGenerateForDimensionWithFallback(this.sceneGenWasm, dimensionId, biomeId)`
         // so the seed is derived from the
         // dimension ID (round-72 save
-        // round-trip stability).
+        // round-trip stability) AND the WASM
+        // bridge is consulted first. The
+        // `source` field on the result tells
+        // the HUD which branch ran.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
         const methodMatch = main.match(/private\s+autoGenerateRulesForCurrentDimension[^{]*\{([\s\S]*?)\n\s{4}\}/);
         expect(methodMatch).not.toBeNull();
         const body = methodMatch![1];
-        expect(body).toMatch(/autoGenerateForDimension\(/);
+        expect(body).toMatch(/autoGenerateForDimensionWithFallback\(/);
     });
 
     test('autoGenerate_calls_hot_applyGenerated_round_164', () => {
@@ -9145,17 +9154,30 @@ describe('App — round 164: wire codegen into dimension-enter', () => {
         expect(body).toMatch(/this\.hot\.applyGenerated\(rules\)/);
     });
 
-    test('autoGenerate_logs_chinese_status_round_164', () => {
-        // The auto-generate method must log a
-        // Chinese status line so the player
-        // sees the codegen output in the HUD
-        // log (mirrors the round-161 + 162
-        // log conventions).
+    test('autoGenerate_logs_chinese_status_round_166', () => {
+        // Round 166: The auto-generate method
+        // must log a Chinese status line that
+        // tells the player which branch ran —
+        // `WASM 真出` (real WASM) or
+        // `WASM 兜底→ TS 镜像` (TS mirror
+        // fallback). This replaces the
+        // round-164 `自动生成` line; the new
+        // line is more informative because it
+        // surfaces the WASM/TS split for
+        // debugging.
         const main = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
         const methodMatch = main.match(/private\s+autoGenerateRulesForCurrentDimension[^{]*\{([\s\S]*?)\n\s{4}\}/);
         expect(methodMatch).not.toBeNull();
         const body = methodMatch![1];
-        expect(body).toMatch(/\[codegen\]\s*自动生成/);
+        // Either branch is acceptable — pin
+        // the prefix + one of the two
+        // variants. The literal `${source}`
+        // ternary sits between `[codegen] `
+        // and the `WASM 真出` / `WASM 兜底`
+        // strings, so the regex matches the
+        // quoted literals rather than the
+        // whitespace between them.
+        expect(body).toMatch(/\[codegen\][^]*?['"](WASM\s*真出|WASM\s*兜底→\s*TS\s*镜像)['"]/);
     });
 
     test('codegenBindings_ts_known_vector_round_164', () => {

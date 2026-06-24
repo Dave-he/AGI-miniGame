@@ -190,14 +190,18 @@ export function makeWasmStub(overrides: SceneGenWasmStubOverrides = {}, codegenO
             const args = JSON.parse(argsJson);
             const biomeId = args.biome_id as string;
             const dimId = (args.dimension_id as string | undefined) ?? '';
-            // Mirror the Rust `biome_from_id` mapping:
-            //   forest/desert/ice/cyberpunk → Forest/Desert/Ice/Cyberpunk
-            //   everything else → Forest
+            // Mirror the Rust `biome_from_id` mapping (round-167
+            // promotes `space` + `lava` to first-class variants):
+            //   forest/desert/ice/cyberpunk/lava/space →
+            //     Forest/Desert/Ice/Cyberpunk/Lava/Space
+            //   everything else → Forest (best-effort fallback)
             const biomeMap: Record<string, string> = {
                 forest: 'Forest',
                 desert: 'Desert',
                 ice: 'Ice',
                 cyberpunk: 'Cyberpunk',
+                lava: 'Lava',
+                space: 'Space',
             };
             const biome = biomeMap[biomeId] ?? 'Forest';
             const complexityMap: Record<string, string> = { low: 'Low', high: 'High', med: 'Medium' };
@@ -216,10 +220,33 @@ export function makeWasmStub(overrides: SceneGenWasmStubOverrides = {}, codegenO
                 seed: seedStub.toString(),
             });
         },
-        generate_rules_json: (_argsJson: string) => codegenOverrides.rulesJson ?? JSON.stringify([
-            { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['forest_mob', 3] }] },
-            { event: { kind: 'Collide', arg: null }, actions: [{ kind: 'Damage', args: [1.5] }] },
-            { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'SpawnEntity', args: ['forest_timer_spawn'] }] },
-        ]),
+        generate_rules_json: (argsJson: string) => {
+            if (codegenOverrides.rulesJson) return codegenOverrides.rulesJson;
+            // Round 167 — vary the rule count by complexity so
+            // the round-162 coverage contracts (Low=1 / Medium=3
+            // / High=5) hold on the WASM path. The TS
+            // `generateRules` mirror uses the same shape.
+            const args = JSON.parse(argsJson) as { complexity?: string };
+            if (args.complexity === 'Low') {
+                return JSON.stringify([
+                    { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['forest_mob', 3] }] },
+                ]);
+            }
+            if (args.complexity === 'High') {
+                return JSON.stringify([
+                    { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['forest_mob', 3] }] },
+                    { event: { kind: 'Collide', arg: null }, actions: [{ kind: 'Damage', args: [1.5] }] },
+                    { event: { kind: 'Timer', arg: 3 }, actions: [{ kind: 'SpawnEntity', args: ['forest_timer_spawn'] }] },
+                    { event: { kind: 'Timer', arg: 8 }, actions: [{ kind: 'SpawnEntity', args: ['forest_timer_spawn'] }] },
+                    { event: { kind: 'PlayerHit', arg: null }, actions: [{ kind: 'Damage', args: [4.5] }] },
+                ]);
+            }
+            // Medium (default).
+            return JSON.stringify([
+                { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['forest_mob', 3] }] },
+                { event: { kind: 'Collide', arg: null }, actions: [{ kind: 'Damage', args: [1.5] }] },
+                { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'SpawnEntity', args: ['forest_timer_spawn'] }] },
+            ]);
+        },
     };
 }

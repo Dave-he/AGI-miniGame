@@ -73,7 +73,7 @@ import type { ThemeInput } from './SceneGen';
 
 function makeStubModule(overrides: Partial<SceneGenWasmModule> = {}): SceneGenWasmModule {
     return {
-        wasm_module_version: () => '0.2.0-round51',
+        wasm_module_version: () => '0.3.0-round167',
         theme_to_scene_json: (_json: string) => JSON.stringify({
             wfc_tile_weights: [4, 4, 2, 2, 0, 0, 3, 1],
             biome_id: 'cyberpunk',
@@ -108,6 +108,58 @@ function makeStubModule(overrides: Partial<SceneGenWasmModule> = {}): SceneGenWa
             branch: 0,
             blueprint_id: 'dim_42',
         }),
+        // Round 166 — codegen bridge (3 new exports).
+        // Round 167 — added Space + Lava to biome_map
+        // (first-class variants matching the 6-biome
+        // atmosphere palette).
+        seed_from_string_json: (argsJson: string) => {
+            const args = JSON.parse(argsJson);
+            const len = (args.s as string).length;
+            const stub = (BigInt(0xCBF29CE484222325) ^ (BigInt(len) * BigInt(0x100000001B3))) & BigInt('0xFFFFFFFFFFFFFFFF');
+            return JSON.stringify({ seed: stub.toString() });
+        },
+        gen_input_from_strings_json: (argsJson: string) => {
+            const args = JSON.parse(argsJson);
+            const biomeMap: Record<string, string> = {
+                forest: 'Forest', desert: 'Desert', ice: 'Ice', cyberpunk: 'Cyberpunk',
+                lava: 'Lava', space: 'Space',
+            };
+            const biome = biomeMap[args.biome_id as string] ?? 'Forest';
+            const complexityMap: Record<string, string> = { low: 'Low', high: 'High', med: 'Medium' };
+            const complexity = complexityMap[(args.complexity as string) ?? 'med'] ?? 'Medium';
+            const dimId = (args.dimension_id as string) ?? '';
+            const len = dimId.length;
+            const seedStub = (BigInt(0xCBF29CE484222325) ^ (BigInt(len) * BigInt(0x100000001B3))) & BigInt('0xFFFFFFFFFFFFFFFF');
+            const moodPicker = Number(seedStub & BigInt(0xFF)) % 4;
+            const moodList = ['Calm', 'Tense', 'Epic', 'Mysterious'];
+            const mood = moodList[moodPicker];
+            return JSON.stringify({ biome, mood, complexity, seed: seedStub.toString() });
+        },
+        generate_rules_json: (argsJson: string) => {
+            // Round 167 — vary by complexity (Low=1 / Medium=3 /
+            // High=5) to match the TS `generateRules` mirror.
+            const args = JSON.parse(argsJson) as { complexity?: string };
+            if (args.complexity === 'Low') {
+                return JSON.stringify([
+                    { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['cyberpunk_mob', 3] }] },
+                ]);
+            }
+            if (args.complexity === 'High') {
+                return JSON.stringify([
+                    { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['cyberpunk_mob', 3] }] },
+                    { event: { kind: 'Collide', arg: null }, actions: [{ kind: 'Damage', args: [1.5] }] },
+                    { event: { kind: 'Timer', arg: 3 }, actions: [{ kind: 'SpawnEntity', args: ['cyberpunk_timer_spawn'] }] },
+                    { event: { kind: 'Timer', arg: 8 }, actions: [{ kind: 'SpawnEntity', args: ['cyberpunk_timer_spawn'] }] },
+                    { event: { kind: 'PlayerHit', arg: null }, actions: [{ kind: 'Damage', args: [4.5] }] },
+                ]);
+            }
+            // Medium.
+            return JSON.stringify([
+                { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['cyberpunk_mob', 3] }] },
+                { event: { kind: 'Collide', arg: null }, actions: [{ kind: 'Damage', args: [1.5] }] },
+                { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'SpawnEntity', args: ['cyberpunk_timer_spawn'] }] },
+            ]);
+        },
         ...overrides,
     };
 }

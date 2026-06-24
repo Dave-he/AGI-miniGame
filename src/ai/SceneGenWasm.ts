@@ -85,7 +85,15 @@ const defaultLoader: SceneGenWasmLoader = async () => {
     if (typeof mod.default === 'function') {
         await mod.default();
     }
-    return mod as SceneGenWasmModule;
+    // The wasm-pkg/ TypeScript types are regenerated only when
+    // `cocos4-rust/scripts/build-wasm.sh` runs, so the freshly-added
+    // round-166 codegen exports (and round-167 biome variants) may
+    // not be visible to the TS compiler. The `unknown` cast pins
+    // the contract "the runtime module will have all the exports
+    // SceneGenWasmModule expects by the version-stamp guard" —
+    // `loadSceneGenWasm` checks the version stamp on the next
+    // line and falls back to the TS mirror if it's stale.
+    return mod as unknown as SceneGenWasmModule;
 };
 
 // ---------------------------------------------------------------------------
@@ -488,7 +496,11 @@ export function callSeedFromStringJson(
 
 /** Round 166 — invoke `gen_input_from_strings_json`. Returns the parsed `GenInputJson` on success, `null` on any failure. */
 export interface GenInputJson {
-    biome: 'Forest' | 'Desert' | 'Ice' | 'Cyberpunk';
+    // Round 167 — `Lava` and `Space` are now first-class
+    // biome tags (the 6-biome atmosphere palette is
+    // fully represented). Mirrors the Rust `BiomeKind`
+    // enum + the TS `codegenBindings::BiomeKind` type.
+    biome: 'Forest' | 'Desert' | 'Ice' | 'Cyberpunk' | 'Lava' | 'Space';
     mood: 'Calm' | 'Tense' | 'Epic' | 'Mysterious';
     complexity: 'Low' | 'Medium' | 'High';
     seed: bigint;
