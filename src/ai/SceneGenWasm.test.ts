@@ -769,4 +769,79 @@ describe('SceneGenWasm — autoGenerateForDimensionWithFallback (round 166)', ()
         // The captured JSON contains a "seed":"<digits>" string, not a number.
         expect(captured).toMatch(/"seed":"\d+"/);
     });
+
+    // Round 168 — wider failure-path coverage. The round-166
+    // tests covered the "module null" + "WASM returns {error:
+    // ...}" paths; this round adds (a) WASM throws an
+    // exception, (b) WASM returns malformed JSON in the
+    // gen-input step, (c) WASM returns a half-broken rule
+    // array (one rule missing `event.kind`). All three must
+    // fall back to the TS mirror with `source: 'ts-fallback'`.
+
+    test('returns_ts_fallback_when_gen_input_exports_throws_round_168', () => {
+        // A real WASM module could throw on a panic (e.g.
+        // dimension_id contains a null byte). The
+        // progressive-enhancement wrapper must NOT propagate
+        // the exception — it must catch and fall back to the
+        // TS mirror so the App's dimension-enter flow stays
+        // green.
+        const stub = makeStubModule({
+            gen_input_from_strings_json: () => {
+                throw new Error('wasm panic: dimension_id contains null byte');
+            },
+        });
+        const out = autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'cyberpunk');
+        expect(out.source).toBe('ts-fallback');
+        expect(out.rules.length).toBeGreaterThanOrEqual(1);
+        // The fallback input.biome must match the TS mirror
+        // (Cyberpunk → 'Cyberpunk' canonical PascalCase).
+        expect(out.input.biome).toBe('Cyberpunk');
+    });
+
+    test('returns_ts_fallback_when_gen_input_returns_malformed_json_round_168', () => {
+        // A real WASM module could panic-recover and return a
+        // non-JSON payload. `JSON.parse` throws → the wrapper
+        // must catch and fall back.
+        const stub = makeStubModule({
+            gen_input_from_strings_json: () => 'not-json-at-all{{{',
+        });
+        const out = autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'forest');
+        expect(out.source).toBe('ts-fallback');
+        expect(out.input.biome).toBe('Forest');
+        expect(out.rules.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test('returns_ts_fallback_when_generate_rules_has_half_broken_rule_round_168', () => {
+        // `generate_rules_json` returns a valid array, but
+        // one rule is missing `event.kind`. The wrapper's
+        // per-rule validator must abort the call (return
+        // null) instead of handing a broken array to the
+        // executor.
+        const stub = makeStubModule({
+            generate_rules_json: () => JSON.stringify([
+                { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['forest_mob', 3] }] },
+                // Missing event.kind — must abort.
+                { actions: [{ kind: 'Damage', args: [1.5] }] },
+            ]),
+        });
+        const out = autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'forest');
+        expect(out.source).toBe('ts-fallback');
+        // The TS fallback always emits ≥ 1 rule.
+        expect(out.rules.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test('returns_ts_fallback_when_generate_rules_exports_throws_round_168', () => {
+        // Same exception-isolation contract as the
+        // gen-input-throws test above, but on the
+        // generate_rules step.
+        const stub = makeStubModule({
+            generate_rules_json: () => {
+                throw new Error('wasm panic: rule serialization overflow');
+            },
+        });
+        const out = autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'ice');
+        expect(out.source).toBe('ts-fallback');
+        expect(out.input.biome).toBe('Ice');
+        expect(out.rules.length).toBeGreaterThanOrEqual(1);
+    });
 });

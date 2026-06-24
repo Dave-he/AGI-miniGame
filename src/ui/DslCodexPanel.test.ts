@@ -5327,3 +5327,185 @@ test('round_165_mutationCost_helper_mirrors_rust_round132_round165', () => {
     })).toBe(3);
 });
 
+// ---------------------------------------------------------------------------
+// Round 168 — column-level click-sort. Until round 168 only the
+// column HEADER (`dsl-codex-history-col-header`) responded to clicks;
+// row data cells were inert. Round 168 adds `data-column` to every
+// visible cell and extends `dispatchColumnSort` so a click on any
+// cell in a column triggers the same 5-state cycle as the header.
+//
+// Important nuance: cells INSIDE a clickable row
+// (`.dsl-codex-history-row-clickable`) must NOT trigger sort —
+// they belong to the row's click-to-apply surface and must still
+// invoke `onApplyHistory`. The dispatch gates the cell path on
+// `target.closest('.dsl-codex-history-row-clickable')`.
+// ---------------------------------------------------------------------------
+
+describe('DslCodexPanel — round 168 column-level click-sort', () => {
+    test('round_168_cells_carry_data_column_attribute', () => {
+        // Each visible data cell now has a
+        // `data-column="<column>"` attribute
+        // so the host's click listener can
+        // route cell clicks through the
+        // sort dispatch.
+        const root = makeRoot();
+        const history: DslRule[] = [
+            { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+            { event: { kind: 'Spawn' }, actions: [{ kind: 'Spawn', args: ['a', 3] }] },
+        ];
+        renderDslCodexPanel(
+            root,
+            () => history[1],
+            () => 'none',
+            () => history,
+        );
+        // 2 rows × 3 cells = 6 cells (idx / source / actions).
+        const cells = root.querySelectorAll('.dsl-codex-history-col-cell');
+        expect(cells.length).toBe(6);
+        // Pin the data-column distribution.
+        const cols = Array.from(cells).map((c) => c.getAttribute('data-column'));
+        expect(cols.filter((c) => c === 'idx').length).toBe(2);
+        expect(cols.filter((c) => c === 'source').length).toBe(2);
+        expect(cols.filter((c) => c === 'actions').length).toBe(2);
+    });
+
+    test('round_168_clicking_a_cell_triggers_same_sort_cycle_as_header', () => {
+        // A click on a data cell must
+        // trigger the same 5-state cycle
+        // (asc → desc → asc+secondary →
+        // costKey asc → costKey desc →
+        // null) as a header click. The
+        // header is RE-QUERIED after each
+        // click because `doRender()`
+        // regenerates the DOM.
+        const root = makeRoot();
+        const history: DslRule[] = [
+            { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        ];
+        renderDslCodexPanel(
+            root,
+            () => history[0],
+            () => 'none',
+            () => history,
+        );
+        // Click the data cell, NOT the header.
+        const actionsCell = root.querySelector(
+            '.dsl-codex-history-col-cell[data-column="actions"]'
+        ) as HTMLElement;
+        actionsCell.click();
+        // After 1 click: header is active with `asc`.
+        const h1 = root.querySelector(
+            '#dsl-codex-history-col-header-actions'
+        ) as HTMLElement;
+        expect(h1.textContent).toContain('↑');
+        // Click again via cell → desc.
+        const actionsCell2 = root.querySelector(
+            '.dsl-codex-history-col-cell[data-column="actions"]'
+        ) as HTMLElement;
+        actionsCell2.click();
+        const h2 = root.querySelector(
+            '#dsl-codex-history-col-header-actions'
+        ) as HTMLElement;
+        expect(h2.textContent).toContain('↓');
+    });
+
+    test('round_168_cell_click_in_clickable_row_does_NOT_trigger_sort', () => {
+        // A cell inside a clickable row
+        // belongs to the row's apply
+        // surface. The dispatch must
+        // ignore the cell click and let
+        // the row's `onApplyHistory`
+        // handler run instead.
+        const root = makeRoot();
+        const history: DslRule[] = [
+            { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        ];
+        const onApply = jest.fn();
+        renderDslCodexPanel(
+            root,
+            () => history[0],
+            () => 'none',
+            () => history,
+            undefined,
+            onApply,
+        );
+        // Sanity: row is clickable (data-rule-idx exists).
+        const row = root.querySelector('.dsl-codex-history-row-clickable');
+        expect(row).not.toBeNull();
+        // Click the actions cell INSIDE the
+        // clickable row.
+        const actionsCell = row!.querySelector(
+            '.dsl-codex-history-col-cell[data-column="actions"]'
+        ) as HTMLElement;
+        actionsCell.click();
+        // The header must NOT have become
+        // active (the cell click was
+        // routed to the row's apply
+        // handler, NOT the sort dispatch).
+        const header = root.querySelector(
+            '#dsl-codex-history-col-header-actions'
+        ) as HTMLElement;
+        expect(header.classList.contains('dsl-codex-history-col-header-active')).toBe(false);
+        // The apply handler ran exactly once.
+        expect(onApply).toHaveBeenCalledTimes(1);
+        expect(onApply).toHaveBeenCalledWith(history[0]);
+    });
+
+    test('round_168_cell_click_in_NON_clickable_row_triggers_sort', () => {
+        // When the panel is rendered
+        // WITHOUT `onApplyHistory`, the
+        // rows aren't clickable, so a
+        // cell click must route to the
+        // sort dispatch.
+        const root = makeRoot();
+        const history: DslRule[] = [
+            { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        ];
+        renderDslCodexPanel(
+            root,
+            () => history[0],
+            () => 'none',
+            () => history,
+        );
+        // No clickable rows present.
+        expect(root.querySelector('.dsl-codex-history-row-clickable')).toBeNull();
+        const idxCell = root.querySelector(
+            '.dsl-codex-history-col-cell[data-column="idx"]'
+        ) as HTMLElement;
+        idxCell.click();
+        // Re-query the header after the click
+        // (doRender regenerates the DOM).
+        const idxHeader = root.querySelector(
+            '#dsl-codex-history-col-header-idx'
+        ) as HTMLElement;
+        expect(idxHeader.classList.contains('dsl-codex-history-col-header-active')).toBe(true);
+    });
+
+    test('round_168_hidden_column_omits_cell_AND_cannot_be_sorted_via_cell', () => {
+        // The hidden-column toggle
+        // (round 148) omits the cell
+        // entirely — there must be no
+        // cell to click for a hidden
+        // column.
+        const root = makeRoot();
+        const history: DslRule[] = [
+            { event: { kind: 'Collide' }, actions: [{ kind: 'Damage', args: [1] }] },
+        ];
+        renderDslCodexPanel(
+            root,
+            () => history[0],
+            () => 'none',
+            () => history,
+        );
+        // Hide the `idx` column.
+        const idxToggle = root.querySelector(
+            '[data-toggle-column="idx"]'
+        ) as HTMLElement;
+        idxToggle.click();
+        // The idx cell is gone.
+        expect(
+            root.querySelector('.dsl-codex-history-col-cell[data-column="idx"]')
+        ).toBeNull();
+    });
+});
+

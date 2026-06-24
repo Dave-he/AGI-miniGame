@@ -1790,13 +1790,13 @@ function renderHistoryList(
         // data columns).
         const idxCell = hiddenColumns.has('idx')
             ? ''
-            : `<span class="dsl-codex-history-idx">#${i + 1}</span>`;
+            : `<span class="dsl-codex-history-idx dsl-codex-history-col-cell" data-column="idx">#${i + 1}</span>`;
         const srcCell = hiddenColumns.has('source')
             ? ''
-            : `<span class="dsl-codex-history-source">${escapeHtml(preview)}</span>`;
+            : `<span class="dsl-codex-history-source dsl-codex-history-col-cell" data-column="source">${escapeHtml(preview)}</span>`;
         const actCell = hiddenColumns.has('actions')
             ? ''
-            : `<span class="dsl-codex-history-actions">${rule.actions.length} 动作</span>`;
+            : `<span class="dsl-codex-history-actions dsl-codex-history-col-cell" data-column="actions">${rule.actions.length} 动作</span>`;
         return `
             <div class="${cls}"${dataAttr}>
                 ${idxCell}
@@ -2730,10 +2730,30 @@ export function renderDslCodexPanel(
      */
     const dispatchColumnSort = (target: EventTarget | null) => {
         if (!getRuleHistory) return;
-        const header = (target as HTMLElement | null)?.closest(
-            '.dsl-codex-history-col-header'
+        // Round 168 — accept both the
+        // column header AND any cell
+        // inside the column body (a
+        // `.dsl-codex-history-col-cell`
+        // carries the same `data-column`
+        // attribute as the header). The
+        // cell-click path is gated by the
+        // next `closest()` check: cells
+        // inside a `.dsl-codex-history-row-
+        // clickable` row belong to that
+        // row's click-to-apply surface and
+        // must NOT trigger a sort.
+        const targetEl = target as HTMLElement | null;
+        const header = targetEl?.closest(
+            '.dsl-codex-history-col-header, .dsl-codex-history-col-cell'
         ) as HTMLElement | null;
         if (!header) return;
+        // Cells inside a clickable row
+        // belong to the row's apply surface,
+        // not the sort surface.
+        if (header.classList.contains('dsl-codex-history-col-cell')
+            && targetEl?.closest('.dsl-codex-history-row-clickable')) {
+            return;
+        }
         const column = header.getAttribute('data-column');
         if (column !== 'idx' && column !== 'source' && column !== 'actions') return;
         // Round 165 — 5-state click
@@ -3196,7 +3216,12 @@ export function renderDslCodexPanel(
         root.addEventListener('keydown', (e) => {
             if (e.key !== 'Enter' && e.key !== ' ') return;
             const target = e.target as HTMLElement | null;
-            if (!target?.closest('.dsl-codex-history-col-header')) return;
+            // Round 168 — match either the
+            // header OR a cell. The cell
+            // path stays gated by the
+            // row-clickable check inside
+            // `dispatchColumnSort`.
+            if (!target?.closest('.dsl-codex-history-col-header, .dsl-codex-history-col-cell')) return;
             e.preventDefault();
             dispatchColumnSort(target);
         });
