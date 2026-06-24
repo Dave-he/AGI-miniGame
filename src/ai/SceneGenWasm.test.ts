@@ -21,6 +21,10 @@ import {
     callMood4thSentenceFor,
     buildGenerationConfigWithMoodWithFallback,
     moodPaletteWithFallback,
+    callSeedFromStringJson,
+    callGenInputFromStringsJson,
+    callGenerateRulesJson,
+    autoGenerateForDimensionWithFallback,
     SceneGenWasmModule,
 } from './SceneGenWasm';
 import type { ThemeInput, GenerationHint, Palette } from './SceneGen';
@@ -28,6 +32,7 @@ import { DEFAULT_GENERATION_HINT, FEAR_PALETTE, FRIENDLY_PALETTE } from './Scene
 import { defaultDisposition } from '../world/NpcMind';
 import type { NpcDisposition } from '../world/NpcMind';
 import type { GenerationConfig } from './AIEngine';
+import { autoGenerateForDimension } from '../dsl/codegenBindings';
 
 // ---------------------------------------------------------------------------
 // Stub module factory — returns a fake WASM module with controllable
@@ -38,7 +43,7 @@ import type { GenerationConfig } from './AIEngine';
 
 function makeStubModule(overrides: Partial<SceneGenWasmModule> = {}): SceneGenWasmModule {
     return {
-        wasm_module_version: () => '0.2.0-round51',
+        wasm_module_version: () => '0.3.0-round166',
         theme_to_scene_json: (_json: string) => JSON.stringify({
             wfc_tile_weights: [4, 4, 2, 2, 0, 0, 3, 1],
             biome_id: 'cyberpunk',
@@ -73,6 +78,38 @@ function makeStubModule(overrides: Partial<SceneGenWasmModule> = {}): SceneGenWa
             branch: 0,
             blueprint_id: 'dim_42',
         }),
+        // Round 166 — codegen bridge defaults. Tests that pin
+        // specific behaviour override these via the `overrides`
+        // param. The default `generate_rules_json` emits a
+        // 3-rule Medium-complexity set matching the TS `generateRules`
+        // Medium branch (population + mood Damage + timer SpawnEntity).
+        seed_from_string_json: (argsJson: string) => {
+            const args = JSON.parse(argsJson);
+            const len = (args.s as string).length;
+            const stub = (BigInt(0xCBF29CE484222325) ^ (BigInt(len) * BigInt(0x100000001B3))) & BigInt('0xFFFFFFFFFFFFFFFF');
+            return JSON.stringify({ seed: stub.toString() });
+        },
+        gen_input_from_strings_json: (argsJson: string) => {
+            const args = JSON.parse(argsJson);
+            const biomeMap: Record<string, string> = {
+                forest: 'Forest', desert: 'Desert', ice: 'Ice', cyberpunk: 'Cyberpunk',
+            };
+            const biome = biomeMap[args.biome_id as string] ?? 'Forest';
+            const complexityMap: Record<string, string> = { low: 'Low', high: 'High', med: 'Medium' };
+            const complexity = complexityMap[(args.complexity as string) ?? 'med'] ?? 'Medium';
+            const dimId = (args.dimension_id as string) ?? '';
+            const len = dimId.length;
+            const seedStub = (BigInt(0xCBF29CE484222325) ^ (BigInt(len) * BigInt(0x100000001B3))) & BigInt('0xFFFFFFFFFFFFFFFF');
+            const moodPicker = Number(seedStub & BigInt(0xFF)) % 4;
+            const moodList = ['Calm', 'Tense', 'Epic', 'Mysterious'];
+            const mood = moodList[moodPicker];
+            return JSON.stringify({ biome, mood, complexity, seed: seedStub.toString() });
+        },
+        generate_rules_json: (_argsJson: string) => JSON.stringify([
+            { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['cyberpunk_mob', 3] }] },
+            { event: { kind: 'Collide', arg: null }, actions: [{ kind: 'Damage', args: [1.5] }] },
+            { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'SpawnEntity', args: ['cyberpunk_timer_spawn'] }] },
+        ]),
         ...overrides,
     };
 }
@@ -109,19 +146,25 @@ describe('SceneGenWasm — round 48 WASM bridge', () => {
 
     test('loadSceneGenWasm_returns_null_when_version_check_fails', async () => {
         // The wasm-pkg/ artifacts could be stale relative to this TS
-        // code — the version stamp must start with `0.2.0-round`. A
+        // code — the version stamp must start with `0.3.0-round`. A
         // mismatched stamp triggers fallback so a buggy WASM is never
-        // silently used. Round 51 also explicitly rejects the round-48
-        // `0.1.0-round48` stamp so a stale build falls back to TS
-        // rather than mismatching the new exports.
+        // silently used. Round 166 bumped the major version from
+        // `0.2.0-round*` to `0.3.0-round*` to reflect the three new
+        // codegen exports (`seed_from_string_json`,
+        // `gen_input_from_strings_json`, `generate_rules_json`).
         const stub = makeStubModule({ wasm_module_version: () => 'some-old-build' });
         const mod = await loadSceneGenWasm(async () => stub);
         expect(mod).toBeNull();
     });
 
-    test('loadSceneGenWasm_returns_null_when_version_is_round48_stamp', async () => {
-        // Round 51 — old `0.1.0-round48` artifacts are rejected.
-        const stub = makeStubModule({ wasm_module_version: () => '0.1.0-round48' });
+    test('loadSceneGenWasm_returns_null_when_version_is_round51_stamp', async () => {
+        // Round 166 — old `0.2.0-round51` artifacts are rejected
+        // because they pre-date the codegen bridge exports. A page
+        // shipping a round-51 wasm-pkg/ would have a working
+        // theme_to_scene_json but no `generate_rules_json`, so the
+        // codegen path would throw — better to fall back to TS than
+        // throw mid-dimension-enter.
+        const stub = makeStubModule({ wasm_module_version: () => '0.2.0-round51' });
         const mod = await loadSceneGenWasm(async () => stub);
         expect(mod).toBeNull();
     });
@@ -436,5 +479,267 @@ describe('SceneGenWasm — cross-layer snake_case field-name pinning (round 51)'
         const parsed = JSON.parse(captured);
         expect(parsed).toHaveProperty('branch');
         expect(parsed).toHaveProperty('blueprint_id');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Round 166 — DSL codegen WASM bridge (round-165 B exports).
+//
+// Three new `call*` helpers + one `WithFallback` wrapper. The TS
+// App calls `autoGenerateForDimensionWithFallback` at
+// dimension-enter time; the wrapper tries WASM first and falls
+// back to `codegenBindings.autoGenerateForDimension` on any
+// failure (module null, error JSON, malformed output).
+//
+// The seed is string-encoded on the wire to preserve full
+// 64-bit precision (f64 mantissa = 53 bits); the helpers convert
+// it back to bigint so callers can bit-mask without losing
+// precision.
+// ---------------------------------------------------------------------------
+
+describe('SceneGenWasm — callSeedFromStringJson (round 166)', () => {
+    test('returns_null_when_module_is_null', () => {
+        expect(callSeedFromStringJson(null, 'forest')).toBeNull();
+    });
+
+    test('returns_bigint_seed_when_stub_succeeds', () => {
+        const stub = makeStubModule();
+        const seed = callSeedFromStringJson(stub, 'forest');
+        expect(seed).not.toBeNull();
+        expect(typeof seed).toBe('bigint');
+        // The stub's stub-hash is a deterministic 64-bit value.
+        // We don't pin the exact number (the TS `seedFromString`
+        // helper has its own FNV-1a test that pins known vectors);
+        // here we just confirm a valid 64-bit value came back.
+        expect(seed! >= 0n).toBe(true);
+        expect(seed! < (1n << 64n)).toBe(true);
+    });
+
+    test('returns_null_when_wasm_returns_error_json', () => {
+        const stub = makeStubModule({
+            seed_from_string_json: () => JSON.stringify({ error: 'parse: bad input' }),
+        });
+        expect(callSeedFromStringJson(stub, '')).toBeNull();
+    });
+
+    test('returns_null_when_wasm_throws', () => {
+        const stub = makeStubModule({
+            seed_from_string_json: () => { throw new Error('boom'); },
+        });
+        expect(callSeedFromStringJson(stub, 'forest')).toBeNull();
+    });
+});
+
+describe('SceneGenWasm — callGenInputFromStringsJson (round 166)', () => {
+    test('returns_null_when_module_is_null', () => {
+        expect(callGenInputFromStringsJson(null, 'forest', 'dim_alpha')).toBeNull();
+    });
+
+    test('returns_GenInputJson_when_stub_succeeds_forest_med', () => {
+        const stub = makeStubModule();
+        const gi = callGenInputFromStringsJson(stub, 'forest', 'dim_alpha', 'med');
+        expect(gi).not.toBeNull();
+        expect(gi!.biome).toBe('Forest');
+        expect(gi!.complexity).toBe('Medium');
+        // Mood comes from seed % 4 — must be one of the 4 canonical tags.
+        expect(['Calm', 'Tense', 'Epic', 'Mysterious']).toContain(gi!.mood);
+        expect(typeof gi!.seed).toBe('bigint');
+    });
+
+    test('maps_low_med_high_complexity_tags_canonically', () => {
+        const stub = makeStubModule();
+        expect(callGenInputFromStringsJson(stub, 'cyberpunk', 'd', 'low')!.complexity).toBe('Low');
+        expect(callGenInputFromStringsJson(stub, 'cyberpunk', 'd', 'high')!.complexity).toBe('High');
+        expect(callGenInputFromStringsJson(stub, 'cyberpunk', 'd', 'med')!.complexity).toBe('Medium');
+    });
+
+    test('returns_null_when_wasm_returns_error_json', () => {
+        const stub = makeStubModule({
+            gen_input_from_strings_json: () => JSON.stringify({ error: 'parse: bad input' }),
+        });
+        expect(callGenInputFromStringsJson(stub, 'forest', 'd')).toBeNull();
+    });
+});
+
+describe('SceneGenWasm — callGenerateRulesJson (round 166)', () => {
+    test('returns_null_when_module_is_null', () => {
+        expect(callGenerateRulesJson(null, {
+            biome: 'Forest', mood: 'Calm', complexity: 'Medium', seed: 0n,
+        })).toBeNull();
+    });
+
+    test('returns_DslRule_array_when_stub_succeeds', () => {
+        const stub = makeStubModule();
+        const rules = callGenerateRulesJson(stub, {
+            biome: 'Cyberpunk', mood: 'Tense', complexity: 'Medium', seed: 42n,
+        });
+        expect(rules).not.toBeNull();
+        expect(Array.isArray(rules)).toBe(true);
+        expect(rules!.length).toBeGreaterThanOrEqual(1);
+        // The stub emits a 3-rule Medium-complexity set.
+        expect(rules!.length).toBe(3);
+        // Each rule must parse to a valid DslRule shape.
+        for (const r of rules!) {
+            expect(['Collide', 'Timer', 'Spawn', 'PlayerHit']).toContain(r.event.kind);
+            expect(Array.isArray(r.actions)).toBe(true);
+            for (const a of r.actions) {
+                expect(['Damage', 'Heal', 'Spawn', 'SpawnEntity']).toContain(a.kind);
+                expect(Array.isArray(a.args)).toBe(true);
+            }
+        }
+    });
+
+    test('returns_null_when_wasm_returns_error_json', () => {
+        const stub = makeStubModule({
+            generate_rules_json: () => JSON.stringify({ error: 'unknown complexity tag' }),
+        });
+        expect(callGenerateRulesJson(stub, {
+            biome: 'Forest', mood: 'Calm', complexity: 'Medium', seed: 0n,
+        })).toBeNull();
+    });
+
+    test('returns_null_when_wasm_returns_malformed_rule', () => {
+        // A rule missing `event.kind` aborts the whole call.
+        const stub = makeStubModule({
+            generate_rules_json: () => JSON.stringify([
+                { event: { arg: null }, actions: [{ kind: 'Spawn', args: [] }] },
+            ]),
+        });
+        expect(callGenerateRulesJson(stub, {
+            biome: 'Forest', mood: 'Calm', complexity: 'Medium', seed: 0n,
+        })).toBeNull();
+    });
+});
+
+describe('SceneGenWasm — autoGenerateForDimensionWithFallback (round 166)', () => {
+    test('returns_wasm_source_when_module_loaded_and_exports_succeed', () => {
+        const stub = makeStubModule();
+        const out = autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'cyberpunk', 'Medium');
+        expect(out.source).toBe('wasm');
+        expect(out.rules.length).toBeGreaterThanOrEqual(1);
+        // The `input` shape mirrors the TS `GenInput` exactly.
+        expect(out.input.biome).toBe('Cyberpunk');
+        expect(['Calm', 'Tense', 'Epic', 'Mysterious']).toContain(out.input.mood);
+        expect(out.input.complexity).toBe('Medium');
+    });
+
+    test('returns_ts_fallback_source_when_module_is_null', () => {
+        const out = autoGenerateForDimensionWithFallback(null, 'dim_alpha', 'cyberpunk', 'Medium');
+        expect(out.source).toBe('ts-fallback');
+        // The TS mirror must still produce a valid rule set so the
+        // App's `applyGenerated` never sees an empty array.
+        expect(out.rules.length).toBeGreaterThanOrEqual(1);
+        expect(out.input.biome).toBe('Cyberpunk');
+    });
+
+    test('returns_ts_fallback_source_when_gen_input_exports_error_json', () => {
+        const stub = makeStubModule({
+            gen_input_from_strings_json: () => JSON.stringify({ error: 'parse: bad input' }),
+        });
+        const out = autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'cyberpunk');
+        expect(out.source).toBe('ts-fallback');
+        expect(out.rules.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test('returns_ts_fallback_source_when_generate_rules_exports_error_json', () => {
+        // `gen_input_from_strings_json` succeeds but
+        // `generate_rules_json` fails → still falls back to TS.
+        const stub = makeStubModule({
+            generate_rules_json: () => JSON.stringify({ error: 'unknown complexity tag' }),
+        });
+        const out = autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'cyberpunk');
+        expect(out.source).toBe('ts-fallback');
+        expect(out.rules.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test('wasm_and_ts_fallback_produce_same_rule_count_for_medium_complexity', () => {
+        // Pin the coverage contract from round-162: Medium
+        // complexity emits exactly 3 rules (population + mood +
+        // timer). Both the WASM stub and the TS mirror must satisfy
+        // this so a swap (round-166 WASM-first) doesn't change the
+        // visible rule count.
+        const stub = makeStubModule();
+        const wasmOut = autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'cyberpunk', 'Medium');
+        const tsOut = autoGenerateForDimensionWithFallback(null, 'dim_alpha', 'cyberpunk', 'Medium');
+        expect(wasmOut.rules.length).toBe(tsOut.rules.length);
+        expect(wasmOut.rules.length).toBe(3);
+    });
+
+    test('input_seed_round_trips_through_string_encoding_losslessly', () => {
+        // The seed is string-encoded on the wire to preserve full
+        // 64-bit precision. A 2^53+ value must survive the
+        // round-trip without silent truncation to a Number.
+        const bigSeed = (1n << 60n) + 12345n;
+        let capturedInput: { seed: string } | null = null;
+        const stub = makeStubModule({
+            generate_rules_json: (argsJson: string) => {
+                capturedInput = JSON.parse(argsJson) as { seed: string };
+                return JSON.stringify([
+                    { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['mob', 1] }] },
+                ]);
+            },
+        });
+        const out = autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'cyberpunk');
+        expect(out.source).toBe('wasm');
+        // The seed we passed into the WASM call should be the
+        // gen_input-derived seed (a string-encoded bigint). Just
+        // confirm the wire format is string, not number.
+        expect(capturedInput).not.toBeNull();
+        expect(typeof capturedInput!.seed).toBe('string');
+        // Also confirm the round-trip from input.seed back through
+        // the WASM call preserved bit-for-bit precision.
+        expect(BigInt(capturedInput!.seed)).toBe(out.input.seed);
+    });
+
+    test('low_complexity_emits_only_baseline_rule_on_both_branches', () => {
+        // Round-162 coverage contract: Low complexity emits 1
+        // baseline rule (no extras). Pin this on both branches so
+        // round-166 doesn't accidentally emit 2-3 extras on the
+        // WASM path.
+        const stub = makeStubModule();
+        const wasmOut = autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'cyberpunk', 'Low');
+        const tsOut = autoGenerateForDimensionWithFallback(null, 'dim_alpha', 'cyberpunk', 'Low');
+        expect(wasmOut.rules.length).toBe(1);
+        expect(tsOut.rules.length).toBe(1);
+        expect(wasmOut.rules[0].event.kind).toBe('Spawn');
+    });
+
+    test('cross_check_wasm_path_uses_snake_case_input_fields', () => {
+        // Pin the JSON contract between Rust and TS byte-for-byte.
+        // A future rename in `wasm_exports.rs::gen_input_from_strings_json`
+        // would break this and force a sync update.
+        let captured = '';
+        const stub = makeStubModule({
+            gen_input_from_strings_json: (argsJson: string) => {
+                captured = argsJson;
+                return JSON.stringify({
+                    biome: 'Forest', mood: 'Calm', complexity: 'Medium',
+                    seed: '12345',
+                });
+            },
+        });
+        autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'forest', 'Medium');
+        const parsed = JSON.parse(captured);
+        expect(parsed).toHaveProperty('biome_id');
+        expect(parsed).toHaveProperty('dimension_id');
+        expect(parsed).toHaveProperty('complexity');
+    });
+
+    test('cross_check_generate_rules_uses_string_seed_not_number', () => {
+        // The seed must arrive as a JSON STRING (not a number)
+        // because u64 values above 2^53 silently lose precision
+        // when serialized as a JSON number (f64 mantissa = 53 bits).
+        let captured = '';
+        const stub = makeStubModule({
+            generate_rules_json: (argsJson: string) => {
+                captured = argsJson;
+                return JSON.stringify([
+                    { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['mob', 1] }] },
+                ]);
+            },
+        });
+        autoGenerateForDimensionWithFallback(stub, 'dim_alpha', 'cyberpunk');
+        // The captured JSON contains a "seed":"<digits>" string, not a number.
+        expect(captured).toMatch(/"seed":"\d+"/);
     });
 });

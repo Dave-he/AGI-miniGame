@@ -45,7 +45,7 @@ import { ZERO_SCENE_SCALARS, cloneSceneScalars, type SceneScalars } from './ai/S
 import { getBiomeAtmosphere } from './scene/BiomeAtmosphere';
 import { getBiomeAudio } from './audio/BiomeAudio';
 import { parseDSL, combineMemes, compileFallback } from './dsl/MemeCompiler';
-import { autoGenerateForDimension } from './dsl/codegenBindings';
+import { autoGenerateForDimensionWithFallback } from './ai/SceneGenWasm';
 import { TutorialOverlay } from './ui/TutorialOverlay';
 import { renderStatsPanel, StatsPanelHandle } from './ui/StatsPanel';
 import { GodConsole } from './ui/GodConsole';
@@ -3290,7 +3290,17 @@ class App {
         // We fall back to a stable string when
         // the HUD state doesn't have one yet.
         const dimensionId = this.hud.getState().dimension?.name ?? biomeId;
-        const { input, rules } = autoGenerateForDimension(dimensionId, biomeId);
+        // Round 166 — try the WASM codegen bridge first; on any
+        // failure (module null, error JSON, malformed output) fall
+        // back to the TS mirror. The `source` field tells the HUD
+        // which branch ran. Same progressive-enhancement pattern
+        // as `themeToSceneWithFallback` (round-48/51) and
+        // `moodPaletteWithFallback` (round-51).
+        const { input, rules, source } = autoGenerateForDimensionWithFallback(
+            this.sceneGenWasm,
+            dimensionId,
+            biomeId,
+        );
         if (rules.length === 0) {
             // Should never happen (codegen
             // always emits the baseline), but
@@ -3305,7 +3315,7 @@ class App {
         this.currentDslRule = this.hot.getActiveRule() ?? null;
         this.lastDslOutcome = 'accepted';
         this.hud.log(
-            `[codegen] 自动生成 ${rules.length} 条规则 (biome=${input.biome}, mood=${input.mood}, complexity=${input.complexity}, seed=0x${input.seed.toString(16).slice(0, 8)})`,
+            `[codegen] ${source === 'wasm' ? 'WASM 真出' : 'WASM 兜底→ TS 镜像'} ${rules.length} 条规则 (biome=${input.biome}, mood=${input.mood}, complexity=${input.complexity}, seed=0x${input.seed.toString(16).slice(0, 8)})`,
         );
         this.dslCodexHandle?.refresh();
     }

@@ -95,8 +95,11 @@ export interface SceneGenWasmStubOverrides {
  * read back, with overridable scalars (so a single test can model
  * "npcCount=7, bpm=140" without rewriting the whole fixture).
  *
- * **Version stamp**: the stub returns `0.2.0-round80-e2e` so
- * `loadSceneGenWasm`'s `0.2.0-round*` guard accepts it. Bump the
+ * **Version stamp**: the stub returns `0.3.0-round166-e2e` so
+ * `loadSceneGenWasm`'s `0.3.0-round*` guard accepts it (round 166
+ * bumped the major version from `0.2.0-round*` to `0.3.0-round*`
+ * to reflect the three new codegen exports — `seed_from_string_json`,
+ * `gen_input_from_strings_json`, `generate_rules_json`). Bump the
  * real WASM version → bump this stamp → the helper-level test fails.
  *
  * **Snake_case shape**: the stub emits `theme_to_scene_json` in the
@@ -104,8 +107,14 @@ export interface SceneGenWasmStubOverrides {
  * (`wfc_tile_weights`, `biome_id`, `event_chain` with `delay_secs`,
  * etc.). `callThemeToScene` translates it to camelCase, so the App
  * side sees the same shape it would in production.
+ *
+ * **Round 166 codegen stub**: `generate_rules_json` emits a
+ * deterministic 3-rule set (population + mood Damage + timer
+ * SpawnEntity) — matches the TS-side `generateRules` Medium-complexity
+ * branch shape (1 baseline + 1 mood + 1 timer). Tests can override
+ * via `codegenOverrides`.
  */
-export function makeWasmStub(overrides: SceneGenWasmStubOverrides = {}): SceneGenWasmModule {
+export function makeWasmStub(overrides: SceneGenWasmStubOverrides = {}, codegenOverrides: { rulesJson?: string } = {}): SceneGenWasmModule {
     return {
         theme_to_scene_json: (themeJson: string) => {
             const theme = JSON.parse(themeJson);
@@ -125,7 +134,7 @@ export function makeWasmStub(overrides: SceneGenWasmStubOverrides = {}): SceneGe
                 _echo: { visual_style: theme.visual_style, seed: theme.seed },
             });
         },
-        wasm_module_version: () => '0.2.0-round80-e2e',
+        wasm_module_version: () => '0.3.0-round166-e2e',
         build_generation_config_with_mood_json: (argsJson: string) => {
             const args = JSON.parse(argsJson);
             return JSON.stringify({
@@ -157,5 +166,60 @@ export function makeWasmStub(overrides: SceneGenWasmStubOverrides = {}): SceneGe
             });
         },
         mood_4th_sentence_for_json: (_argsJson: string) => JSON.stringify({ sentence: 'wasm-4th' }),
+        // Round 166 — codegen bridge (3 new exports). Default
+        // `generate_rules_json` emits a 3-rule Medium-complexity
+        // set so tests that just want "WASM works" can ignore the
+        // codegen override; tests that pin WASM/TS parity can
+        // override `rulesJson` with a fixed-shape payload.
+        seed_from_string_json: (argsJson: string) => {
+            const args = JSON.parse(argsJson);
+            // Mirror the TS `seedFromString` FNV-1a 64-bit
+            // algorithm byte-for-byte — but the stub doesn't need
+            // a real hash; we just round-trip a deterministic
+            // 64-bit value derived from the input length. The
+            // TS-side test for "WASM wins" doesn't care about
+            // the exact seed, only that a valid bigint comes back.
+            const len = (args.s as string).length;
+            // A simple deterministic 64-bit value: 0xCBF29CE484222325 ^ (len * 0x100000001B3)
+            // (close enough to FNV-1a for stub purposes; the real
+            // algorithm is verified by `seedFromString_known_vector_round_164`).
+            const stub = (BigInt(0xCBF29CE484222325) ^ (BigInt(len) * BigInt(0x100000001B3))) & BigInt('0xFFFFFFFFFFFFFFFF');
+            return JSON.stringify({ seed: stub.toString() });
+        },
+        gen_input_from_strings_json: (argsJson: string) => {
+            const args = JSON.parse(argsJson);
+            const biomeId = args.biome_id as string;
+            const dimId = (args.dimension_id as string | undefined) ?? '';
+            // Mirror the Rust `biome_from_id` mapping:
+            //   forest/desert/ice/cyberpunk → Forest/Desert/Ice/Cyberpunk
+            //   everything else → Forest
+            const biomeMap: Record<string, string> = {
+                forest: 'Forest',
+                desert: 'Desert',
+                ice: 'Ice',
+                cyberpunk: 'Cyberpunk',
+            };
+            const biome = biomeMap[biomeId] ?? 'Forest';
+            const complexityMap: Record<string, string> = { low: 'Low', high: 'High', med: 'Medium' };
+            const complexity = complexityMap[(args.complexity as string) ?? 'med'] ?? 'Medium';
+            // Derive mood from `seedFromString(dimId) % 4` to match
+            // the TS `moodKindFromSeed` order (Calm / Tense / Epic / Mysterious).
+            const len = dimId.length;
+            const seedStub = (BigInt(0xCBF29CE484222325) ^ (BigInt(len) * BigInt(0x100000001B3))) & BigInt('0xFFFFFFFFFFFFFFFF');
+            const moodPicker = Number(seedStub & BigInt(0xFF)) % 4;
+            const moodList = ['Calm', 'Tense', 'Epic', 'Mysterious'];
+            const mood = moodList[moodPicker];
+            return JSON.stringify({
+                biome,
+                mood,
+                complexity,
+                seed: seedStub.toString(),
+            });
+        },
+        generate_rules_json: (_argsJson: string) => codegenOverrides.rulesJson ?? JSON.stringify([
+            { event: { kind: 'Spawn', arg: null }, actions: [{ kind: 'Spawn', args: ['forest_mob', 3] }] },
+            { event: { kind: 'Collide', arg: null }, actions: [{ kind: 'Damage', args: [1.5] }] },
+            { event: { kind: 'Timer', arg: 5 }, actions: [{ kind: 'SpawnEntity', args: ['forest_timer_spawn'] }] },
+        ]),
     };
 }

@@ -41,6 +41,8 @@ import { buildGenerationConfigWithMood as buildGenerationConfigWithMoodTs } from
 import { moodPalette as moodPaletteTs } from './SceneGen';
 import type { NpcDisposition } from '../world/NpcMind';
 import type { GenerationConfig } from './AIEngine';
+import type { DslRule } from '../dsl/MemeCompiler';
+import { autoGenerateForDimension } from '../dsl/codegenBindings';
 
 // ---------------------------------------------------------------------------
 // Public surface — what the AIBridge / AIEngine / NarrationEngine consume.
@@ -54,6 +56,10 @@ export interface SceneGenWasmModule {
     build_generation_config_with_mood_json(argsJson: string): string;
     mood_palette_json(moodJson: string): string;
     mood_4th_sentence_for_json(argsJson: string): string;
+    // Round 165 — three additional exports (DSL codegen bridge)
+    seed_from_string_json(argsJson: string): string;
+    gen_input_from_strings_json(argsJson: string): string;
+    generate_rules_json(argsJson: string): string;
 }
 
 /** Loader function that returns the compiled WASM module (or throws). */
@@ -88,25 +94,34 @@ const defaultLoader: SceneGenWasmLoader = async () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Round 48 — load the cocos4-rust WASM bridge.
+ * Round 48 → 166 — load the cocos4-rust WASM bridge.
  *
  * Returns the loaded module on success, or `null` on any failure
  * (module missing, fetch error, init threw, version mismatch). The
  * `loader` parameter is for tests; production callers omit it.
+ *
+ * Round 166: the version guard accepts `0.3.0-round*` (the three
+ * new codegen exports — `seed_from_string_json`,
+ * `gen_input_from_strings_json`, `generate_rules_json` — were
+ * added in round 165 B). The old `0.2.0-round*` stamp is still
+ * recognized via the same `0.X.0-round` prefix family; we just
+ * bump the major version check from `0.2` to `0.3`. A stub module
+ * returning the round-80 / round-51 stamp would fail this guard
+ * — tests must update their version stamp to `0.3.0-round*`.
  */
 export async function loadSceneGenWasm(
     loader: SceneGenWasmLoader = defaultLoader,
 ): Promise<SceneGenWasmModule | null> {
     try {
         const mod = await loader();
-        // Smoke check: the version string must be the round-48 stamp.
+        // Smoke check: the version string must be the round-166 stamp.
         // If it isn't, the wasm-pkg/ directory is stale relative to
         // this TS code and we'd rather fall back than mismatch.
         if (typeof mod.wasm_module_version !== 'function') {
             return null;
         }
         const v = mod.wasm_module_version();
-        if (typeof v !== 'string' || !v.startsWith('0.2.0-round')) {
+        if (typeof v !== 'string' || !v.startsWith('0.3.0-round')) {
             return null;
         }
         return mod;
@@ -427,4 +442,230 @@ export function moodPaletteWithFallback(
         return { palette: wasmResult, source: 'wasm' };
     }
     return { palette: moodPaletteFallback(mood), source: 'ts-fallback' };
+}
+
+// ---------------------------------------------------------------------------
+// Round 166 — DSL codegen WASM bridge (round-165 B exports).
+//
+// Three new helpers + one WithFallback wrapper, mirroring the
+// round-48/51 shape. The Rust side defines the canonical
+// implementations in `cocos4-rust/src/agi_minigame/wasm_exports.rs`:
+//   - `seed_from_string_json`         → 64-bit FNV-1a
+//   - `gen_input_from_strings_json`   → GenInput (biome/mood/complexity/seed)
+//   - `generate_rules_json`           → JSON array of Rule objects
+//
+// The TS-side `codegenBindings.autoGenerateForDimension` is the
+// fallback. The WithFallback wrapper below is what the App calls
+// at dimension-enter time; it picks the WASM branch when the
+// module is loaded AND the round-166 exports are present AND the
+// output parses, and falls back to the TS mirror otherwise.
+// ---------------------------------------------------------------------------
+
+/** Round 166 — invoke `seed_from_string_json`. Returns the u64 seed as a `bigint` on success, `null` on any failure. */
+export function callSeedFromStringJson(
+    mod: SceneGenWasmModule | null,
+    s: string,
+): bigint | null {
+    if (!mod) return null;
+    try {
+        const outJson = mod.seed_from_string_json(JSON.stringify({ s }));
+        const parsed = JSON.parse(outJson);
+        if (parsed && typeof parsed.error === 'string') {
+            return null;
+        }
+        if (!parsed || typeof parsed.seed !== 'string') {
+            return null;
+        }
+        // The seed is string-encoded on the wire to preserve the
+        // full 64-bit precision (f64 mantissa = 53 bits). Convert
+        // back to bigint here so callers can bit-mask it without
+        // losing precision (e.g. `seed & 0xFFn`).
+        return BigInt(parsed.seed as string);
+    } catch {
+        return null;
+    }
+}
+
+/** Round 166 — invoke `gen_input_from_strings_json`. Returns the parsed `GenInputJson` on success, `null` on any failure. */
+export interface GenInputJson {
+    biome: 'Forest' | 'Desert' | 'Ice' | 'Cyberpunk';
+    mood: 'Calm' | 'Tense' | 'Epic' | 'Mysterious';
+    complexity: 'Low' | 'Medium' | 'High';
+    seed: bigint;
+}
+
+export function callGenInputFromStringsJson(
+    mod: SceneGenWasmModule | null,
+    biomeId: string,
+    dimensionId: string,
+    complexity: 'low' | 'med' | 'high' = 'med',
+): GenInputJson | null {
+    if (!mod) return null;
+    try {
+        const outJson = mod.gen_input_from_strings_json(JSON.stringify({
+            biome_id: biomeId,
+            dimension_id: dimensionId,
+            complexity,
+        }));
+        const parsed = JSON.parse(outJson);
+        if (parsed && typeof parsed.error === 'string') {
+            return null;
+        }
+        if (
+            !parsed
+            || typeof parsed.biome !== 'string'
+            || typeof parsed.mood !== 'string'
+            || typeof parsed.complexity !== 'string'
+            || typeof parsed.seed !== 'string'
+        ) {
+            return null;
+        }
+        return {
+            biome: parsed.biome,
+            mood: parsed.mood,
+            complexity: parsed.complexity,
+            seed: BigInt(parsed.seed),
+        };
+    } catch {
+        return null;
+    }
+}
+
+/** Round 166 — invoke `generate_rules_json`. Returns the parsed `DslRule[]` on success, `null` on any failure. */
+export function callGenerateRulesJson(
+    mod: SceneGenWasmModule | null,
+    input: GenInputJson,
+): DslRule[] | null {
+    if (!mod) return null;
+    try {
+        const outJson = mod.generate_rules_json(JSON.stringify({
+            biome: input.biome,
+            mood: input.mood,
+            complexity: input.complexity,
+            seed: input.seed.toString(),
+        }));
+        const parsed = JSON.parse(outJson);
+        if (parsed && typeof parsed.error === 'string') {
+            return null;
+        }
+        if (!Array.isArray(parsed)) {
+            return null;
+        }
+        // Validate every rule has the expected shape. A single
+        // bad rule aborts the whole call (returns null) so the
+        // caller falls back to the TS mirror rather than handing
+        // a half-broken array to the executor.
+        const rules: DslRule[] = [];
+        for (const raw of parsed as unknown[]) {
+            const r = raw as {
+                event?: { kind?: string; arg?: unknown };
+                actions?: Array<{ kind?: string; args?: unknown[] }>;
+            };
+            if (
+                !r
+                || !r.event
+                || typeof r.event.kind !== 'string'
+                || !Array.isArray(r.actions)
+            ) {
+                return null;
+            }
+            const event: DslRule['event'] = {
+                kind: r.event.kind as DslRule['event']['kind'],
+            };
+            if (typeof r.event.arg === 'number' || typeof r.event.arg === 'string') {
+                event.arg = r.event.arg;
+            }
+            const actions: DslRule['actions'] = [];
+            for (const a of r.actions) {
+                if (!a || typeof a.kind !== 'string' || !Array.isArray(a.args)) {
+                    return null;
+                }
+                const args: (number | string)[] = [];
+                for (const arg of a.args) {
+                    if (typeof arg !== 'number' && typeof arg !== 'string') {
+                        return null;
+                    }
+                    args.push(arg);
+                }
+                actions.push({
+                    kind: a.kind as DslRule['actions'][number]['kind'],
+                    args,
+                });
+            }
+            rules.push({ event, actions });
+        }
+        return rules;
+    } catch {
+        return null;
+    }
+}
+
+/** Outcome of an `autoGenerateForDimensionWithFallback` call. */
+export interface AutoGenerateForDimensionOutcome {
+    input: ReturnType<typeof autoGenerateForDimension>['input'];
+    rules: DslRule[];
+    source: 'wasm' | 'ts-fallback';
+}
+
+/** Round 166 — TS-side fallback for `autoGenerateForDimension`. Re-exported for symmetry with the other `*Fallback` helpers. */
+export function autoGenerateForDimensionFallback(
+    dimensionId: string,
+    biomeId: string,
+    complexity?: 'Low' | 'Medium' | 'High',
+): { input: ReturnType<typeof autoGenerateForDimension>['input']; rules: DslRule[] } {
+    return autoGenerateForDimension(dimensionId, biomeId, complexity);
+}
+
+/**
+ * Round 166 — try the WASM codegen bridge first; on null at any
+ * step, fall back to the TS mirror. Always returns a `{ input,
+ * rules, source }` outcome (the TS mirror never fails for
+ * well-formed input).
+ *
+ * The flow:
+ *   1. `gen_input_from_strings_json` derives `GenInputJson` from
+ *      `(biomeId, dimensionId, complexity)` (the seed is derived
+ *      from `dimensionId` server-side — same FNV-1a 64-bit
+ *      algorithm as the TS `seedFromString` mirror).
+ *   2. `generate_rules_json` produces the rule array from that
+ *      `GenInputJson`.
+ *
+ * Either step returning `null` aborts to the TS fallback. The
+ * `source` field lets the HUD log which branch ran (`[codegen]
+ * WASM 真出` vs `[codegen] WASM 兜底→ TS 镜像`).
+ */
+export function autoGenerateForDimensionWithFallback(
+    mod: SceneGenWasmModule | null,
+    dimensionId: string,
+    biomeId: string,
+    complexity: 'Low' | 'Medium' | 'High' = 'Medium',
+): AutoGenerateForDimensionOutcome {
+    // Wire the WASM flow first. The complexity parameter is
+    // mapped to the lowercase WASM-side tag (`Low` → `low`,
+    // `Medium` → `med`, `High` → `high`); the WASM side treats
+    // unknown tags as `Medium` (round-164 B `complexity_from_id`
+    // fallback).
+    const complexityTag: 'low' | 'med' | 'high' =
+        complexity === 'Low' ? 'low'
+            : complexity === 'High' ? 'high'
+                : 'med';
+    const genInput = callGenInputFromStringsJson(mod, biomeId, dimensionId, complexityTag);
+    if (genInput !== null) {
+        const rules = callGenerateRulesJson(mod, genInput);
+        if (rules !== null) {
+            return {
+                input: {
+                    biome: genInput.biome,
+                    mood: genInput.mood,
+                    complexity: genInput.complexity,
+                    seed: genInput.seed,
+                },
+                rules,
+                source: 'wasm',
+            };
+        }
+    }
+    // Fallback path — TS mirror.
+    const fb = autoGenerateForDimensionFallback(dimensionId, biomeId, complexity);
+    return { input: fb.input, rules: fb.rules, source: 'ts-fallback' };
 }
