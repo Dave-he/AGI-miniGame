@@ -35,7 +35,9 @@ export class Match3Module implements GameplayModule {
     update(dt: number): void {
         // 三消逻辑：如下落动画、消除结算等
         // 这里如果是 AI 托管或者自动挂机模式，可以模拟自动消除
-        if (Math.random() < 0.02 * this.config.difficulty) {
+        const spawnRateMultiplier = Number(this.config.customParams.spawnRateMultiplier ?? 1);
+        const pressureMultiplier = Number(this.config.customParams.pressureMultiplier ?? 1);
+        if (Math.random() < 0.02 * this.config.difficulty * spawnRateMultiplier * pressureMultiplier) {
             this.simulateMatch();
         }
     }
@@ -58,7 +60,8 @@ export class Match3Module implements GameplayModule {
     }
 
     private simulateMatch() {
-        this.score += 30;
-        console.log(`[Match3Module] 触发消除！得分 +30, 当前得分: ${this.score}`);
+        const scoreGain = Math.floor(30 * Number(this.config.customParams.scoreMultiplier ?? 1));
+        this.score += scoreGain;
+        console.log(`[Match3Module] 触发消除！得分 +${scoreGain}, 当前得分: ${this.score}`);
     }
 }

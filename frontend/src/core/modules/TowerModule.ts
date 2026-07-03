@@ -33,14 +33,21 @@ export class TowerModule implements GameplayModule {
 
     update(dt: number): void {
         // 塔防独有的逻辑更新：例如防御塔索敌、开火、敌人移动
-        if (Math.random() < 0.01 * this.config.difficulty) {
+        const spawnRateMultiplier = Number(this.config.customParams.spawnRateMultiplier ?? 1);
+        const pressureMultiplier = Number(this.config.customParams.pressureMultiplier ?? 1);
+        const entityCount = Number((window as any).__agiEntityCount ?? 0);
+        const maxRuntimeEntities = Number(this.config.customParams.maxRuntimeEntities ?? 28);
+        if (
+            entityCount < maxRuntimeEntities &&
+            Math.random() < dt * 0.35 * this.config.difficulty * spawnRateMultiplier * pressureMultiplier
+        ) {
             this.spawnEnemy();
         }
         
         // 模拟打怪得分
         if (this.enemies.length > 0 && Math.random() < 0.05) {
             this.enemies.pop();
-            this.score += 10;
+            this.score += Math.floor(10 * Number(this.config.customParams.scoreMultiplier ?? 1));
         }
     }
 
@@ -61,7 +68,9 @@ export class TowerModule implements GameplayModule {
         if (engine) {
             const vx = (Math.random() - 0.5) * 40;
             const vz = (Math.random() - 0.5) * 40;
-            const id = engine.spawn_enemy(0, 0, vx, vz);
+            const id = Date.now() + Math.floor(Math.random() * 1000);
+            const pressure = Number(this.config.customParams.pressureMultiplier ?? 1);
+            engine.add_entity(0, 150, 0, '#ff3366', vx * pressure, -70 * pressure, vz * pressure, 1);
             this.enemies.push({ id, hp: 50 * this.config.difficulty });
             console.log(`[TowerModule] 生成了怪物 ID:${id}, 当前剩余: ${this.enemies.length}`);
         }
@@ -70,7 +79,8 @@ export class TowerModule implements GameplayModule {
     buildTower(x: number, z: number) {
         const engine = (window as any).gameEngine;
         if (engine) {
-            const id = engine.build_tower(x, z);
+            const id = Date.now() + Math.floor(Math.random() * 1000);
+            engine.add_entity(x, -170, z, '#00ff00', 0, 0, 0, 2);
             this.towers.push({ id, x, z, type: 'laser' });
             console.log(`[TowerModule] 在 (${x}, ${z}) 建造了防御塔 ID:${id}`);
         }

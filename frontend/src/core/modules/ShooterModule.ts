@@ -29,7 +29,14 @@ export class ShooterModule implements GameplayModule {
     }
 
     update(dt: number): void {
-        if (Math.random() < 0.015 * this.config.difficulty) {
+        const spawnRateMultiplier = Number(this.config.customParams.spawnRateMultiplier ?? 1);
+        const pressureMultiplier = Number(this.config.customParams.pressureMultiplier ?? 1);
+        const entityCount = Number((window as any).__agiEntityCount ?? 0);
+        const maxRuntimeEntities = Number(this.config.customParams.maxRuntimeEntities ?? 28);
+        if (
+            entityCount < maxRuntimeEntities &&
+            Math.random() < dt * 0.45 * this.config.difficulty * spawnRateMultiplier * pressureMultiplier
+        ) {
             this.spawnTarget();
         }
     }
@@ -45,15 +52,26 @@ export class ShooterModule implements GameplayModule {
     spawnTarget() {
         const engine = (window as any).gameEngine;
         if (engine) {
-            const vx = (Math.random() - 0.5) * 20;
-            const vz = (Math.random() - 0.5) * 20;
-            engine.spawn_enemy((Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40, vx, vz);
+            const pressure = Number(this.config.customParams.pressureMultiplier ?? 1);
+            const speed = Number(this.config.customParams.speedMultiplier ?? 1);
+            const vx = (Math.random() - 0.5) * 80 * speed * pressure;
+            const vz = (Math.random() - 0.5) * 80 * speed * pressure;
+            engine.add_entity(
+                (Math.random() - 0.5) * 320,
+                150,
+                (Math.random() - 0.5) * 320,
+                '#ff3366',
+                vx,
+                -80 * pressure,
+                vz,
+                1
+            );
         }
         console.log(`[ShooterModule] 发现新目标!`);
     }
 
     fireWeapon() {
         console.log(`[ShooterModule] 射击！`);
-        this.score += 50; // 模拟击中
+        this.score += Math.floor(50 * Number(this.config.customParams.scoreMultiplier ?? 1));
     }
 }

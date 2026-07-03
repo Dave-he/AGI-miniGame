@@ -1,3 +1,7 @@
+import type { NpcDisposition } from '../world/NpcMind';
+import { moodPalette } from './SceneGen';
+import { moodPaletteWithFallback, type SceneGenWasmModule } from './SceneGenWasm';
+
 export interface GenerationConfig {
     minAtoms: number;
     maxAtoms: number;
@@ -20,6 +24,23 @@ export interface DimensionBlueprint {
     theme: DimensionTheme;
     timeLimitSecs: number | null;
     objectives: Objective[];
+    /**
+     * Round 31 — biome tag carried from the WFC scaffold (round
+     * 24's `theme_to_scene`). Optional for back-compat with
+     * blueprint that predate the integration. When set, it tells
+     * the WorldState which biome to remember for cross-visit
+     * HUD prompts and biome-aware persistence.
+     */
+    biome?: string;
+    /**
+     * Round 42 — the difficulty range actually used by the
+     * dimension generator (post-balance-tuner nudge). Optional
+     * because some early blueprints in the round-21 test set
+     * predate this field; the consumer code falls back to a
+     * base of `[0.3, 0.8]` when it's missing. Mirrors the
+     * `GenerationConfig.difficulty_range` in the engine.
+     */
+    difficultyRange?: [number, number];
 }
 
 export interface GeneratedRule {
@@ -59,6 +80,11 @@ export interface SessionResult {
     durationSecs: number;
     completed: boolean;
 }
+
+// Re-export the 4 AI brains so consumers can pick whichever they need.
+export { GameplayCombinerAI, CombinationSuggestion, GameplayStage } from './GameplayCombinerAI';
+export { ContentGeneratorAI, ThemeContent, VisualStyle, MusicMood } from './ContentGeneratorAI';
+export { SmartWorldAI, WorldEventDraft, WorldEventKind } from './SmartWorldAI';
 
 export class DimensionGenerator {
     private rng: () => number;
@@ -238,6 +264,30 @@ export class BalanceTuner {
     private targetWinRate: number = 0.6;
     private history: SessionResult[] = [];
 
+    /**
+     * Round 126 — runtime setter for the target
+     * win rate. Called by the App's
+     * `applyDifficultySettings` when the
+     * player picks a new difficulty in the
+     * SettingsPanel (the row was already
+     * present since round 111, just hidden
+     * because the App didn't provide the
+     * hooks). Higher target = easier
+     * (BalanceTuner biases UP toward the
+     * higher end of the difficulty band
+     * when win rate is too low). Maps:
+     *   easy   → 0.75 (forgiving)
+     *   normal → 0.60 (default)
+     *   hard   → 0.40 (punishing)
+     */
+    setTargetWinRate(rate: number): void {
+        // Clamp to (0, 1] — 0 would
+        // divide-by-zero in
+        // suggestDifficulty's adjustment
+        // math; 1.0 = always easy.
+        this.targetWinRate = Math.max(0.05, Math.min(1.0, rate));
+    }
+
     recordResult(result: SessionResult): void {
         this.history.push(result);
     }
@@ -263,18 +313,100 @@ export class BalanceTuner {
         const base = 0.3 + playerLevel * 0.05;
         return Math.max(0.1, Math.min(1.0, base + adjustment));
     }
-}
 
-export class AIEngine {
-    private generator: DimensionGenerator;
-    private tuner: BalanceTuner;
-
-    constructor(seed: number) {
-        this.generator = new DimensionGenerator(seed);
-        this.tuner = new BalanceTuner();
+    /**
+     * Round 22 — reflexive loop with the world's NPC mood. Returns
+     * `suggestDifficulty(playerLevel)` nudged by the collective NPC
+     * disposition (typically from `NpcRegistry.averageDisposition()`).
+     *
+     * Mirror of `BalanceTuner::suggest_difficulty_with_mood` in the
+     * Rust engine — same thresholds, same coefficients, same clamp.
+     *
+     * - `fear > 0.5` → -0.10 (world already feels scary)
+     * - `friendly > 0.5 && trust > 0.3` → +0.08 (raise the stakes)
+     * - `friendly < -0.3` → -0.05 (player is hated; ease up a notch)
+     *
+     * Branches stack. Result clamped to `[0.1, 1.0]`. When `mood` is
+     * the default neutral, the function returns exactly the same
+     * value as `suggestDifficulty`.
+     */
+    suggestDifficultyWithMood(playerLevel: number, mood: NpcDisposition): number {
+        const base = this.suggestDifficulty(playerLevel);
+        const bias = BalanceTuner.moodBias(mood);
+        return Math.max(0.1, Math.min(1.0, base + bias));
     }
 
-    generateDimension(config: GenerationConfig): DimensionBlueprint {
+    /** Pure mood → bias mapping; HUD uses this to preview the nudge. */
+    static moodBias(mood: NpcDisposition): number {
+        let bias = 0;
+        if (mood.fear > 0.5) bias -= 0.10;
+        if (mood.friendly > 0.5 && mood.trust > 0.3) bias += 0.08;
+        if (mood.friendly < -0.3) bias -= 0.05;
+        return bias;
+    }
+}
+
+import { GameplayCombinerAI } from './GameplayCombinerAI';
+import { ContentGeneratorAI } from './ContentGeneratorAI';
+import { SmartWorldAI } from './SmartWorldAI';
+
+export class AIEngine {
+    /** A — 玩法组合 AI: pick the right combo of gameplay atoms for this player. */
+    public gameplayAI: GameplayCombinerAI;
+    /** B — 内容生成 AI: produce theme name, art prompt, BGM prompt, intro lore. */
+    public contentAI: ContentGeneratorAI;
+    /** C — 平衡 AI: tune difficulty from historical win/loss data. */
+    public tuner: BalanceTuner;
+    /** D — 智能 NPC / 世界 AI: roll transient world events and NPC dialogue. */
+    public worldAI: SmartWorldAI;
+
+    /**
+     * Round 51 — WASM bridge for `moodPalette`. Null means the loader
+     * failed and the TS mirror takes over. Used inside `generateDimension`
+     * to read the mood → palette mapping from the Rust canonical when
+     * the .wasm module is loaded successfully.
+     */
+    private wasmMod: SceneGenWasmModule | null = null;
+
+    /**
+     * Round 51 — the source of the last `moodPalette` lookup, surfaced
+     * via `getLastPaletteSource()`. `main.ts` reads it after
+     * `generateDimension` returns and logs `[palette] WASM 真出` vs
+     * `[palette] WASM 兜底→ TS 镜像`. Reset to `null` when no mood
+     * was provided (the original `theme.colorPalette` path).
+     */
+    private lastPaletteSource: 'wasm' | 'ts-fallback' | null = null;
+
+    /** Internal generator of dimension blueprints (combines the 4 AIs' output). */
+    private generator: DimensionGenerator;
+
+    /**
+     * Round 51 — inject the loaded WASM bridge. Called by
+     * `App.setSceneGenWasm` after `loadSceneGenWasm` resolves.
+     */
+    setSceneGenWasm(mod: SceneGenWasmModule | null): void {
+        this.wasmMod = mod;
+    }
+
+    /**
+     * Round 51 — read the source tag from the last `moodPalette`
+     * lookup, used by `main.ts` for the HUD log line. Returns `null`
+     * when no mood was provided.
+     */
+    getLastPaletteSource(): 'wasm' | 'ts-fallback' | null {
+        return this.lastPaletteSource;
+    }
+
+    constructor(seed: number) {
+        this.gameplayAI = new GameplayCombinerAI();
+        this.contentAI = new ContentGeneratorAI(seed);
+        this.tuner = new BalanceTuner();
+        this.worldAI = new SmartWorldAI(seed);
+        this.generator = new DimensionGenerator(seed);
+    }
+
+    generateDimension(config: GenerationConfig, mood?: NpcDisposition): DimensionBlueprint {
+        // 1) Balance AI hands us a suggested difficulty band.
         const suggested = this.tuner.suggestDifficulty(config.playerLevel);
         const adjustedConfig: GenerationConfig = {
             ...config,
@@ -283,7 +415,38 @@ export class AIEngine {
                 Math.min(1.0, suggested + 0.1),
             ],
         };
-        return this.generator.generate(adjustedConfig);
+
+        // 2) DimensionGenerator emits the structural blueprint.
+        const blueprint = this.generator.generate(adjustedConfig);
+
+        // 3) Content AI enriches the theme with lore / art / music prompts.
+        const stage = this.gameplayAI.classifyStage(config.playerLevel);
+        const theme = this.contentAI.generate(stage, blueprint.atomIds, blueprint.difficulty);
+        blueprint.name = theme.themeName;
+        blueprint.description = theme.introLore;
+        // Round 24 → 51 — when the caller passes a collective NPC mood,
+        // override the colorPalette with the mood-tagged one so the
+        // 3D scene renders in colors that reflect the world's mood.
+        // Round 51 — try WASM first; on null result, fall back to the
+        // TS mirror. The `lastPaletteSource` tag is read by `main.ts`
+        // for the HUD log line.
+        let finalPalette: string[];
+        if (mood) {
+            const outcome = moodPaletteWithFallback(this.wasmMod, mood);
+            this.lastPaletteSource = outcome.source;
+            finalPalette = Array.from(outcome.palette);
+        } else {
+            this.lastPaletteSource = null;
+            finalPalette = theme.colorPalette;
+        }
+        blueprint.theme = {
+            name: theme.themeName,
+            visualStyle: theme.visualStyle,
+            musicMood: theme.musicMood,
+            colorPalette: finalPalette,
+        };
+
+        return blueprint;
     }
 
     recordSession(result: SessionResult): void {

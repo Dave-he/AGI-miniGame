@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AGI-miniGame · 无限次元城</title>
+    <style>
+      :root {
+        --bg-0: #050617;
+        --bg-1: #0b0b22;
+        --neon-blue: #45b7d1;
+        --neon-pink: #ff66cc;
+        --neon-violet: #a06cd5;
+        --neon-cyan: #4ecdc4;
+        --neon-yellow: #ffd166;
+        --text-0: #e6e8ff;
+        --text-1: #9da3c4;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; padding: 0; height: 100%;
+        background: radial-gradient(circle at 20% 0%, #0e0a3a 0%, var(--bg-0) 60%);
+        color: var(--text-0);
+        font-family: 'SF Mono', Menlo, Consolas, monospace;
+        overflow: hidden;
+      }
+      #game-canvas { display: block; width: 100vw; height: 100vh; }
+      .panel { position: fixed; pointer-events: none; }
+      .panel > * { pointer-events: auto; }
+
+      #hud-root { top: 0; right: 0; width: 360px; max-height: 100vh; }
+      #hud-root .hud-panel { position: relative; margin: 8px; }
+      #hud-root .hud-stats { top: 0; left: auto; right: 0; }
+      #hud-root .hud-dim { top: auto; right: 0; left: auto; bottom: auto; }
+
+      /* Round 154 — HUD 4-corner snap mode.
+         The round-1 default places the HUD in
+         the top-right corner. The `K` key
+         shortcut cycles through 4 corners via
+         `hud-corner-tl` / `-tr` / `-br` / `-bl`
+         classes on `#hud-root`. Each variant
+         overrides the default top/right with
+         the matching corner anchor (max-height
+         shrinks on bottom-anchored corners so
+         the panel doesn't extend below the
+         viewport on shorter screens).
+         Defaults to `hud-corner-tr` when no
+         class is present — set explicitly by
+         `applyCornerClass()` in HUD.ts so the
+         round-1 layout is the explicit
+         fallback path. */
+      .hud-corner-tl { top: 0; left: 0; right: auto; bottom: auto; }
+      .hud-corner-tr { top: 0; right: 0; left: auto; bottom: auto; }
+      .hud-corner-bl { bottom: 0; left: 0; right: auto; top: auto; max-height: 80vh; }
+      .hud-corner-br { bottom: 0; right: 0; left: auto; top: auto; max-height: 80vh; }
+
+      /* Round 155 — `.hud-pinned` always-on-top
+         z-index boost. The round-1 default
+         `z-index: 10` is fine when the HUD
+         sits inside the page's normal
+         stacking context, but a fullscreen
+         Three.js canvas (or any element
+         with `position: fixed` + a higher
+         z-index) can push the HUD below
+         it. The `hud-pinned` class on
+         `#hud-root` jumps the panel to
+         `z-index: 10000` (above the
+         `.kb-help` z-index 9999 — round-50
+         keyboard help overlay stays below
+         pinned HUD so the player can read
+         help without losing access to the
+         HUD). Toggled at runtime via the
+         `X` key shortcut and persisted to
+         localStorage key `agi_hud_pinned`. */
+      .hud-pinned { z-index: 10000; }
+
+      /* Round 156 — `.hud-click-through`
+         pointer-events: none so mouse clicks
+         on the HUD area pass through to the
+         3D scene beneath. The HUD remains
+         visible (read-only) — the player
+         keeps access to the stat readout /
+         biome indicator / event log /
+         debouncer strip while interacting
+         with the scene directly. Companion
+         to round-155 `.hud-pinned`: pinned
+         controls *stacking* (HUD stays above
+         scene), click-through controls
+         *interaction* (scene stays clickable
+         through HUD). They can be enabled
+         together: read stats without
+         blocking the scene. Toggled at
+         runtime via the `Y` key shortcut
+         and persisted to localStorage key
+         `agi_hud_click_through`. */
+      .hud-click-through { pointer-events: none; }
+
+      /* Round 159 — `.hud-auto-hide-fullscreen`
+         collapses the HUD whenever the
+         document is in fullscreen mode
+         (the player wants an "immersive
+         scene" experience with no chrome).
+         The `:fullscreen` pseudo-class on
+         `<html>` matches whenever
+         `document.fullscreenElement` is
+         non-null (browser F11, Cmd+Ctrl+F,
+         or a `requestFullscreen()` call).
+         We also set `pointer-events: none`
+         so the hidden HUD area still
+         passes clicks through to the
+         scene — the player doesn't have
+         to manually disable click-through
+         for the fullscreen case. Toggled
+         at runtime via the `K` key shortcut
+         and persisted to localStorage key
+         `agi_hud_auto_hide_fullscreen`. */
+      .hud-auto-hide-fullscreen:fullscreen { display: none; }
+      .hud-auto-hide-fullscreen:fullscreen { pointer-events: none; }
+
+      /* Round 160 — `.hud-minimized`
+         collapses the HUD to a
+         single 32×32 icon. The
+         root element shrinks to
+         a small circle in the
+         current corner (the
+         round-154 `hud-corner-*`
+         class still applies so
+         the icon moves to the
+         chosen quadrant). The
+         host binds a click
+         handler on the root
+         that calls
+         `hud.setMinimized(false)`
+         to expand the panel.
+         A subtle tooltip via the
+         `title` attribute hints
+         at the click-to-expand
+         interaction. Toggled at
+         runtime via the `B` key
+         shortcut and persisted
+         to localStorage key
+         `agi_hud_minimized`. */
+      .hud-minimized { width: 32px; height: 32px; border-radius: 50%; }
+      .hud-minimized { overflow: hidden; }
+
+      /* Round 169 — `.hud-auto-shrink`
+         collapses the HUD to a
+         micro-form (width/height
+         + font-size ~50%) so the
+         player can see more of
+         the scene. Unlike
+         round-160 `.hud-minimized`
+         (which reduces the HUD
+         to a 32×32 icon), the
+         HUD stays visible AND
+         interactive — just
+         smaller. The
+         `hud-auto-shrink-active`
+         class is the secondary
+         "idle-timer" flag the
+         runtime uses to suppress
+         the shrink temporarily
+         when the player is
+         actively interacting
+         (e.g. mouseover / key
+         event). Toggled via the
+         `U` key shortcut and
+         persisted to localStorage
+         key `agi_hud_auto_shrink`. */
+      .hud-auto-shrink { transform: scale(0.55); transform-origin: top right; opacity: 0.78; }
+      .hud-auto-shrink.hud-corner-tl { transform-origin: top left; }
+      .hud-auto-shrink.hud-corner-tr { transform-origin: top right; }
+      .hud-auto-shrink.hud-corner-bl { transform-origin: bottom left; }
+      .hud-auto-shrink.hud-corner-br { transform-origin: bottom right; }
+      .hud-auto-shrink-active { opacity: 1; }
+      .hud-auto-shrink.hud-auto-shrink-active { transform: scale(0.62); opacity: 1; }
+
+      /* Round 162 — `.hud-scene-speed-strip`
+         is a compact badge in
+         the round-51 memories
+         block showing the
+         current scene speed
+         (0.5x / 1x / 2x / 4x).
+         The active preset gets
+         a brighter background
+         so the player can see
+         "what speed am I
+         running at" at a
+         glance after pressing
+         the `,` key to cycle.
+         The 4 cells are pipe-
+         separated to match the
+         round-146 debouncer
+         mini-strip's visual
+         rhythm. The status
+         label (慢 / 标准 /
+         快 / 极速) gives
+         the player a one-word
+         category without
+         reading the number. */
+      .hud-scene-speed-strip { display: flex; gap: 4px; align-items: center; }
+      .hud-scene-speed-strip-cell { padding: 2px 6px; border-radius: 4px; opacity: 0.5; }
+      .hud-scene-speed-strip-cell.is-active { opacity: 1; background: rgba(255, 255, 255, 0.12); }
+      .hud-scene-speed-strip-label { font-weight: 600; margin-right: 4px; }
+      .hud-scene-speed-strip-sep { opacity: 0.3; }
+      /* Round 163 — keyboard-navigation selected row
+         in the DslCodexPanel history list. Mirrors the
+         round-160 minimize-to-icon highlight (a 2px
+         accent border + a slight background tint) so
+         the player can see which row the Up / Down
+         cursor is on. The `outline: none` on the row
+         itself suppresses the browser-default focus
+         ring (the data-selected attribute is the source
+         of truth, not the focus state). */
+      .dsl-codex-history-row-is-selected { outline: 2px solid #ffcc66; background: rgba(255, 204, 102, 0.08); }
+
+      /* Round 112 — settings-root: bottom-right corner
+         so it sits under the HUD. Hidden by default;
+         App.toggleSettings() flips the `hidden` attribute.
+         The panel content (`.settings-panel`) is built
+         at runtime by SettingsPanel. */
+      #settings-root {
+        top: auto; right: 0; bottom: 0; left: auto;
+        z-index: 20;
+      }
+      #settings-root[hidden] { display: none; }
+      /* Round 113 — stats-root + progression-root:
+         both panels are always visible by default
+         (they're part of the default HUD layout),
+         but the Q / W key shortcuts can hide them
+         via the `hidden` attribute for screenshot /
+         focus mode. The `[hidden]` selector
+         is the browser default but we restate it
+         here so a future refactor that adds
+         `display: flex` etc. doesn't accidentally
+         override the hidden state. */
+      #stats-root[hidden] { display: none; }
+      #progression-root[hidden] { display: none; }
+      /* Round 114 — tutorial / vault / npc-mind
+         roots: same pattern as the round-112/113
+         `[hidden]` rules above. T / F / M
+         shortcuts hide the 3 panels for
+         screenshot / focus mode. */
+      #tutorial-root[hidden] { display: none; }
+      #vault-root[hidden] { display: none; }
+      #npc-mind-root[hidden] { display: none; }
+      /* Round 115 — achievements
+         root: same pattern as the
+         round-112/113/114 [hidden]
+         rules above. V shortcut
+         hides the panel for
+         screenshot / focus mode. */
+      #achievements-root[hidden] { display: none; }
+      /* Round 119 — biome library
+         root: same pattern as the
+         round-112/113/114/115
+         [hidden] rules above. B
+         shortcut hides the panel
+         for screenshot / focus
+         mode. */
+      #biome-library-root[hidden] { display: none; }
+      /* Round 121 — G / N / O
+         3-key batch: same pattern
+         as the round-112/113/114
+         /115/119 [hidden] rules
+         above. G / N / O shortcuts
+         hide the god-console /
+         economy / epoch panels
+         for screenshot / focus
+         mode. The 3 panels are
+         normally always-visible
+         (unlike the round-112
+         settings panel which
+         starts hidden) so the
+         [hidden] override is
+         defensive — it ensures
+         a future `display: flex`
+         rule on any of the 3
+         panel classes can't
+         override the keyboard
+         toggle's hide. */
+      #god-root[hidden] { display: none; }
+      #economy-root[hidden] { display: none; }
+      #epoch-root[hidden] { display: none; }
+      /* Round 128 — debug-overlay-root:
+         defensive [hidden] override for
+         the 12th panel-toggle key (D).
+         Mirror of the round-121
+         god/economy/epoch pattern. */
+      #debug-overlay-root[hidden] { display: none; }
+      /* Round 132 — event-log-root:
+         defensive [hidden] override for
+         the 13th panel-toggle key (Z).
+         Mirror of the round-121 +
+         round-128 pattern. */
+      #event-log-root[hidden] { display: none; }
+      /* Round 128 — DebugOverlay panel
+         styles. Compact 6-column grid
+         (label / action / round / window
+         / ms since / status). Each
+         row is a monospace grid so the
+         numbers align vertically for
+         easy scanning. */
+      .debug-overlay-panel {
+          font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+          font-size: 12px;
+          min-width: 320px;
+          max-width: calc(100vw - 32px);
+          box-sizing: border-box;
+      }
+      .debug-overlay-title {
+          font-weight: 600;
+          margin-bottom: 8px;
+          font-size: 13px;
+          color: #ffd166;
+      }
+      .debug-overlay-header,
+      .debug-overlay-row {
+          display: grid;
+          grid-template-columns: 80px 110px 60px 60px 90px 60px;
+          gap: 6px;
+          padding: 3px 0;
+          align-items: center;
+      }
+      .debug-overlay-header {
+          color: #aaa;
+          border-bottom: 1px solid #444;
+          margin-bottom: 4px;
+      }
+      .debug-overlay-row .debug-overlay-action {
+          color: #e0e0e0;
+      }
+      .debug-overlay-row .debug-overlay-name {
+          color: #6cf;
+      }
+      .debug-overlay-row .debug-overlay-round {
+          color: #888;
+          font-size: 11px;
+      }
+      .debug-overlay-row .debug-overlay-window {
+          color: #ccc;
+          text-align: right;
+      }
+      .debug-overlay-row .debug-overlay-since {
+          color: #ddd;
+          text-align: right;
+      }
+      .debug-overlay-row .debug-overlay-status {
+          font-weight: 600;
+          text-align: center;
+          border-radius: 3px;
+          padding: 1px 4px;
+      }
+      .debug-overlay-status.is-open {
+          color: #6f6;
+          background: rgba(102, 255, 102, 0.08);
+      }
+      .debug-overlay-status.is-debouncing {
+          color: #f66;
+          background: rgba(255, 102, 102, 0.12);
+      }
+      /* Round 130 — session-stats section
+         above the debouncer rows. Two-column
+         grid (label + value), distinct cyan
+         accent to separate from the gray
+         debouncer rows below. */
+      .debug-overlay-extras {
+          display: grid;
+          grid-template-columns: max-content 1fr;
+          column-gap: 10px;
+          row-gap: 2px;
+          padding: 4px 0 6px 0;
+          border-bottom: 1px dashed rgba(102, 255, 255, 0.25);
+          margin-bottom: 6px;
+      }
+      .debug-overlay-extras-row {
+          display: contents;
+      }
+      .debug-overlay-extras-label {
+          color: #6cf;
+          font-size: 12px;
+          text-align: right;
+      }
+      .debug-overlay-extras-value {
+          color: #ffd166;
+          font-size: 12px;
+          text-align: left;
+          font-weight: 600;
+      }
+      .settings-panel {
+        background: rgba(11, 11, 34, 0.92);
+        border: 1px solid var(--neon-cyan, #4ecdc4);
+        border-radius: 10px;
+        padding: 12px 14px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 0 24px rgba(78, 205, 196, 0.25);
+        font-size: 12px;
+        line-height: 1.6;
+        /* Round 122 — drop the
+           260px min-width so the
+           panel can shrink on
+           narrow viewports
+           (mobile / portrait
+           iframe). The clamp
+           keeps the panel from
+           reaching the screen
+           edge (16px gutter on
+           each side) while
+           letting it shrink
+           below 260px when the
+           viewport is too
+           narrow to host the
+           4-button row at full
+           width. The
+           `box-sizing:
+           border-box` rule
+           further down ensures
+           the padding doesn't
+           push the panel past
+           its declared max
+           width. */
+        min-width: 0;
+        max-width: calc(100vw - 32px);
+        box-sizing: border-box;
+      }
+      .set-title { font-size: 12px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; text-align: center; }
+      .set-section-label { font-size: 10px; color: var(--text-1); margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 1px; }
+      .set-row { display: flex; flex-wrap: wrap; gap: 4px; }
+      .set-row button {
+        background: rgba(255,255,255,0.05);
+        color: var(--text-0);
+        border: 1px solid rgba(160, 108, 213, 0.4);
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 11px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: all 120ms;
+      }
+      .set-row button:hover { filter: brightness(1.3); }
+      .set-row button.is-active {
+        background: linear-gradient(135deg, var(--neon-violet), var(--neon-pink));
+        color: white;
+        border-color: var(--neon-pink);
+        box-shadow: 0 0 8px rgba(255, 102, 204, 0.5);
+      }
+      /* Round 122 — responsive
+         layout for the
+         `.settings-panel` on
+         narrow viewports
+         (mobile portrait /
+         portrait iframe). The
+         4-button debounce row
+         (round-111 Off / 500ms
+         / 1000ms / 2000ms) +
+         the 3 audio locale
+         rows would overflow a
+         320px viewport at the
+         desktop layout. The
+         breakpoint at 600px
+         flips `.set-row` from
+         horizontal `flex-wrap`
+         to vertical
+         `flex-direction: column`
+         + stretches the
+         buttons to full
+         width (`width: 100%`)
+         so the player can
+         still read + tap each
+         button comfortably.
+         The `box-sizing:
+         border-box` ensures
+         the 100% width
+         doesn't overflow the
+         panel's padding. */
+      @media (max-width: 600px) {
+        .settings-panel {
+          /* On narrow screens
+             span most of the
+             viewport width
+             (with a 16px gutter
+             on each side) so
+             the panel is
+             readable. */
+          max-width: calc(100vw - 32px);
+        }
+        .set-row {
+          /* Drop the horizontal
+             wrap; stack each
+             button vertically
+             so the row doesn't
+             overflow the
+             panel. */
+          flex-direction: column;
+        }
+        .set-row button {
+          /* Full-width buttons
+             on narrow screens
+             for an easier tap
+             target. */
+          width: 100%;
+          text-align: left;
+          padding: 8px 12px;
+        }
+        .set-title {
+          /* Hide the uppercase
+             title on narrow
+             screens — the
+             section labels
+             carry the context. */
+          display: none;
+        }
+      }
+
+      #progression-root {
+        left: 0; bottom: 0; width: 380px; max-height: 38vh; overflow: auto;
+        background: rgba(11, 11, 34, 0.78); border-right: 1px solid rgba(160, 108, 213, 0.45);
+        border-top: 1px solid rgba(160, 108, 213, 0.45);
+        padding: 10px; backdrop-filter: blur(8px);
+        box-shadow: 0 0 24px rgba(160, 108, 213, 0.18);
+      }
+      #economy-root {
+        left: 0; top: 0; width: 240px; max-height: 100vh; overflow: auto;
+        background: rgba(11, 11, 34, 0.78); border-right: 1px solid rgba(160, 108, 213, 0.45);
+        border-bottom: 1px solid rgba(160, 108, 213, 0.45);
+        padding: 10px; backdrop-filter: blur(8px);
+      }
+      #epoch-root {
+        right: 0; bottom: 0; width: 320px; max-height: 36vh; overflow: auto;
+        background: rgba(11, 11, 34, 0.78); border-left: 1px solid rgba(160, 108, 213, 0.45);
+        border-top: 1px solid rgba(160, 108, 213, 0.45);
+        padding: 10px; backdrop-filter: blur(8px);
+      }
+
+      /* progression */
+      .prog-panel { margin-bottom: 8px; }
+      .prog-title { font-size: 11px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+      .prog-row { display: flex; align-items: center; gap: 8px; }
+      .prog-level { font-size: 22px; color: var(--neon-pink); }
+      .prog-bar { width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; margin: 6px 0; overflow: hidden; }
+      .prog-bar-fill { height: 100%; background: linear-gradient(90deg, var(--neon-violet), var(--neon-pink)); transition: width 200ms; }
+      .prog-points { color: var(--text-1); font-size: 11px; }
+      .prog-talents { margin-top: 8px; max-height: 26vh; overflow: auto; }
+      .prog-talent {
+        padding: 6px 8px; border-radius: 6px; margin: 4px 0;
+        background: rgba(255,255,255,0.04); border: 1px solid rgba(160, 108, 213, 0.2);
+        font-size: 12px; line-height: 1.4;
+      }
+      .prog-talent.is-learned { opacity: 0.5; }
+      .prog-talent.is-available { cursor: pointer; border-color: var(--neon-cyan); }
+      .prog-talent-head { display: flex; justify-content: space-between; }
+      .prog-talent-cost { color: var(--neon-yellow); font-size: 10px; }
+      .prog-talent-desc { color: var(--text-1); font-size: 11px; }
+      .prog-talent-tag { color: var(--neon-cyan); font-size: 10px; }
+
+      /* economy */
+      .econ-panel .econ-title { font-size: 11px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+      .econ-section-label { font-size: 10px; color: var(--text-1); margin: 6px 0 4px; }
+      .econ-row { display: flex; flex-wrap: wrap; gap: 4px; }
+      .econ-chip { padding: 4px 6px; border-radius: 4px; background: rgba(255,255,255,0.04); border: 1px solid; border-color: var(--chip-color, var(--neon-violet)); font-size: 11px; }
+      .econ-chip-name { color: var(--text-1); margin-right: 4px; }
+      .econ-chip-amt { color: var(--chip-color, var(--neon-violet)); }
+      .econ-inventory { max-height: 18vh; overflow: auto; }
+      .econ-item { display: flex; justify-content: space-between; padding: 2px 0; font-size: 11px; color: var(--text-1); }
+      .econ-item-qty { color: var(--neon-yellow); }
+      .econ-empty { color: var(--text-1); font-style: italic; font-size: 11px; }
+
+      /* epoch */
+      .epoch-panel .epoch-title { font-size: 14px; color: var(--neon-pink); margin-bottom: 4px; }
+      .epoch-stats { display: flex; gap: 12px; font-size: 11px; color: var(--text-1); }
+      .epoch-section-label { font-size: 10px; color: var(--neon-cyan); margin: 8px 0 4px; }
+      .epoch-rules, .epoch-relics { font-size: 11px; max-height: 12vh; overflow: auto; }
+      .epoch-rule { display: flex; gap: 6px; padding: 2px 0; }
+      .epoch-rule-num { color: var(--neon-violet); }
+      .epoch-rule-name { color: var(--text-0); flex: 1; }
+      .epoch-rule-kind { color: var(--neon-yellow); font-size: 10px; }
+      .epoch-relic { display: flex; gap: 6px; padding: 2px 0; }
+      .epoch-relic.buff .epoch-relic-icon { color: var(--neon-cyan); }
+      .epoch-relic.debuff .epoch-relic-icon { color: var(--neon-pink); }
+      .epoch-relic-name { color: var(--text-0); flex: 1; }
+      .epoch-relic-mag { color: var(--neon-yellow); }
+      .epoch-empty { color: var(--text-1); font-style: italic; }
+      .epoch-muls { display: flex; gap: 12px; margin: 8px 0; font-size: 11px; color: var(--neon-cyan); }
+      .epoch-collapse-btn {
+        width: 100%; padding: 8px; border-radius: 6px; border: none;
+        background: linear-gradient(135deg, var(--neon-pink), var(--neon-violet));
+        color: white; font-weight: 600; cursor: pointer; font-size: 12px;
+        box-shadow: 0 0 16px rgba(255, 102, 204, 0.4);
+      }
+      .epoch-collapse-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+
+      /* hud */
+      .hud-panel {
+        background: rgba(11, 11, 34, 0.78);
+        border: 1px solid rgba(160, 108, 213, 0.45);
+        border-radius: 10px;
+        padding: 10px 14px;
+        backdrop-filter: blur(8px);
+        font-size: 12px;
+        line-height: 1.6;
+        box-shadow: 0 0 24px rgba(160, 108, 213, 0.18);
+      }
+      .hud-title { font-size: 11px; letter-spacing: 2px; color: var(--neon-cyan); text-transform: uppercase; margin-bottom: 6px; }
+      .hud-stats  { margin-bottom: 8px; }
+      .hud-row { display: flex; justify-content: space-between; }
+      .hud-row span { color: var(--text-1); }
+      .hud-row b { color: var(--neon-pink); }
+      .hud-dim-name { font-size: 14px; color: var(--neon-blue); margin: 4px 0 8px; }
+      .hud-log { max-height: 30vh; overflow: auto; }
+      .hud-log-line { color: var(--text-1); font-size: 10px; }
+      .hud-log-empty { color: var(--text-1); font-style: italic; font-size: 10px; }
+
+      /* round 51 — persistent-memories collapsible <details> */
+      .hud-memories { margin: 0 0 4px 0; }
+      .hud-memories > summary {
+        cursor: pointer;
+        font-size: 11px;
+        color: var(--text-1);
+        list-style: none;
+        padding: 2px 0;
+        user-select: none;
+      }
+      .hud-memories > summary::-webkit-details-marker { display: none; }
+      .hud-memories[open] > summary { color: var(--neon-cyan); margin-bottom: 2px; }
+      .hud-memories > .hud-biome-remembered,
+      .hud-memories > .hud-speaker-remembered,
+      .hud-memories > .hud-npc-snapshot,
+      .hud-memories > .hud-npc-mood,
+      .hud-memories > .hud-scene-blueprint {
+        padding: 1px 0 1px 8px;
+        border-left: 1px solid rgba(160, 108, 213, 0.25);
+      }
+
+      /* round 53 — non-modal recovery banner */
+      .hud-recovery-banner {
+        background: rgba(255, 102, 204, 0.15);
+        border: 1px solid var(--neon-pink);
+        color: var(--neon-pink);
+        padding: 6px 10px;
+        border-radius: 4px;
+        margin: 0 0 6px 0;
+        font-size: 11px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .hud-recovery-banner b { color: var(--neon-pink); font-weight: 700; }
+      .hud-recovery-dismiss {
+        background: none;
+        border: none;
+        color: var(--neon-pink);
+        cursor: pointer;
+        font-size: 12px;
+        padding: 0 4px;
+        line-height: 1;
+      }
+      .hud-recovery-dismiss:hover { color: white; }
+      /* round 54 — inline rollback action inside the recovery banner */
+      .hud-recovery-rollback {
+        background: none;
+        border: 1px solid var(--neon-cyan);
+        color: var(--neon-cyan);
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 11px;
+        cursor: pointer;
+        margin-left: 8px;
+        font-family: inherit;
+        white-space: nowrap;
+      }
+      .hud-recovery-rollback:hover {
+        color: white;
+        background: var(--neon-cyan);
+      }
+
+      /* controls */
+      .controls {
+        position: fixed;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex; flex-wrap: wrap; gap: 6px;
+        pointer-events: auto;
+        z-index: 10;
+      }
+      .ctl {
+        background: linear-gradient(135deg, var(--neon-violet), var(--neon-pink));
+        color: white;
+        border: none;
+        padding: 6px 10px;
+        border-radius: 5px;
+        font-size: 11px;
+        cursor: pointer;
+        box-shadow: 0 0 12px rgba(255, 102, 204, 0.4);
+      }
+      .ctl:hover { filter: brightness(1.15); }
+      /* Round 116 — .toggle-btn: the 6 mouse
+         counterparts to the round-112/113/114/
+         115 panel-toggle keyboard shortcuts
+         (Q / W / T / F / M / V). Slightly
+         different background to visually group
+         the 6 buttons + btn-settings into a
+         7-button "panel-toggle" cluster. */
+      .toggle-btn {
+        background: linear-gradient(135deg, var(--neon-cyan), var(--neon-violet));
+        box-shadow: 0 0 12px rgba(78, 205, 196, 0.4);
+      }
+
+      /* vault (round 20) */
+      .vault-panel .vault-title { font-size: 11px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+      .vault-stats { display: flex; gap: 8px; font-size: 11px; color: var(--text-1); flex-wrap: wrap; margin-bottom: 6px; }
+      .vault-stat b { color: var(--neon-pink); }
+      .vault-section-label { font-size: 10px; color: var(--neon-cyan); margin: 6px 0 4px; }
+      .vault-entries { max-height: 18vh; overflow: auto; }
+      .vault-row { display: flex; gap: 6px; padding: 2px 0; font-size: 11px; align-items: center; }
+      .vault-outcome { display: inline-block; min-width: 14px; text-align: center; border-radius: 3px; font-weight: 700; }
+      .vault-outcome-completed { color: var(--neon-cyan); }
+      .vault-outcome-failed    { color: var(--neon-pink); }
+      .vault-outcome-abandoned { color: var(--neon-yellow); }
+      .vault-name { color: var(--text-0); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .vault-theme { color: var(--neon-violet); font-size: 10px; }
+      .vault-difficulty { color: var(--text-1); font-size: 10px; }
+      .vault-empty { color: var(--text-1); font-style: italic; font-size: 11px; }
+
+      /* npc minds (round 21) */
+      .npc-panel .npc-title { font-size: 11px; color: var(--neon-cyan); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+      .npc-avg { font-size: 10px; color: var(--text-1); margin-bottom: 6px; }
+      .npc-avg-label { color: var(--neon-cyan); font-size: 10px; display: block; margin-bottom: 2px; }
+      .npc-axis { display: flex; align-items: center; gap: 4px; font-size: 10px; padding: 1px 0; }
+      .npc-axis-label { color: var(--text-1); width: 28px; }
+      .npc-axis-bar { flex: 1; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; position: relative; display: flex; }
+      .npc-axis-neg { background: var(--neon-pink); height: 100%; transition: width 200ms; }
+      .npc-axis-pos { background: var(--neon-cyan); height: 100%; transition: width 200ms; margin-left: auto; }
+      .npc-section-label { font-size: 10px; color: var(--neon-cyan); margin: 6px 0 4px; }
+      .npc-roster { max-height: 12vh; overflow: auto; }
+      .npc-row { display: flex; gap: 6px; padding: 3px 4px; font-size: 11px; cursor: pointer; border-radius: 4px; align-items: center; }
+      .npc-row:hover { background: rgba(255,255,255,0.04); }
+      .npc-row-selected { background: rgba(160, 108, 213, 0.18); border: 1px solid rgba(160, 108, 213, 0.45); }
+      .npc-id { color: var(--text-0); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .npc-mood { font-size: 10px; padding: 1px 4px; border-radius: 3px; }
+      .npc-mood-happy   { color: var(--neon-cyan); }
+      .npc-mood-neutral { color: var(--text-1); }
+      .npc-mood-uneasy  { color: var(--neon-yellow); }
+      .npc-mood-hostile { color: var(--neon-pink); }
+      .npc-mem-count { color: var(--text-1); font-size: 10px; }
+      .npc-memory { max-height: 14vh; overflow: auto; }
+      .npc-mem-row { display: flex; gap: 6px; padding: 2px 0; font-size: 10px; }
+      .npc-mem-kind { width: 16px; text-align: center; }
+      .npc-mem-summary { color: var(--text-1); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .npc-empty { color: var(--text-1); font-style: italic; font-size: 10px; }
+      .npc-bias-row { display: flex; gap: 6px; align-items: center; padding: 4px 6px; margin-bottom: 6px; background: rgba(255,255,255,0.04); border-radius: 4px; }
+      .npc-bias-label { color: var(--text-1); font-size: 10px; flex: 1; }
+      .npc-bias { font-size: 12px; font-weight: 600; }
+      .npc-bias-up   { color: var(--neon-pink); }
+      .npc-bias-down { color: var(--neon-cyan); }
+      .npc-bias-flat { color: var(--text-1); }
+
+      /* Round 57 — keyboard help overlay. Centered modal-style,
+         hidden by default via the `hidden` attribute. */
+      .kb-help {
+        position: fixed; left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 9999;
+        background: rgba(5, 6, 23, 0.95);
+        border: 2px solid var(--neon-cyan, #06d6a0);
+        border-radius: 8px;
+        padding: 18px 22px;
+        min-width: 360px;
+        max-width: 480px;
+        box-shadow: 0 0 24px rgba(6, 214, 160, 0.4);
+        color: var(--text-1, #fff);
+        font-family: monospace;
+      }
+      .kb-help[hidden] { display: none; }
+      .kb-help-title {
+        font-size: 14px; font-weight: 700;
+        color: var(--neon-cyan, #06d6a0);
+        text-align: center;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+      .kb-help-grid {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 14px;
+        font-size: 12px;
+      }
+      /* Round 64 — minimap thumbnail inside the round-51
+         memories block. 80×60 PNG with a subtle neon
+         border so it pops against the dark HUD background. */
+      .hud-minimap-row {
+        margin: 4px 0 6px;
+        display: flex;
+        justify-content: center;
+      }
+      .hud-minimap {
+        border: 1px solid var(--neon-cyan, #06d6a0);
+        border-radius: 2px;
+        display: block;
+        image-rendering: pixelated;
+        background: #0a0a0a;
+      }
+      .kb-help-section {
+        /* Round 59 — section divider in the help overlay. Spans
+           both grid columns so the label reads as a full-width
+           sub-header between the keyboard and mouse lists. */
+        grid-column: 1 / -1;
+        color: var(--neon-blue, #45b7d1);
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-top: 8px;
+        padding-top: 6px;
+        border-top: 1px dashed rgba(6, 214, 160, 0.3);
+      }
+      .kb-help-section:first-child {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+      }
+      /* Round 120 — concentrated
+         panel-toggle section in
+         the help overlay. Uses
+         a cyan border + accent
+         color so the 8 panel-
+         toggle keys (P / Q / W +
+         T / F / M + V + B) read
+         as a distinct quick-
+         reference card. The
+         player can scan this
+         8-row block without
+         hunting through the
+         full BINDING_DESCRIPTIONS
+         list. */
+      .kb-help-section-toggle {
+        color: var(--neon-cyan, #4ecdc4) !important;
+        border-top: 1px solid rgba(78, 205, 196, 0.5) !important;
+        margin-top: 12px !important;
+      }
+      .kb-help-key-toggle {
+        color: var(--neon-cyan, #4ecdc4) !important;
+      }
+      .kb-help-action-toggle {
+        color: var(--neon-cyan, #4ecdc4) !important;
+        opacity: 0.85;
+      }
+      .kb-help-key {
+        color: var(--neon-pink, #ff66cc);
+        font-weight: 700;
+        text-align: right;
+      }
+      .kb-help-action {
+        color: var(--text-1, #fff);
+        text-align: left;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+
+    <div class="panel" id="economy-root"></div>
+    <div class="panel" id="progression-root"></div>
+    <div class="panel" id="hud-root"></div>
+    <div class="panel" id="epoch-root"></div>
+    <div class="panel" id="tutorial-root"></div>
+    <div class="panel" id="stats-root"></div>
+    <div class="panel" id="god-root"></div>
+    <div class="panel" id="vault-root"></div>
+    <div class="panel" id="npc-mind-root"></div>
+    <!-- Round 115 — achievements-root: home
+         for the round-22 player.achievements
+         list. Hidden by default; the V key
+         toggles the `hidden` attribute via
+         App.toggleAchievements(). The panel
+         content is rendered into this div by
+         future round-115 follow-up work
+         (round-115 ships the toggle contract
+         only — the actual `renderAchievementsPanel`
+         wiring into the App constructor is
+         part of the round-22 follow-up). -->
+    <div class="panel" id="achievements-root"></div>
+    <!-- Round 119 — biome-library-root:
+         home for the round-23 biome
+         gallery (6 biomes from
+         `WfcBiomes.BIOMES`). The B key
+         toggles the `hidden` attribute
+         via App.toggleBiomeLibrary(). The
+         panel content is rendered by
+         `renderBiomeLibraryPanel` (round
+         119 ships the actual wiring into
+         the App constructor + the
+         keyboard shortcut + the mouse
+         button). -->
+    <div class="panel" id="biome-library-root"></div>
+    <!-- Round 128 — debug-overlay-root: home for the
+         round-128 `renderDebugOverlay` panel
+         showing the 4 `ActionDebouncer`
+         instances' runtime state (action label /
+         introducing round tag / current window /
+         ms since last stamp / currently
+         debouncing?). Hidden by default; the D
+         key + the `btn-debug-overlay` mouse
+         button toggle the `hidden` attribute via
+         App.toggleDebugOverlay(). The panel is
+         built at runtime by renderDebugOverlay
+         (it owns its innerHTML). The mount point
+         itself is just an empty div that the
+         helper targets. -->
+    <div class="panel" id="debug-overlay-root"></div>
+    <!-- Round 112 — settings-root: home for the
+         round-111 SettingsPanel (audio mute, locale,
+         debounce-window knob). Hidden by default; the
+         P key + the round-112 `btn-settings` button
+         toggle the `hidden` attribute via
+         App.toggleSettings(). The panel itself is
+         built at runtime by SettingsPanel (it
+         overwrites the innerHTML with a `.settings-panel`
+         block containing the section labels + rows). -->
+    <div class="panel" id="settings-root" hidden></div>
+    <!-- Round 132 — event-log-root: home for the
+         round-132 `renderEventLogPanel` panel
+         showing the 50-event ring buffer from
+         `Analytics.recent` (the chronological
+         log of "what just happened in this
+         session": dimension enter / complete,
+         tutorial step, item use, save, DM
+         commands, WASM latency events, etc).
+         Hidden by default; the Z key + the
+         `btn-event-log` mouse button toggle
+         the `hidden` attribute via
+         App.toggleEventLog(). The 13th panel
+         in the round-131 data-driven
+         `PANEL_TOGGLE_BINDINGS` table. -->
+    <div class="panel" id="event-log-root" hidden></div>
+    <!-- Round 133 — dsl-codex-root: home for the
+         round-133 `renderDslCodexPanel` panel
+         showing the AGI's most recently
+         generated / hot-reloaded `DslRule` (the
+         round-15/16 `MemeCompiler` output) as a
+         small codex with the source DSL + the
+         parsed AST breakdown + a "已接受" / "被拒绝"
+         status badge. Hidden by default; the K
+         key + the `btn-dsl-codex` mouse button
+         toggle the `hidden` attribute via
+         App.toggleDslCodex(). The 14th panel in
+         the round-131 data-driven
+         `PANEL_TOGGLE_BINDINGS` table. -->
+    <div class="panel" id="dsl-codex-root" hidden></div>
+    <!-- Round 137 — inventory-root: home for the
+         pre-existing InventoryUI module
+         (`src/ui/InventoryUI.ts`). The UI
+         class was already implemented (use/drop
+         actions, kind icon, detail pane) but never
+         wired into the App — round 137 finally
+         mounts it on a panel-toggle. Hidden by
+         default; the I key + the new
+         `btn-inventory` mouse button toggle the
+         `hidden` attribute via App.toggleInventory().
+         The 15th entry in the round-131 data-driven
+         `PANEL_TOGGLE_BINDINGS` table. I is
+         mnemonic-friendly for "Inventory" + was
+         free in the panel-toggle group (no pre-
+         existing I mapping in routeKey). -->
+    <div class="panel" id="inventory-root" hidden></div>
+
+    <!-- Round 57 — keyboard help overlay. Hidden by default;
+         toggle with the ? key. The body is populated at runtime
+         by KeyboardShortcuts.BINDING_DESCRIPTIONS so the two
+         stay in sync automatically. -->
+    <div id="keyboard-help" class="kb-help" hidden>
+      <div class="kb-help-title">⌨ 键盘快捷键 (按 ? 关闭)</div>
+      <div class="kb-help-grid" id="keyboard-help-body"></div>
+    </div>
+
+    <div class="controls">
+      <button class="ctl" id="btn-enter">进入次元</button>
+      <button class="ctl" id="btn-fail">标记失败</button>
+      <button class="ctl" id="btn-abandon">放弃次元</button>
+      <button class="ctl" id="btn-event">世界事件</button>
+      <button class="ctl" id="btn-dsl">模因→DSL</button>
+      <button class="ctl" id="btn-collapse">大坍缩</button>
+      <button class="ctl" id="btn-god">DM Console</button>
+      <!-- Round 112 — settings button. Mirror of
+           the P key shortcut. Opens the
+           round-111 SettingsPanel. -->
+      <button class="ctl" id="btn-settings">⚙ 设置</button>
+      <!-- Round 116 — 6 mouse-button counterparts
+           to the round-112/113/114/115 keyboard
+           shortcuts. The 6 buttons mirror the
+           btn-settings pattern (id = `btn-X`,
+           label = `<emoji> <name>`) and route to
+           the same `app.toggleX()` methods that
+           the bootstrap keydown switch dispatches.
+           The keyboard badge (P / Q / W / T / F /
+           M / V) is shown in the button label so
+           mouse-only players can still learn the
+           shortcut by hovering. 7-button toggle
+           bar in the controls section. -->
+      <button class="ctl toggle-btn" id="btn-stats" data-key="Q">📊 统计 (Q)</button>
+      <button class="ctl toggle-btn" id="btn-progression" data-key="W">⏳ 进度 (W)</button>
+      <button class="ctl toggle-btn" id="btn-tutorial" data-key="T">📖 教程 (T)</button>
+      <button class="ctl toggle-btn" id="btn-vault" data-key="F">📚 档案库 (F)</button>
+      <button class="ctl toggle-btn" id="btn-npc-mind" data-key="M">🧠 NPC 心智 (M)</button>
+      <button class="ctl toggle-btn" id="btn-achievements" data-key="V">🏅 成就 (V)</button>
+      <!-- Round 119 — biome library
+           mouse button. Mirror of the
+           B key shortcut. Opens the
+           round-23 BiomeLibraryPanel
+           showing the 6 biomes. -->
+      <button class="ctl toggle-btn" id="btn-biome-library" data-key="B">🌍 生物群系 (B)</button>
+      <!-- Round 128 — D-key mouse
+           counterpart. Opens /
+           closes the
+           `DebugOverlay` panel
+           showing the 4
+           ActionDebouncer
+           instances' runtime
+           state. Developer + QA
+           tool (the Q key's
+           StatsPanel is the
+           player-facing
+           counterpart). -->
+      <button class="ctl toggle-btn" id="btn-debug-overlay" data-key="D">🔧 调试 (D)</button>
+      <!-- Round 121 — 3 mouse
+           buttons for the G / N / O
+           3-key batch (god-console /
+           economy / epoch panels).
+           Mirror of the round-66
+           `btn-god` button (which
+           uses the round-91
+           `godConsole.toggle()` flow
+           and so is left untouched)
+           but routed through the
+           round-117 `togglePanel`
+           helper for log format
+           consistency with the other
+           8 toggle keys. -->
+      <button class="ctl toggle-btn" id="btn-god-panel" data-key="G">⚡ God (G)</button>
+      <button class="ctl toggle-btn" id="btn-economy" data-key="N">💰 经济 (N)</button>
+      <button class="ctl toggle-btn" id="btn-epoch" data-key="O">🕰 纪元 (O)</button>
+      <!-- Round 132 — 13th panel-toggle
+           mouse button. Z key counterpart
+           for the round-132 EventLog
+           panel (`#event-log-root`,
+           showing the 50-event ring
+           buffer from `Analytics.recent`).
+           Z is mnemonic-friendly (was
+           free in the panel-toggle group,
+           no pre-existing Z mapping in
+           routeKey) and sits naturally
+           next to the QWERTY row housing
+           the other toggle keys. Mouse-
+           only players learn the Z
+           shortcut from the `(Z)` label
+           inside the button. -->
+      <button class="ctl toggle-btn" id="btn-event-log" data-key="Z">📋 事件 (Z)</button>
+      <!-- Round 133 — 14th panel-toggle
+           mouse button. K key counterpart
+           for the round-133 DslCodex panel
+           (`#dsl-codex-root`, showing the
+           AGI's most recently generated /
+           hot-reloaded `DslRule` as a small
+           codex with the source DSL +
+           parsed AST + accepted/rejected
+           status badge). K is mnemonic-
+           friendly for "DSL Knowledge" (or
+           just "Codex K") and was free in
+           the panel-toggle group, no pre-
+           existing K mapping in routeKey.
+           Sits naturally next to the QWERTY
+           row housing the other toggle
+           keys. Mouse-only players learn
+           the K shortcut from the `(K)`
+           label inside the button. -->
+      <button class="ctl toggle-btn" id="btn-dsl-codex" data-key="K">📖 DSL 法典 (K)</button>
+      <!-- Round 137 — the 15th panel-toggle
+           (I key). Mouse-only players learn
+           the I shortcut from the `(I)` label
+           inside the button. Wires the pre-
+           existing `InventoryUI` module so
+           the player can see and use their
+           collected items. -->
+      <button class="ctl toggle-btn" id="btn-inventory" data-key="I">🎒 背包 (I)</button>
+      <button class="ctl" id="btn-complete">完成试炼</button>
+      <button class="ctl" id="btn-save">存档</button>
+      <button class="ctl" id="btn-load">读档</button>
+      <button class="ctl" id="btn-npc-0">对话·玄真</button>
+      <button class="ctl" id="btn-npc-1">对话·阿灰</button>
+      <button class="ctl" id="btn-npc-2">对话·小灵</button>
+      <button class="ctl" id="btn-gift-0">送礼·玄真</button>
+      <button class="ctl" id="btn-attack-0">攻击·玄真</button>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

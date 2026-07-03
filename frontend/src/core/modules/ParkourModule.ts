@@ -30,10 +30,18 @@ export class ParkourModule implements GameplayModule {
 
     update(dt: number): void {
         // 跑酷独有逻辑：不断向前推进，生成障碍物或金币
-        if (Math.random() < 0.02 * this.config.difficulty) {
+        const spawnRateMultiplier = Number(this.config.customParams.spawnRateMultiplier ?? 1);
+        const pressureMultiplier = Number(this.config.customParams.pressureMultiplier ?? 1);
+        const speedMultiplier = Number(this.config.customParams.speedMultiplier ?? 1);
+        const entityCount = Number((window as any).__agiEntityCount ?? 0);
+        const maxRuntimeEntities = Number(this.config.customParams.maxRuntimeEntities ?? 28);
+        if (
+            entityCount < maxRuntimeEntities &&
+            Math.random() < dt * 0.55 * this.config.difficulty * spawnRateMultiplier * pressureMultiplier
+        ) {
             this.spawnObstacle();
         }
-        this.score += dt * 10; // 随时间自动增加分数
+        this.score += dt * 10 * speedMultiplier * Number(this.config.customParams.scoreMultiplier ?? 1);
     }
 
     unload(): void {
@@ -51,8 +59,16 @@ export class ParkourModule implements GameplayModule {
             const z = -50; // 从远处生成
             engine.spawn_obstacle(x, z);
         } else if (engine) {
-            // fallback
-            engine.spawn_enemy( (Math.random() - 0.5) * 20, -50, 0, 30 ); 
+            engine.add_entity(
+                (Math.random() - 0.5) * 320,
+                120,
+                -160,
+                '#f97316',
+                0,
+                -80 * Number(this.config.customParams.pressureMultiplier ?? 1),
+                70 * Number(this.config.customParams.speedMultiplier ?? 1),
+                1
+            );
         }
         console.log(`[ParkourModule] 前方生成了障碍物!`);
     }

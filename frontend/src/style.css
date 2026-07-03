@@ -20,6 +20,12 @@
   --border-color: rgba(148, 163, 184, 0.2);
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   display: flex;
@@ -70,6 +76,12 @@ h1 {
   align-items: start;
 }
 
+.layout > *,
+.game-panel,
+.control-panel {
+  min-width: 0;
+}
+
 .game-panel {
   background: var(--bg-panel);
   backdrop-filter: blur(12px);
@@ -83,6 +95,8 @@ h1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 16px;
 }
 
@@ -176,6 +190,224 @@ canvas {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.scene-status {
+  min-height: 92px;
+  background: rgba(2, 6, 23, 0.45);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.scene-title {
+  color: #f8fafc;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.scene-meta {
+  color: #93c5fd;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.scene-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.scene-rules span {
+  max-width: 100%;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 6px;
+  padding: 3px 6px;
+  color: #bae6fd;
+  background: rgba(8, 47, 73, 0.45);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.scene-warning {
+  margin-top: 8px;
+  color: #fde68a;
+  line-height: 1.4;
+}
+
+.aesthetic-report {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  color: #c4b5fd;
+  font-size: 0.78rem;
+}
+
+.aesthetic-report strong {
+  color: #f5d0fe;
+}
+
+.aesthetic-report span {
+  overflow-wrap: anywhere;
+}
+
+.director-status {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  background: rgba(2, 6, 23, 0.5);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 8px;
+  padding: 12px;
+  color: #cbd5e1;
+  font-size: 0.86rem;
+}
+
+.director-title {
+  color: #f8fafc;
+  font-weight: 700;
+  margin-bottom: 5px;
+  overflow-wrap: anywhere;
+}
+
+.director-meta {
+  color: #a5b4fc;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.director-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.director-rules span {
+  border: 1px solid rgba(196, 181, 253, 0.35);
+  border-radius: 6px;
+  padding: 3px 6px;
+  color: #ddd6fe;
+  background: rgba(49, 46, 129, 0.35);
+  font-size: 0.74rem;
+}
+
+.objective-status {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  background: rgba(2, 6, 23, 0.5);
+  border: 1px solid rgba(250, 204, 21, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  color: #cbd5e1;
+  font-size: 0.84rem;
+}
+
+.objective-title {
+  color: #f8fafc;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.objective-reward {
+  color: #fde68a;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 0.76rem;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+
+.objective-list {
+  display: grid;
+  gap: 6px;
+}
+
+.objective-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.54);
+}
+
+.objective-row strong,
+.objective-row span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.objective-row strong {
+  color: #e0f2fe;
+  font-size: 0.78rem;
+}
+
+.objective-row span,
+.objective-row em {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-style: normal;
+}
+
+.objective-done {
+  border-color: rgba(74, 222, 128, 0.42);
+}
+
+.objective-done strong {
+  color: #bbf7d0;
+}
+
+.scene-pool {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.scene-chip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgba(15, 23, 42, 0.7);
+  font-size: 0.82rem;
+}
+
+.scene-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-chip strong {
+  color: #e0f2fe;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 0.78rem;
+}
+
+.scene-active {
+  border-color: rgba(74, 222, 128, 0.5);
+}
+
+.scene-gray {
+  border-color: rgba(250, 204, 21, 0.55);
+  opacity: 0.82;
+}
+
+.scene-retired {
+  border-color: rgba(248, 113, 113, 0.55);
+  opacity: 0.64;
 }
 
 button {
@@ -291,7 +523,269 @@ textarea:focus {
 }
 
 @media (max-width: 900px) {
+  #app {
+    padding: 1rem;
+  }
+
+  h1 {
+    font-size: 2.1rem;
+  }
+
   .layout {
     grid-template-columns: 1fr;
   }
+
+  .game-panel,
+  .panel-section {
+    padding: 16px;
+  }
+}
+
+  .control-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Round 74 — `hud-memories-row-*` classes.
+ *
+ * Before round 74, the round-69 `⚡` WASM-latency row and the
+ * round-73 `⏰` event-chain row each carried two inline
+ * `style="..."` attributes (an opacity 0.7 suffix and a 0.85em
+ * detail span). Inline styles bypass the stylesheet cascade,
+ * so a future theme-switch or per-biome tint adjustment would
+ * need a code change, not a CSS edit. This block moves both
+ * styles into proper rules so they can be themed from
+ * stylesheet land.
+ *
+ * Naming: `-row-count` is the dimmed "N 样本" / "N 事件"
+ * suffix on the row headline; `-row-detail` is the smaller
+ * compact list of per-fn / per-event lines underneath.
+ * ------------------------------------------------------------------------- */
+
+.hud-memories-row-count {
+  opacity: 0.7;
+}
+
+.hud-memories-row-detail {
+  font-size: 0.85em;
+}
+
+/* ---------------------------------------------------------------------------
+ * Round 147 — `.hud-hotkeys` hint strip + sub-classes.
+ *
+ * The HUD stats panel now renders a compact `<div
+ * class="hud-hotkeys">` of `<kbd>` + action-label bindings
+ * below the memories block (or below the world-event row when
+ * memories aren't shown). Each binding is a `.hud-hotkey`
+ * span wrapping a `.hud-hotkey-key` `<kbd>` and a
+ * `.hud-hotkey-action` text label. Bindings sharing a group
+ * (e.g. "面板" / "系统") are prefixed with a small
+ * `.hud-hotkey-group` section header. Bindings are dot-
+ * separated by `.hud-hotkey-sep` to match the round-145
+ * derived-summary footer's visual rhythm and the rest of the
+ * HUD's compact-row cadence.
+ *
+ * Visual: monospace `<kbd>` with a thin border + faint glow,
+ * cyan-tinted group labels that pick up the dim panel's
+ * biome accent via the inherited `color`. The strip is
+ * intentionally small (0.85em) so it fits on a single line
+ * even with 4–6 bindings.
+ * ------------------------------------------------------------------------- */
+
+.hud-hotkeys {
+  font-size: 0.85em;
+  margin-top: 4px;
+  opacity: 0.92;
+  line-height: 1.6;
+}
+
+.hud-hotkey {
+  display: inline-block;
+  white-space: nowrap;
+  margin: 0 1px;
+}
+
+.hud-hotkey-key {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid rgba(136, 204, 255, 0.45);
+  border-radius: 3px;
+  background: rgba(20, 24, 40, 0.55);
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: 0.92em;
+  color: #c8e8ff;
+  text-shadow: 0 0 4px rgba(136, 204, 255, 0.35);
+}
+
+.hud-hotkey-action {
+  margin-left: 4px;
+  margin-right: 2px;
+  opacity: 0.85;
+}
+
+.hud-hotkey-group {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.82em;
+  letter-spacing: 0.04em;
+  color: #88ccff;
+  text-transform: uppercase;
+  opacity: 0.7;
+  border-left: 2px solid rgba(136, 204, 255, 0.35);
+  padding-left: 6px;
+  margin-left: 4px;
+}
+
+.hud-hotkey-sep {
+  display: inline-block;
+  margin: 0 4px;
+  opacity: 0.45;
+  color: #88ccff;
+}
+
+/* ---------------------------------------------------------------------------
+ * Round 150 — biome-contextual hotkey strip styles.
+ *
+ * The round-147 hotkey strip is the BASE strip (essentials: P/Q/T/R
+ * panel toggles + rollback). Round 150 adds a SECOND strip below it
+ * with biome-specific bindings (e.g. Q=符箓 / Y=御剑 in 仙侠, Q=黑客 /
+ * Y=机甲 in 赛博). The biome strip uses a slightly different
+ * background tint + a centered `—— ${label} ——` header so the
+ * player can tell the two strips apart at a glance.
+ *
+ * Visual: the biome strip picks up a magenta tint (round-87 biome
+ * accent for cyberpunk; the label is `仙侠` / `赛博` / `冰原` etc.)
+ * — when the round-87 lastBiomeAccent is set, the header text
+ * inherits the accent. The strip itself is slightly more compact
+ * (0.8em vs 0.85em) so two strips fit in the stats panel without
+ * crowding.
+ * ------------------------------------------------------------------------- */
+
+.hud-hotkeys-biome {
+  font-size: 0.8em;
+  margin-top: 4px;
+  padding: 4px 6px;
+  background: rgba(40, 20, 60, 0.35);
+  border-left: 2px solid rgba(255, 102, 204, 0.45);
+  border-radius: 0 3px 3px 0;
+  line-height: 1.55;
+}
+
+.hud-hotkey-biome-label {
+  display: block;
+  text-align: center;
+  font-size: 0.92em;
+  letter-spacing: 0.08em;
+  color: #ff66cc;
+  opacity: 0.85;
+  margin-bottom: 3px;
+  text-transform: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Round 152 — `.hud-debouncer-strip-compact` variant.
+ *
+ * The round-146 debouncer strip renders 3 spans per cell
+ * (label / status / countdown). When the player enables
+ * compact HUD mode (round 152, `H` key), the countdown
+ * span is dropped, leaving just label + status. Without
+ * this rule, the cells would still occupy the original
+ * height because the grid still allocates space for the
+ * missing span. The compact variant tightens the row
+ * height + spacing so the strip visually shrinks along
+ * with the rest of the round-51 memories block.
+ *
+ * Visual: 1.2em line-height (down from the default 1.55em
+ * of the base strip), 2px row padding (down from 4px),
+ * and a 0.06 opacity boost on the status label so the
+ * single-line layout still reads cleanly.
+ * ------------------------------------------------------------------------- */
+
+.hud-debouncer-strip-compact {
+  font-size: 0.88em;
+  line-height: 1.2;
+  margin-top: 2px;
+  padding: 2px 4px;
+}
+
+.hud-debouncer-strip-compact .hud-debouncer-strip-cell {
+  margin: 0 2px;
+  padding: 0 2px;
+}
+
+.hud-debouncer-strip-compact .hud-debouncer-strip-status {
+  opacity: 0.92;
+}
+
+/* ---------------------------------------------------------------------------
+ * Round 153 — `.hud-stats.hud-stats-fading` auto-fade mode.
+ *
+ * The round-1 stats panel sits in the top-right
+ * corner and is always fully visible by default.
+ * Round 153 adds an opt-in "fade" mode (F key +
+ * `agi_hud_fade` localStorage flag): after 3s
+ * of key/click inactivity, the panel fades to
+ * 0.25 opacity so the Three.js scene is
+ * unobstructed during long playthroughs
+ * (操控性好 + 画面优美).
+ *
+ * Visual: a 0.6s opacity transition + 0.25
+ * final opacity. The pointer-events stay
+ * enabled (the panel is still hoverable /
+ * clickable, just visually faded) so the
+ * player can mouse over the dimmed panel to
+ * see the same data at full opacity (the
+ * `:hover` rule below snaps opacity back to
+ * 1.0). The 0.6s transition is longer than
+ * the 0.5s used for the round-152 debouncer
+ * compact mode because the fade is the
+ * panel's primary "look away / look back"
+ * signal — a snappier transition would feel
+ * jarring during scene exploration.
+ *
+ * Naming: `.hud-stats-fading` is on the SAME
+ * element as `.hud-panel` + `.hud-stats`,
+ * so the panel border + background colors
+ * stay intact; only the opacity is reduced.
+ * ------------------------------------------------------------------------- */
+
+.hud-stats.hud-stats-fading {
+  opacity: 0.25;
+  transition: opacity 0.6s ease-in-out;
+}
+
+.hud-stats.hud-stats-fading:hover {
+  opacity: 1.0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+/* ---------------------------------------------------------------------------
+ * Round 88 — `.hud-panel.hud-dim` left border via CSS custom property.
+ *
+ * Round 87 wired the dim panel's left border to each biome's
+ * `particleColor` (cyberpunk #ff66cc, forest #88ccff, …). It
+ * did so by inlining `style="border-left: 4px solid #88ccff;"`
+ * on the panel — which mirrors the round-69 / round-73
+ * anti-pattern that round 74 explicitly cleaned up. This rule
+ * finishes the round-87 feature by moving the border to a
+ * stylesheet rule and exposing the color as a CSS custom
+ * property (`--biome-accent`) that the App sets inline:
+ *
+ *   <div class="hud-panel hud-dim" style="--biome-accent: #88ccff;">…
+ *
+ * The fallback `transparent` keeps the panel flat when no
+ * accent is set (a round-1 save with no biome memory).
+ *
+ * Naming: `.hud-dim` is the dim panel's existing class (added
+ * in round 5+ and reused by rounds 19/41/72/73 for the
+ * dimension-name headline and per-row labels). The
+ * `--biome-accent` variable is a per-element custom property,
+ * not a `:root` global, so it can vary between dim panels if
+ * the layout ever renders more than one (currently exactly
+ * one).
+ * ------------------------------------------------------------------------- */
+
+.hud-panel.hud-dim {
+  border-left: 4px solid var(--biome-accent, transparent);
 }
